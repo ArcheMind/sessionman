@@ -102,27 +102,14 @@ func TestOffloadToolResultsStubsOnlyToolEntries(t *testing.T) {
 	}
 }
 
-func TestEstimateContextTokensAndThreshold(t *testing.T) {
-	messages := []sessions.Message{
-		userMsg("u1", strings.Repeat("a", 400)),
-		toolMsg("t1", "call1", strings.Repeat("b", 200)),
-	}
-	if tokens := estimateContextTokens(messages); tokens != 150 {
-		t.Fatalf("tokens = %d, want 150", tokens)
-	}
-	structured := []sessions.Message{toolMsg("t1", "call1", map[string]any{"k": "v"})}
-	encoded, _ := json.Marshal(map[string]any{"k": "v"})
-	if tokens := estimateContextTokens(structured); tokens != len(encoded)/4 {
-		t.Fatalf("tokens = %d, want %d", tokens, len(encoded)/4)
-	}
-
-	atLimit := []sessions.Message{userMsg("u1", strings.Repeat("a", freshTokenThreshold*4))}
-	if tokens, large := exceedsFreshThreshold(atLimit); large || tokens != freshTokenThreshold {
-		t.Fatalf("at limit: tokens = %d large = %t", tokens, large)
-	}
-	over := []sessions.Message{userMsg("u1", strings.Repeat("a", freshTokenThreshold*4+4))}
-	if tokens, large := exceedsFreshThreshold(over); !large || tokens != freshTokenThreshold+1 {
-		t.Fatalf("over limit: tokens = %d large = %t", tokens, large)
+func TestFreshTurnThreshold(t *testing.T) {
+	messages := []sessions.Message{assistantMsg("a", strings.Repeat("a", 1_000_004)), toolMsg("t", "call", "output")}
+	for i := 0; i <= 8; i++ {
+		turns, large := exceedsFreshThreshold(messages)
+		if turns != i || large != (i > 7) {
+			t.Fatalf("%d users: turns = %d large = %t", i, turns, large)
+		}
+		messages = append(messages, userMsg(fmt.Sprint(i), "question"))
 	}
 }
 
@@ -256,14 +243,14 @@ func TestTrimKeyReadsAsSelectionFresh(t *testing.T) {
 }
 
 func TestConfirmLargeContextKeys(t *testing.T) {
-	for input, want := range map[string]selectionKey{"xt": selectionFresh, "\r": selectionConfirm, "q": selectionCancel} {
+	for input, want := range map[string]selectionKey{"x\rty": selectionFresh, "Y": selectionFresh, "n": selectionConfirm, "N": selectionConfirm, "c": selectionCancel, "C": selectionCancel} {
 		var stdout bytes.Buffer
 		application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
-		key, err := application.confirmLargeContext(bufio.NewReader(application.Stdin), 312_000)
+		key, err := application.confirmLargeContext(bufio.NewReader(application.Stdin), 12)
 		if err != nil || key != want {
 			t.Fatalf("input %q: key = %v err = %v", input, key, err)
 		}
-		if !strings.Contains(stdout.String(), "Context ~312K tokens — [t] trim & resume  [Enter] full  [q] cancel") {
+		if !strings.Contains(stdout.String(), "Resume session · 12 turns\r\n\r\nTrim to 6 turns?\r\n[y] Trim and resume  [n] Resume all 12 turns  [c] Cancel") {
 			t.Fatalf("prompt = %q", stdout.String())
 		}
 	}
@@ -271,17 +258,17 @@ func TestConfirmLargeContextKeys(t *testing.T) {
 
 func TestResumeInteractiveLargeContextCancel(t *testing.T) {
 	var stdout bytes.Buffer
-	application := New(false, strings.NewReader("q"), &stdout, &bytes.Buffer{})
+	application := New(false, strings.NewReader("c"), &stdout, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: t.TempDir()}
 	detail := sessions.Session{
 		ID: "big", Provider: "codex",
-		Messages: []sessions.Message{userMsg("u1", strings.Repeat("a", (freshTokenThreshold+1)*4))},
+		Messages: []sessions.Message{userMsg("u1", "1"), userMsg("u2", "2"), userMsg("u3", "3"), userMsg("u4", "4"), userMsg("u5", "5"), userMsg("u6", "6"), userMsg("u7", "7"), userMsg("u8", "8")},
 	}
 	err := application.resumeSessionInteractive(context.Background(), bufio.NewReader(application.Stdin), detail, false)
 	if err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("err = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Context ~") {
+	if !strings.Contains(stdout.String(), "Resume session · 8 turns") {
 		t.Fatalf("no large-context prompt in %q", stdout.String())
 	}
 }

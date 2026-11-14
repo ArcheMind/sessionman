@@ -463,3 +463,28 @@ func runtimeAgent(t *testing.T, app App, id string) runtime.Agent {
 	}
 	return agent
 }
+
+func TestResumeWithAgentSelectsMode(t *testing.T) {
+	for _, mode := range []string{"yolo", "normal"} {
+		t.Run(mode, func(t *testing.T) {
+			input := "\r\r"
+			if mode == "normal" {
+				input += "j"
+			}
+			application, stdout, runner := presetApp(t, input+"\r", "codex")
+			application.Output = OutputText
+			runner.response = `{"id":2,"result":{"data":[{"model":"gpt-a"}]}}`
+			detail := sessions.Session{ID: "11111111-2222-4333-a444-555555555555", Provider: "codex", Workspace: t.TempDir(), Messages: []sessions.Message{userMsg("u1", "question")}}
+			if err := application.resumeSessionInteractive(context.Background(), bufio.NewReader(application.Stdin), detail, false); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(stdout.String(), "Choose mode:") || len(runner.plans) != 1 {
+				t.Fatalf("output = %q, plans = %#v", stdout.String(), runner.plans)
+			}
+			args := strings.Join(runner.plans[0].Args, " ")
+			if strings.Contains(args, "--dangerously-bypass-approvals-and-sandbox") != (mode == "yolo") || !strings.Contains(args, "resume 11111111-2222-4333-a444-555555555555") {
+				t.Fatalf("mode %s: args = %s", mode, args)
+			}
+		})
+	}
+}

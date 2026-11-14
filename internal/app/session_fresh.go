@@ -3,7 +3,6 @@ package app
 import (
 	"bufio"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,35 +12,19 @@ import (
 )
 
 const (
-	freshTokenThreshold = 250_000
-	freshHeadUsers      = 2
-	freshTailUsers      = 3
+	freshTurnThreshold = 7
+	freshHeadUsers     = 2
+	freshTailUsers     = 3
 )
 
-// estimateContextTokens approximates resume context as text bytes / 4; only
-// the threshold decision needs it, not an exact count.
-func estimateContextTokens(messages []sessions.Message) int {
-	total := 0
+func exceedsFreshThreshold(messages []sessions.Message) (int, bool) {
+	turns := 0
 	for _, message := range messages {
-		for _, block := range message.Content {
-			total += len(block.Text)
-		}
-		switch result := message.Result.(type) {
-		case nil:
-		case string:
-			total += len(result)
-		default:
-			if encoded, err := json.Marshal(result); err == nil {
-				total += len(encoded)
-			}
+		if message.Role == "user" {
+			turns++
 		}
 	}
-	return total / 4
-}
-
-func exceedsFreshThreshold(messages []sessions.Message) (int, bool) {
-	tokens := estimateContextTokens(messages)
-	return tokens, tokens > freshTokenThreshold
+	return turns, turns > freshTurnThreshold
 }
 
 // freshHeadEnd returns the index just past the last message belonging to the
@@ -149,22 +132,30 @@ func (a App) freshSessionDetail(detail sessions.Session) (sessions.Session, erro
 
 // confirmLargeContext returns selectionFresh, selectionConfirm (full load) or
 // selectionCancel.
-func (a App) confirmLargeContext(reader *bufio.Reader, tokens int) (selectionKey, error) {
-	fmt.Fprintf(a.Stdout, "Context ~%dK tokens — [t] trim & resume  [Enter] full  [q] cancel", tokens/1000)
+func (a App) confirmLargeContext(reader *bufio.Reader, turns int) (selectionKey, error) {
+	fmt.Fprintf(a.Stdout, "Resume session · %d turns\r\n\r\nTrim to %d turns?\r\n[y] Trim and resume  [n] Resume all %d turns  [c] Cancel", turns, freshHeadUsers+freshTailUsers+1, turns)
 	restore, err := makeRaw(a.Stdin)
 	if err != nil {
 		return selectionCancel, err
 	}
 	defer restore()
 	for {
-		key, err := readSelectionKey(reader)
+		value, err := reader.ReadByte()
 		if err != nil {
 			return selectionCancel, err
 		}
-		switch key {
-		case selectionFresh, selectionConfirm, selectionCancel:
-			fmt.Fprint(a.Stdout, "\r\n")
-			return key, nil
+		var key selectionKey
+		switch value {
+		case 'y', 'Y':
+			key = selectionFresh
+		case 'n', 'N':
+			key = selectionConfirm
+		case 'c', 'C', 3, 27:
+			key = selectionCancel
+		default:
+			continue
 		}
+		fmt.Fprint(a.Stdout, "\r\n")
+		return key, nil
 	}
 }

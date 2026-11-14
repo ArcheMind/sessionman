@@ -244,8 +244,8 @@ type resumeChoice struct {
 
 func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader, detail sessions.Session, fresh bool) error {
 	if !fresh {
-		if tokens, large := exceedsFreshThreshold(detail.Messages); large {
-			key, err := a.confirmLargeContext(reader, tokens)
+		if turns, large := exceedsFreshThreshold(detail.Messages); large {
+			key, err := a.confirmLargeContext(reader, turns)
 			if err != nil {
 				return err
 			}
@@ -311,7 +311,11 @@ func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader,
 	if err != nil {
 		return err
 	}
-	return a.resumeSession(ctx, chosen.agent, detail, runtime.RunRequest{Model: model}, fresh, false)
+	draft := presetDraft{preset: presets.Preset{Agent: chosen.agent.ID}}
+	if err := a.askMode(reader, &draft); err != nil {
+		return err
+	}
+	return a.resumeSession(ctx, chosen.agent, detail, runtime.RunRequest{Model: model, Mode: draft.preset.EffectiveMode()}, fresh, false)
 }
 
 // startPreset reports launched=true once the native agent ran; pre-launch failures return to the home screen.
