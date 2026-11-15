@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -17,14 +18,32 @@ func discoverJSONL(agent string, patterns ...string) ([]Summary, error) {
 			failures = append(failures, err)
 			continue
 		}
-		for _, path := range paths {
-			item, ok, err := readJSONLMetadata(agent, path)
-			if err != nil {
-				failures = append(failures, err)
+		results := make([]struct {
+			item Summary
+			ok   bool
+			err  error
+		}, len(paths))
+		jobs := make(chan int)
+		var workers sync.WaitGroup
+		for range min(4, len(paths)) {
+			workers.Go(func() {
+				for i := range jobs {
+					results[i].item, results[i].ok, results[i].err = readJSONLMetadata(agent, paths[i])
+				}
+			})
+		}
+		for i := range paths {
+			jobs <- i
+		}
+		close(jobs)
+		workers.Wait()
+		for _, result := range results {
+			if result.err != nil {
+				failures = append(failures, result.err)
 				continue
 			}
-			if ok {
-				items = append(items, item)
+			if result.ok {
+				items = append(items, result.item)
 			}
 		}
 	}
