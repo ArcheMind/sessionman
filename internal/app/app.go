@@ -24,7 +24,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.14.4"
+var Version = "0.14.5"
 
 type App struct {
 	Registry   drivers.Registry

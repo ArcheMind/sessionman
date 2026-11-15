@@ -4,6 +4,18 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.14.5] - 2026-11-15
+
+### Added
+
+- Add `sm update` to check for and install the latest stable release immediately,
+  bypassing the daily startup-check cache.
+
+### Changed
+
+- Organize CLI help around common session workflows, command groups, agent
+  options, and diagnostics.
+
 ## [0.14.4] - 2026-11-15
 
 ### Fixed
