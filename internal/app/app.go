@@ -1047,51 +1047,61 @@ func singleLine(value string, max int) string {
 }
 
 func (a App) printHelp() {
-	fmt.Fprint(a.Stdout, `sessionman manages native AI coding-agent runtimes.
+	fmt.Fprint(a.Stdout, `SessionMan — The translator between your favorite coding agents.
 
-Usage:
+USAGE
   sm [--include-subagents]
   sm --resume <transcript-file>
-  sm <agent> [--model <model>] [--effort <level>] [--mode <normal|yolo>] [--user-config <true|false>] [--cwd <path>] [--dry-run] [-- <native args...>]
-  sm [--json|--yaml] status
+  sm <agent> [options] [-- <native args...>]
+  sm [--json|--yaml] <command> [args...]
 
-  sm [--json|--yaml] agent <list|show|install|run|exec> [args...]
-  sm [--json|--yaml] auth <list|show|login|logout> [args...]
-  sm [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
-  sm [--json|--yaml] skill <list|show|install> [args...]
-  sm [--json|--yaml] hook list
-  sm [--json|--yaml] mcp <list|show|serve> [args...]
-  sm [--json|--yaml] preset <list|show> [args...]
+COMMON WORKFLOWS
+  Load a session in another agent when usage runs out
+    sm → select a session → Enter → choose an agent
+
+  Trim a bloated session and continue seamlessly
+    sm → select a session → t → choose an agent
+
+  Find an old session across all your agents and get back to work
+    sm session list --all --limit 20
+
+  Ship a session so someone else can pick up where you left off
+    sm → select a session → e
+    Recipient: sm --resume <exported-file>
+
+COMMANDS
+  sm session <list|show|resume|export|import|continue> [args...]
+  sm agent <list|show|install|run|exec> [args...]
+  sm preset <list|show> [args...]
+  sm auth <list|show|login|logout> [args...]
+  sm skill <list|show|install> [args...]
+  sm hook list
+  sm mcp <list|show|serve> [args...]
+  sm [--json|--yaml] status    Show runtime status
   sm wait <agent-id> --after <seq>
+  sm update                  Update SessionMan to the latest release
+  sm version                 Show version
 
-  sm agent exec <agy|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
-  sm --json session continue <agy|claude|codex|pi> [--stream (claude|codex|pi)] [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
+  Non-interactive execution:
+    sm agent exec <agy|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
+    sm --json session continue <agy|claude|codex|pi> [--stream (claude|codex|pi)] [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
 
-  sm update
-  sm version
+AGENT OPTIONS
+  --model <model>             Select a model
+  --effort <level>            Set reasoning effort
+  --mode <normal|yolo>        Select execution mode
+  --user-config <true|false>  Control loading of user configuration
+  --cwd <path>               Set the working directory
+  --dry-run                  Show the invocation without launching
+  -- <native args...>        Pass arguments to the native agent
 
-Examples:
-  # See every agent's recent work in one place
-  sm
+OUTPUT & DIAGNOSTICS
+  --json | --yaml            Structured command output
+  --verbose                  Log raw external I/O and errors as JSON on stderr
+  SM_LOG=debug               Enable the same diagnostic logging
 
-  # Continue a session in another agent: select it, press Enter, pick the agent
-  sm
-
-  # From Codex, hand work to a Claude Code subagent (a preset with agent: claude)
-  sm codex
-  > Ask my claude-review preset to review this change.
-
-Running sm without arguments opens the interactive home: start a new session
-with a preset, create or manage presets (m), continue a recent session, or
-export one as a unified transcript file (e). sm --resume <transcript-file>
-resumes an exported transcript interactively.
-Presets live in ~/.sessionman/presets/<name>/PRESET.md and are shared with MCP
-ExternalSubagents. The sm <agent> shortcut launches an installed agent directly.
-
-Agents: agy, claude, codex, dsh, opencode, pi
-
-Set SM_LOG=debug or pass --verbose before the command to log raw external input,
-output, and errors as JSON on stderr.
+SUPPORTED AGENTS
+  agy · claude · codex · dsh · opencode · pi
 `)
 }
 
