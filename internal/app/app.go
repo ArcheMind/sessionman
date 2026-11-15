@@ -37,6 +37,7 @@ type App struct {
 	Stderr     io.Writer
 	Output     OutputFormat
 	Color      bool
+	termWidth  int
 	termHeight int
 }
 

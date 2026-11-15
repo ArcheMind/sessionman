@@ -164,16 +164,66 @@ func countItems(rows []contentRow) int {
 	return len(seen)
 }
 
-func terminalHeight(input io.Reader) int {
-	file, ok := input.(*os.File)
-	if !ok || !term.IsTerminal(int(file.Fd())) {
-		return 0
+func (a App) selectorSize() (int, int) {
+	var width, height int
+	for _, stream := range []any{a.Stdout, a.Stdin} {
+		file, ok := stream.(*os.File)
+		if !ok || !term.IsTerminal(int(file.Fd())) {
+			continue
+		}
+		width, height = 80, 24
+		if w, h, err := term.GetSize(int(file.Fd())); err == nil && w > 0 && h > 0 {
+			width, height = w, h
+			break
+		}
 	}
-	_, height, err := term.GetSize(int(file.Fd()))
-	if err != nil {
-		return 0
+	if a.termWidth > 0 {
+		width = a.termWidth
 	}
-	return height
+	if a.termHeight > 0 {
+		height = a.termHeight
+	}
+	return width, height
+}
+
+func fitSelectorLine(value string, width int) string {
+	if width <= 0 {
+		return value
+	}
+	var plain strings.Builder
+	for i := 0; i < len(value); {
+		if strings.HasPrefix(value[i:], "\x1b[") {
+			if end := strings.IndexByte(value[i:], 'm'); end >= 0 {
+				i += end + 1
+				continue
+			}
+		}
+		plain.WriteByte(value[i])
+		i++
+	}
+	text := plain.String()
+	if runewidth.StringWidth(text) <= width {
+		return value
+	}
+	prefix := strings.TrimSuffix(runewidth.Truncate(text, width, "…"), "…")
+	var fitted strings.Builder
+	for i, copied := 0, 0; i < len(value) && copied < len(prefix); {
+		if strings.HasPrefix(value[i:], "\x1b[") {
+			if end := strings.IndexByte(value[i:], 'm'); end >= 0 {
+				fitted.WriteString(value[i : i+end+1])
+				i += end + 1
+				continue
+			}
+		}
+		fitted.WriteByte(value[i])
+		i++
+		copied++
+	}
+	fitted.WriteString("…")
+	if strings.Contains(value, "\x1b[") {
+		fitted.WriteString(ansiReset)
+	}
+	return fitted.String()
 }
 
 func (a App) chooseOptions(reader *bufio.Reader, title string, options []string) (int, error) {
@@ -219,103 +269,103 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 	selected := options.selected
 	viewStart := 0
 	lineCount := 0
-	termH := a.termHeight
-	if termH == 0 {
-		termH = terminalHeight(a.Stdin)
-	}
-
-	headerLines := 0
-	if options.title != "" {
-		headerLines++
-	}
-	if !options.footer {
-		headerLines++
-	}
+	termW, termH := a.selectorSize()
 
 	render := func(clear bool) {
+		width, height := a.selectorSize()
+		resized := width != termW || height != termH
+		termW, termH = width, height
 		if clear {
-			fmt.Fprintf(a.Stdout, "\x1b[%dA\r\x1b[J", lineCount)
-		}
-		rows := allRows
-		lineCount = headerLines
-		if options.title != "" {
-			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiBold, options.title))
-		}
-		if !options.footer {
-			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, options.help))
-		}
-
-		visStart := 0
-		visEnd := len(rows)
-
-		reserved := headerLines
-		if options.footer {
-			reserved += 2
-		}
-		if termH > 0 && len(rows) > termH-reserved {
-			height := termH - reserved - 2
-			if height < 1 {
-				height = 1
+			if resized {
+				// Reflow can move the old origin outside the visible screen.
+				fmt.Fprint(a.Stdout, "\x1b[H\x1b[2J")
+			} else if lineCount > 0 {
+				fmt.Fprintf(a.Stdout, "\x1b[%dA\r\x1b[J", lineCount)
+			} else {
+				fmt.Fprint(a.Stdout, "\r\x1b[J")
 			}
-			selFirst, selLast := selectedRowRange(rows, selected)
+		}
+		lineCount = 0
+		writeLine := func(value string) {
+			if termH == 1 {
+				fmt.Fprint(a.Stdout, fitSelectorLine(value, termW))
+				return
+			}
+			fmt.Fprintf(a.Stdout, "%s\r\n", fitSelectorLine(value, termW))
+			lineCount++
+		}
+		var header, footer []string
+		if options.title != "" && (termH == 0 || termH > 2) {
+			header = append(header, colorize(a.Color, ansiBold, options.title))
+		}
+		help := options.help
+		if termW > 0 {
+			help = runewidth.Wrap(help, termW)
+		}
+		helpLines := strings.Split(help, "\n")
+		if termH > 0 {
+			// Leave one row for the cursor and one for the selected item.
+			helpLines = helpLines[:min(len(helpLines), max(0, termH-2-len(header)))]
+		}
+		for _, line := range helpLines {
+			if options.footer {
+				footer = append(footer, colorize(a.Color, ansiDim, line))
+			} else {
+				header = append(header, colorize(a.Color, ansiDim, line))
+			}
+		}
+		budget := len(allRows) + 2
+		if termH > 0 {
+			budget = max(1, termH-1-len(header)-len(footer))
+		}
+		if options.footer && (termH == 0 || budget > 1) {
+			footer = append([]string{""}, footer...)
+			budget--
+		}
+		for _, line := range header {
+			writeLine(line)
+		}
+
+		visStart, visEnd := 0, len(allRows)
+		showIndicators := budget >= 3
+		if len(allRows) > budget {
+			visible := budget
+			if showIndicators {
+				visible -= 2
+			}
+			selFirst, selLast := selectedRowRange(allRows, selected)
 			if selFirst < viewStart {
 				viewStart = selFirst
 			}
-			if selLast >= viewStart+height {
-				viewStart = selLast - height + 1
+			if selLast >= viewStart+visible {
+				viewStart = selLast - visible + 1
 			}
-			if viewStart < 0 {
-				viewStart = 0
-			}
-			if viewStart+height > len(rows) {
-				viewStart = len(rows) - height
-				if viewStart < 0 {
-					viewStart = 0
-				}
-			}
+			viewStart = max(0, min(viewStart, len(allRows)-visible))
 			visStart = viewStart
-			visEnd = viewStart + height
-			if visEnd > len(rows) {
-				visEnd = len(rows)
-			}
+			visEnd = min(len(allRows), viewStart+visible)
 		}
-
-		hiddenAbove := countItems(rows[:visStart])
-		hiddenBelow := countItems(rows[visEnd:])
-
-		if hiddenAbove > 0 {
-			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, fmt.Sprintf("  ↑ %d more", hiddenAbove)))
-			lineCount++
+		if hidden := countItems(allRows[:visStart]); showIndicators && hidden > 0 {
+			writeLine(colorize(a.Color, ansiDim, fmt.Sprintf("  ↑ %d more", hidden)))
 		}
-
-		for index, row := range rows[visStart:visEnd] {
+		for index, row := range allRows[visStart:visEnd] {
+			marker := ""
 			if row.itemIndex >= 0 {
-				marker := "  "
-				continuation := visStart+index > 0 && rows[visStart+index-1].itemIndex == row.itemIndex
+				marker = "  "
+				continuation := visStart+index > 0 && allRows[visStart+index-1].itemIndex == row.itemIndex
 				if row.itemIndex == selected && !continuation {
 					marker = options.marker
 				}
-				if row.kind == contentRowSession {
-					if file, ok := a.Stdout.(*os.File); ok {
-						if width, _, err := term.GetSize(int(file.Fd())); err == nil {
-							row = fitSessionRow(row, width-runewidth.StringWidth(marker))
-						}
-					}
+				if row.kind == contentRowSession && termW > 0 {
+					row = fitSessionRow(row, termW-runewidth.StringWidth(marker))
 				}
-				fmt.Fprintf(a.Stdout, "%s%s\r\n", styledMarker(marker, row, a.Color), styledContentRow(row, row.itemIndex == selected, a.Color))
-			} else {
-				fmt.Fprintf(a.Stdout, "%s\r\n", styledContentRow(row, false, a.Color))
 			}
-			lineCount++
+			writeLine(styledMarker(marker, row, a.Color) + styledContentRow(row, row.itemIndex == selected, a.Color))
 		}
-
-		if hiddenBelow > 0 {
-			fmt.Fprintf(a.Stdout, "%s\r\n", colorize(a.Color, ansiDim, fmt.Sprintf("  ↓ %d more", hiddenBelow)))
-			lineCount++
+		if hidden := countItems(allRows[visEnd:]); showIndicators && hidden > 0 {
+			writeLine(colorize(a.Color, ansiDim, fmt.Sprintf("  ↓ %d more", hidden)))
 		}
-		if options.footer {
-			fmt.Fprintf(a.Stdout, "\r\n%s\r\n", colorize(a.Color, ansiDim, options.help))
-			lineCount += 2
+		for _, line := range footer {
+			writeLine(line)
 		}
 	}
 
@@ -330,11 +380,40 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 	}
 	defer restore()
 
-	for {
-		key, err := readSelectionKey(reader)
-		if err != nil {
-			return 0, selectionConfirm, err
+	type keyResult struct {
+		key selectionKey
+		err error
+	}
+	requests := make(chan struct{})
+	results := make(chan keyResult)
+	defer close(requests)
+	go func() {
+		for range requests {
+			key, err := readSelectionKey(reader)
+			results <- keyResult{key, err}
 		}
+	}()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		requests <- struct{}{}
+		var result keyResult
+	waitForKey:
+		for {
+			select {
+			case result = <-results:
+				break waitForKey
+			case <-ticker.C:
+				width, height := a.selectorSize()
+				if width != termW || height != termH {
+					render(true)
+				}
+			}
+		}
+		if result.err != nil {
+			return 0, selectionConfirm, result.err
+		}
+		key := result.key
 		switch key {
 		case selectionUp:
 			if selected > 0 {
@@ -372,7 +451,7 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 }
 
 func styledMarker(marker string, row contentRow, color bool) string {
-	if marker == "  " {
+	if marker == "" || marker == "  " {
 		return marker
 	}
 	if row.kind == contentRowPreset || row.kind == contentRowCreate || row.kind == contentRowProblem {
