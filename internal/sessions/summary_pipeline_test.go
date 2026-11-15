@@ -90,8 +90,9 @@ func TestSessionTimestampUsesLargeFinalRecord(t *testing.T) {
 	if err := os.Chtimes(path, future, future); err != nil {
 		t.Fatal(err)
 	}
-	if got := sessionFileTimestamp(path); got != "2026-11-13T08:05:00Z" {
-		t.Fatalf("last native timestamp = %q", got)
+	item, _, err := readJSONLMetadata("codex", path)
+	if err != nil || item.UpdatedAt != "2026-11-13T08:05:00Z" {
+		t.Fatalf("last native timestamp = %q, error = %v", item.UpdatedAt, err)
 	}
 }
 

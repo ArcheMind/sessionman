@@ -32,42 +32,75 @@ func discoverJSONL(agent string, patterns ...string) ([]Summary, error) {
 }
 
 func readJSONLMetadata(agent, path string) (Summary, bool, error) {
-	item := Summary{Agent: agent, Source: path, UpdatedAt: sessionFileTimestamp(path)}
+	item := Summary{Agent: agent, Source: path}
+	file, err := os.Open(path)
+	if err != nil {
+		return item, false, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return item, false, err
+	}
+	item.UpdatedAt = sessionFileTimestamp(file, info)
 	decode := jsonlRecordDecoder(agent)
-	err := scanJSONL(path, func(record map[string]any) bool {
-		switch agent {
-		case "claude":
-			if sidechain, _ := record["isSidechain"].(bool); sidechain {
-				item.IsSubagent = true
-				if agentID := stringValue(record["agentId"]); agentID != "" {
-					item.ID = agentID
+	err = scanJSONLReader(file, func(line []byte) bool {
+		var record map[string]any
+		user := false
+		if agent == "codex" {
+			var envelope struct {
+				Type    string
+				Payload struct {
+					Type, Role, ID, Cwd string
+					SessionID           string `json:"session_id"`
+					Timestamp, Source   any
 				}
 			}
-			if item.StartedAt == "" {
-				item.StartedAt = timeValue(record["timestamp"])
+			if json.Unmarshal(line, &envelope) != nil {
+				return false
 			}
-			if item.ID == "" {
-				item.ID = stringValue(record["sessionId"])
+			payload := envelope.Payload
+			if envelope.Type == "session_meta" && item.ID == "" {
+				item.ID = firstNonEmpty(payload.ID, payload.SessionID)
+				item.Workspace = payload.Cwd
+				item.StartedAt = timeValue(payload.Timestamp)
+				item.IsSubagent = codexSubagentSource(payload.Source)
 			}
-			if item.Workspace == "" {
-				item.Workspace = stringValue(record["cwd"])
+			user = envelope.Type == "response_item" && payload.Type == "message" && payload.Role == "user"
+		} else {
+			if json.Unmarshal(line, &record) != nil {
+				return false
 			}
-		case "codex":
-			if stringValue(record["type"]) == "session_meta" && item.ID == "" {
-				payload, _ := record["payload"].(map[string]any)
-				item.ID = firstNonEmpty(stringValue(payload["id"]), stringValue(payload["session_id"]))
-				item.Workspace = stringValue(payload["cwd"])
-				item.StartedAt = timeValue(payload["timestamp"])
-				item.IsSubagent = codexSubagentSource(payload["source"])
+			switch agent {
+			case "claude":
+				if sidechain, _ := record["isSidechain"].(bool); sidechain {
+					item.IsSubagent = true
+					if agentID := stringValue(record["agentId"]); agentID != "" {
+						item.ID = agentID
+					}
+				}
+				if item.StartedAt == "" {
+					item.StartedAt = timeValue(record["timestamp"])
+				}
+				if item.ID == "" {
+					item.ID = stringValue(record["sessionId"])
+				}
+				if item.Workspace == "" {
+					item.Workspace = stringValue(record["cwd"])
+				}
+			case "pi":
+				if stringValue(record["type"]) == "session" {
+					item.ID = stringValue(record["id"])
+					item.Workspace = stringValue(record["cwd"])
+					item.StartedAt = timeValue(record["timestamp"])
+				}
 			}
-		case "pi":
-			if stringValue(record["type"]) == "session" {
-				item.ID = stringValue(record["id"])
-				item.Workspace = stringValue(record["cwd"])
-				item.StartedAt = timeValue(record["timestamp"])
-			}
+			user = jsonlUserRecord(agent, record)
 		}
-		if jsonlUserRecord(agent, record) {
+		if user {
+			if record == nil && json.Unmarshal(line, &record) != nil {
+				return false
+			}
 			for _, message := range decode(record).Messages {
 				if message.Role == "user" {
 					text := TextContent(message.Content)
@@ -185,13 +218,9 @@ func jsonlRecordDecoder(agent string) func(map[string]any) Session {
 	}
 }
 
-func sessionFileTimestamp(path string) string {
-	info, err := os.Stat(path)
-	if err != nil {
-		return ""
-	}
+func sessionFileTimestamp(file *os.File, info os.FileInfo) string {
 	timestamp := info.ModTime().UTC().Format(time.RFC3339Nano)
-	_ = scanJSONLReverse(path, func(line []byte) bool {
+	_ = scanJSONLReverseReader(file, info.Size(), func(line []byte) bool {
 		var record struct{ Timestamp any }
 		if json.Unmarshal(line, &record) != nil {
 			return false

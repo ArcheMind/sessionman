@@ -26,19 +26,29 @@ func readJSONL(path string) ([]map[string]any, error) {
 // a time without Scanner's token-size limit. Invalid lines (including a partial
 // final record in an active session) are skipped without hiding I/O errors.
 func scanJSONL(path string, visit func(map[string]any) bool) error {
+	return scanJSONLLines(path, func(line []byte) bool {
+		var record map[string]any
+		return json.Unmarshal(line, &record) == nil && visit(record)
+	})
+}
+
+func scanJSONLLines(path string, visit func([]byte) bool) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	reader := bufio.NewReaderSize(file, 64*1024)
+	return scanJSONLReader(file, visit)
+}
+
+func scanJSONLReader(source io.Reader, visit func([]byte) bool) error {
+	reader := bufio.NewReaderSize(source, 64*1024)
 	for {
 		line, err := reader.ReadBytes('\n')
 		if err != nil && err != io.EOF {
 			return err
 		}
-		var record map[string]any
-		if json.Unmarshal(line, &record) == nil && visit(record) {
+		if visit(line) {
 			return nil
 		}
 		if err == io.EOF {
