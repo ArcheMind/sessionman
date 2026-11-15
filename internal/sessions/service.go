@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	transcript "github.com/ArcheMind/agentx-protocol/go"
+	transcript "github.com/ArcheMind/sessionman-protocol/go"
 )
 
 type Agent struct {

@@ -60,7 +60,7 @@ function normalize(unified){
 
 // ---------------------------------------------------------------------------------------------
 // degrade: the lawful loss of each destination, derived from the unified spec
-// (agentx-protocol docs/unified-transcript-format.md, v0.2.0) and the native formats in docs/native-rollout-protocols/.
+// (sessionman-protocol docs/unified-transcript-format.md, v0.2.0) and the native formats in docs/native-rollout-protocols/.
 // Written independently of the serializers; every rule cites its justification. "spec gap:" marks a rule the spec does not state.
 // ---------------------------------------------------------------------------------------------
 const isImage=b=>b.type==='image'

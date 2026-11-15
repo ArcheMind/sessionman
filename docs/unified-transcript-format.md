@@ -2,14 +2,14 @@
 
 The unified transcript format is owned by the shared protocol repository:
 
-https://github.com/ArcheMind/agentx-protocol
+https://github.com/ArcheMind/sessionman-protocol
 
 - Spec: `docs/unified-transcript-format.md`
 - Normative schema: `schema/unified-transcript.schema.json`
-- Go implementation (used by agentx): `github.com/ArcheMind/agentx-protocol/transcript`
+- Go implementation (used by agentx): `github.com/ArcheMind/sessionman-protocol/go`
 
 agentx imports the protocol types and defines no transcript message shapes of
-its own. Format changes land in agentx-protocol first, then agentx upgrades
+its own. Format changes land in sessionman-protocol first, then agentx upgrades
 its pinned module version.
 
 ## Antigravity CLI native storage

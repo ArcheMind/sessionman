@@ -126,12 +126,12 @@ scripts.
 
 The independent acceptance owner then ran the exact default entry point on
 source `1dade94`:
-`make AGENTX_PROTOCOL_DIR=/Users/agent/work/agentx-protocol verify test-mcp-syntax`
+`make SESSIONMAN_PROTOCOL_DIR=/Users/agent/work/sessionman-protocol verify test-mcp-syntax`
 (exit 0). Formatting left the tracked working tree clean. To expose the schema
 result hidden by the default smoke output redirection, the owner also ran
-`make -o build AGENTX_PROTOCOL_DIR=/Users/agent/work/agentx-protocol smoke-transcript-fidelity`
+`make -o build SESSIONMAN_PROTOCOL_DIR=/Users/agent/work/sessionman-protocol smoke-transcript-fidelity`
 (exit 0), evidence `agentx-transcript-fidelity-BFD9gz`. It explicitly reported
-`validated against /Users/agent/work/agentx-protocol/spec/schema/unified-transcript.schema.json`,
+`validated against /Users/agent/work/sessionman-protocol/spec/schema/unified-transcript.schema.json`,
 not skipped. The agy native output had five records, and source independence,
 raw signatures, inline image and complete tool result checks were all true.
 Go code and fixtures were unchanged between `56337f9` and `1dade94`; the later

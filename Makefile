@@ -5,7 +5,7 @@
 .PHONY: check-update-platforms
 
 # Schema validation reuses the protocol module's ajv; empty when the module dir is unresolvable, and the smoke reports it skipped.
-AGENTX_PROTOCOL_DIR ?= $(shell go list -m -f '{{.Dir}}' github.com/ArcheMind/agentx-protocol 2>/dev/null)
+SESSIONMAN_PROTOCOL_DIR ?= $(shell go list -m -f '{{.Dir}}' github.com/ArcheMind/sessionman-protocol 2>/dev/null)
 
 fmt:
 	gofmt -w cmd internal
@@ -62,7 +62,7 @@ smoke-presets: build
 	node test/smoke/presets.mjs "$(CURDIR)/bin/sm"
 
 smoke-transcript-fidelity: build
-	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/sm" "$(AGENTX_PROTOCOL_DIR)"
+	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/sm" "$(SESSIONMAN_PROTOCOL_DIR)"
 
 smoke-transcript-cross: build
 	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/sm"
@@ -98,7 +98,7 @@ smoke: build
 	./bin/sm --yaml auth login codex --dry-run >/dev/null
 	./bin/sm agent run codex --model smoke-test --dry-run >/dev/null
 	echo '{"summary":{"id":"test","provider":"claude","message_count":0},"messages":[]}' | ./bin/sm convert to claude >/dev/null
-	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/sm" "$(AGENTX_PROTOCOL_DIR)" >/dev/null
+	node test/smoke/transcript-fidelity.mjs "$(CURDIR)/bin/sm" "$(SESSIONMAN_PROTOCOL_DIR)" >/dev/null
 	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/sm" >/dev/null
 
 smoke-live: build

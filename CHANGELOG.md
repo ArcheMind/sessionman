@@ -4,6 +4,10 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- Depend on `sessionman-protocol/go` v0.5.0 (renamed from `agentx-protocol`); thinking blocks may carry an optional `id`.
+
 ## [0.14.0] - 2026-11-13
 
 ### Added

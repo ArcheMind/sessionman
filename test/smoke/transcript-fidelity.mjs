@@ -31,7 +31,7 @@ const same=(provider,item,actual,expected)=>check(provider,item,isDeepStrictEqua
 const jsonl=async path=>(await readFile(path,'utf8')).split('\n').filter(Boolean).map(line=>JSON.parse(line))
 const pick=(records,provider,item,predicate)=>{const found=records.filter(predicate);check(provider,item,found.length===1,`expected exactly one record, found ${found.length}`);return found[0]}
 
-let validate=null,schema='skipped: no agentx-protocol module dir'
+let validate=null,schema='skipped: no sessionman-protocol module dir'
 if(protocolDir){
   const require=createRequire(join(protocolDir,'package.json'))
   try{
