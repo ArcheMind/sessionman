@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -19,17 +20,24 @@ func main() {
 		os.Exit(1)
 	}
 	demoDirectory := filepath.Join(workingDirectory, "docs", "demo")
+	if directory := os.Getenv("SM_DEMO_ROOT"); directory != "" {
+		demoDirectory = directory
+	}
 	if err := os.Chdir(filepath.Join(demoDirectory, "workspace")); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	application := app.New(false, &demoInput{keys: []demoKey{
+	var input io.Reader = &demoInput{keys: []demoKey{
 		{value: "j", pause: 700 * time.Millisecond},
 		{value: "\r", pause: 500 * time.Millisecond},
 		{value: "j", pause: 700 * time.Millisecond},
 		{value: "\r", pause: 300 * time.Millisecond},
 		{value: "j", pause: 600 * time.Millisecond},
-	}}, os.Stdout, os.Stderr)
+	}}
+	if os.Getenv("SM_DEMO_INTERACTIVE") == "1" {
+		input = os.Stdin
+	}
+	application := app.New(false, input, os.Stdout, os.Stderr)
 	application.Color = true
 	application.Sessions = sessions.Service{HomeDir: filepath.Join(demoDirectory, "home")}
 	application.Runner = demoRunner{}

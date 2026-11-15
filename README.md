@@ -9,19 +9,19 @@
 
 ### **Load** your Claude Code session in Codex when your usage runs out, and keep working.
 
-![Load a session in Codex](docs/assets/readme/load.png)
+![Select a Claude Code session and choose Codex in the interactive home](docs/assets/readme/load.gif)
 
 ### **Trim** a bloated session and continue seamlessly.
 
-![Trim a session before resuming](docs/assets/readme/trim.png)
+![Confirm trimming a long session and choose an agent interactively](docs/assets/readme/trim.gif)
 
 ### **Find** an old session across all your agents and get back to work.
 
-![Browse sessions across agents and workspaces](docs/assets/readme/find.png)
+![Browse sessions across agents and workspaces](docs/assets/readme/find.gif)
 
 ### **Ship** your session to someone else so they can pick up where you left off.
 
-![Export a session and resume the shared transcript](docs/assets/readme/ship.png)
+![Press e on a session to export it from the interactive home](docs/assets/readme/ship.gif)
 
 Minimal footprint, near-zero dependencies — easy to integrate.
 
