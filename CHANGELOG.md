@@ -4,6 +4,16 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.14.4] - 2026-11-15
+
+### Fixed
+
+- Fit interactive selectors to the current terminal width and height, and
+  redraw automatically when the terminal is resized. Account for wrapped help
+  text and keep the selected item visible, including in very small terminals.
+- Clip preset, heading, and option rows to the terminal width without losing
+  styling or miscounting wide characters.
+
 ## [0.14.3] - 2026-11-15
 
 ### Changed
