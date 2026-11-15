@@ -1060,7 +1060,7 @@ Usage:
   sm wait <agent-id> --after <seq>
 
   sm agent exec <agy|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
-  sm --json session continue <agy|claude|codex|pi> [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
+  sm --json session continue <agy|claude|codex|pi> [--stream (claude|codex|pi)] [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
 
   sm version
 

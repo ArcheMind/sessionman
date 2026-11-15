@@ -904,7 +904,7 @@ func codexContentBlocks(value any, role string) []ContentBlock {
 		text := stringValue(obj["text"])
 		switch kind {
 		case "input_text", "output_text":
-			if text != "" {
+			if _, present := obj["text"].(string); present {
 				blocks = append(blocks, ContentBlock{Type: "text", Text: text})
 			}
 		case "input_image":

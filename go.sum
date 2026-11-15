@@ -2,6 +2,8 @@ github.com/ArcheMind/agentx-protocol/go v0.3.0 h1:TjwG707QMigEjRzydM7a5VVREvLvPN
 github.com/ArcheMind/agentx-protocol/go v0.3.0/go.mod h1:yGo19hX0fTGyz+i8mdmsFx5a26CF/HKbxjbqpMBtJAM=
 github.com/ArcheMind/agentx-protocol/go v0.4.0 h1:aH7AL/3Pb9WUALE+AWq2e3j5ugc0oYCXvbuNtxtW6zQ=
 github.com/ArcheMind/agentx-protocol/go v0.4.0/go.mod h1:yGo19hX0fTGyz+i8mdmsFx5a26CF/HKbxjbqpMBtJAM=
+github.com/ArcheMind/agentx-protocol/go v0.4.1 h1:gLKAMivUHUnV2btmPccIoM4+2ukv+smrOZk2RQ+9Miw=
+github.com/ArcheMind/agentx-protocol/go v0.4.1/go.mod h1:/5QfUWtPPCRLFCDbs64UneEeJcxszvSjU75lMjfIips=
 github.com/clipperhouse/uax29/v2 v2.2.0 h1:ChwIKnQN3kcZteTXMgb1wztSgaU+ZemkgWdohwgs8tY=
 github.com/clipperhouse/uax29/v2 v2.2.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=

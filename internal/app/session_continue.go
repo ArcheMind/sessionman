@@ -19,7 +19,7 @@ import (
 	"github.com/ArcheMind/agentx/internal/subagents"
 )
 
-const sessionContinueUsage = "usage: ax [--json|--yaml] session continue <target-agent> [file] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>] [-- <native args...>]"
+const sessionContinueUsage = "usage: sm [--json|--yaml] session continue <target-agent> [file] [--stream] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>] [-- <native args...>]"
 
 // sessionContinue runs one headless turn on a unified transcript: import the
 // history into the target agent's native store, resume it with the trailing
@@ -34,6 +34,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		return err
 	}
 	var file, workspace string
+	var stream bool
 	request := runtime.RunRequest{}
 	for index := 1; index < len(args); index++ {
 		if handled, err := parseRunOption(args, &index, &request); handled || err != nil {
@@ -43,6 +44,8 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 			continue
 		}
 		switch args[index] {
+		case "--stream":
+			stream = true
 		case "--workspace":
 			index++
 			if index >= len(args) {
@@ -61,6 +64,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 
 	if agent.ID != "agy" && agent.ID != "claude" && agent.ID != "codex" && agent.ID != "pi" {
 		return fmt.Errorf("%s has no headless continue adapter", agent.ID)
+	}
+	if stream && agent.ID == "agy" {
+		return fmt.Errorf("agy does not support --stream: its native store parser cannot identify completed immutable steps; omit --stream for a final transcript")
 	}
 	if _, err := agentparams.Build(agent.ID, agentparams.OneShot, request); err != nil {
 		return err
@@ -137,7 +143,20 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if agent.ID == "agy" {
 		input = agyPromptInput(prompt)
 	}
-	result, execErr := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Stdin: input, CancelProcessGroup: true})
+	execCtx, cancelExecution := context.WithCancel(ctx)
+	defer cancelExecution()
+	options := runtime.ExecuteOptions{Stdin: input, CancelProcessGroup: true}
+	var transcriptStream *continueTranscriptStream
+	if stream {
+		transcriptStream = newContinueTranscriptStream(a, agent.ID, model, workspace, token, auth.Dir, prefix, cancelExecution)
+		options.Stdout = transcriptStream
+	}
+	result, execErr := a.Runner.Execute(execCtx, plan, options)
+	if transcriptStream != nil {
+		if err := transcriptStream.stop(); err != nil {
+			return err
+		}
+	}
 	if ctx.Err() != nil {
 		return fmt.Errorf("session continue cancelled: %w", ctx.Err())
 	}
@@ -173,14 +192,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if len(full.Messages) < prefix {
 		return fmt.Errorf("%s recorded fewer messages (%d) than the imported history (%d)", agent.ID, len(full.Messages), prefix)
 	}
-	delta := full.Messages[prefix:]
-	// Everything a turn records before its first assistant message is setup
-	// the caller already owns or the agent re-creates per turn: the echoed
-	// prompt, and per-turn context like Codex instruction records. Keeping it
-	// would duplicate and snowball across turns.
-	for len(delta) > 0 && delta[0].Role != "assistant" {
-		delta = delta[1:]
-	}
+	delta := continueDelta(full.Messages, prefix)
 	if len(delta) == 0 {
 		return fmt.Errorf("%s completed the turn but recorded no new messages", agent.ID)
 	}
@@ -199,7 +211,23 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if out.ID == "" {
 		out.ID = full.ID
 	}
+	if transcriptStream != nil {
+		return transcriptStream.finish(out)
+	}
 	return writeStructured(a.Stdout, out, a.structuredDefault())
+}
+
+func continueDelta(messages []sessions.Message, prefix int) []sessions.Message {
+	if len(messages) < prefix {
+		return nil
+	}
+	delta := messages[prefix:]
+	// The caller owns the prompt and history; per-turn native setup before
+	// the first assistant must not snowball into its accumulated transcript.
+	for len(delta) > 0 && delta[0].Role != "assistant" {
+		delta = delta[1:]
+	}
+	return delta
 }
 
 // writeResumeSession materializes a transcript as a native session file.
