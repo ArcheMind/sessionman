@@ -417,7 +417,6 @@ func TestRecentJSONLSummariesIncludeLatestUserMessage(t *testing.T) {
 	for _, agent := range []string{"claude", "codex", "pi"} {
 		t.Run(agent, func(t *testing.T) {
 			var records []string
-			parse := sessionSummaryParser(agent, false)
 			switch agent {
 			case "claude":
 				records = append(records, `{"type":"user","sessionId":"s1","cwd":"/work","message":{"content":"First request"}}`)
@@ -438,7 +437,10 @@ func TestRecentJSONLSummariesIncludeLatestUserMessage(t *testing.T) {
 			}
 			path := filepath.Join(t.TempDir(), "session.jsonl")
 			writeFixture(t, path, strings.Join(records, "\n"))
-			item, ok, err := parse(path)
+			item, ok, err := readJSONLMetadata(agent, path)
+			if err == nil && ok {
+				item, err = summarizeJSONL(item, false)
+			}
 			if err != nil || !ok || item.FirstUserMessage != "First request" || item.LatestUserMessage != "Latest request" {
 				t.Fatalf("summary = %#v, ok = %v, err = %v", item, ok, err)
 			}

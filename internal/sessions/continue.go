@@ -9,20 +9,32 @@ import (
 	"strings"
 )
 
-// ParseNativeSessionFile reads one native JSONL session file for a continue
-// turn's prefix/result accounting. Only the JSONL providers are supported.
+// ParseNativeSessionFile reads one native session without scanning its catalog.
 func ParseNativeSessionFile(agentID, path string) (Session, error) {
-	if agentID == "agy" {
-		return ParseAgySessionFile(path)
+	spec := agentSpecByID(agentID)
+	if spec == nil {
+		return Session{}, fmt.Errorf("unknown session agent %q", agentID)
 	}
+	return spec.read(path)
+}
+
+func readJSONLSession(agentID, path string, parse func(string, []map[string]any) (Session, bool)) (Session, error) {
 	records, err := readJSONL(path)
 	if err != nil {
 		return Session{}, fmt.Errorf("read %s session %s: %w", agentID, path, err)
 	}
-	detail, ok := ParseRecords(agentID, records)
+	detail, ok := parse(path, records)
 	if !ok {
 		return Session{}, fmt.Errorf("parse %s session %s: not a recognizable session", agentID, path)
 	}
+	item, _, err := readJSONLMetadata(agentID, path)
+	if err != nil {
+		return Session{}, err
+	}
+	detail.Workspace = item.Workspace
+	detail.IsSubagent = item.IsSubagent
+	detail.StartedAt = item.StartedAt
+	detail.UpdatedAt = item.UpdatedAt
 	detail.Source = path
 	return detail, nil
 }
@@ -36,11 +48,11 @@ func ClaudeProjectFile(homeDir, workspace, sessionID string) string {
 
 // FindCodexRollout uses the same session identity and latest-record selection as listing.
 func FindCodexRollout(codexHome, threadID string) (string, error) {
-	entries, err := discoverJSONLSessions("codex", filepath.Join(codexHome, "sessions", "*", "*", "*", "*.jsonl"))
+	entries, err := discoverCodexRollouts(filepath.Join(codexHome, "sessions"))
 	if err != nil {
 		return "", err
 	}
-	for _, entry := range normalizeSessions(entries) {
+	for _, entry := range entries {
 		if entry.ID == threadID {
 			return entry.Source, nil
 		}

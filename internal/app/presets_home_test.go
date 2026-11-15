@@ -362,44 +362,35 @@ func TestUnlistedModelEffortNoteIsHonest(t *testing.T) {
 	}
 }
 
-func TestPickedSessionDuplicateIDViolatesInvariant(t *testing.T) {
+func TestPickedSessionReadsSelectedSource(t *testing.T) {
 	home := t.TempDir()
-	workspace := t.TempDir()
-	// Same-agent codex duplicates are now deduplicated by loadCodex, so use
-	// Claude where duplicate session IDs across workspace directories still
-	// produce multiple Matches results.
 	paths := []string{
 		filepath.Join(home, ".claude", "projects", "proj-a", "dup-id.jsonl"),
 		filepath.Join(home, ".claude", "projects", "proj-b", "dup-id.jsonl"),
 	}
-	for _, path := range paths {
+	for index, path := range paths {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		line := fmt.Sprintf(`{"type":"user","sessionId":"dup-id","cwd":%q,"timestamp":"2026-09-01T11:00:00Z","message":{"role":"user","content":"hello"}}`, workspace)
+		line := fmt.Sprintf(`{"type":"user","sessionId":"dup-id","cwd":"/work","message":{"content":"request %d"}}`, index)
 		if err := os.WriteFile(path, []byte(line+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	var stdout bytes.Buffer
-	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: home}
-	selected := sessions.Summary{ID: "dup-id", Agent: "claude"}
-	t.Chdir(t.TempDir())
-
-	for name, err := range map[string]error{
-		"resume": application.resumeChosenSession(context.Background(), bufio.NewReader(strings.NewReader("")), selected, false),
-		"export": application.exportChosenSession(selected),
-	} {
-		if err == nil {
-			t.Fatalf("%s: expected invariant error", name)
+	for index, path := range paths {
+		selected := sessions.Summary{ID: "dup-id", Agent: "claude", Source: path, Workspace: "/work"}
+		detail, err := application.pickedSession(selected)
+		if err != nil {
+			t.Fatal(err)
 		}
-		for _, want := range append([]string{"Invariant: picker-selection-resolves", "presets_home.go:"}, paths...) {
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("%s: missing %q in:\n%s", name, want, err)
-			}
+		if detail.Source != path || sessions.MessageText(detail.Messages[0]) != fmt.Sprintf("request %d", index) {
+			t.Fatalf("picked a different source: %+v", detail)
 		}
-		t.Logf("%s error:\n%s", name, err)
+	}
+	if _, err := application.Sessions.Info("dup-id", "claude"); err == nil {
+		t.Fatal("ID-only lookup lost its ambiguity check")
 	}
 }
 

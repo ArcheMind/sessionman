@@ -939,7 +939,7 @@ func TestExportChosenSessionWritesMeaningfulFile(t *testing.T) {
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
 	application.Sessions = sessions.Service{HomeDir: home}
-	if err := application.exportChosenSession(sessions.Summary{ID: "cx1", Agent: "codex"}); err != nil {
+	if err := application.exportChosenSession(sessions.Summary{ID: "cx1", Agent: "codex", Source: path}); err != nil {
 		t.Fatal(err)
 	}
 	matches, err := filepath.Glob("codex-*.json")

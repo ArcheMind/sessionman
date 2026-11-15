@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -189,54 +188,6 @@ func agyWorkspace(uri string) string {
 	return filepath.FromSlash(p)
 }
 
-func loadAgy(home string) ([]Session, error) {
-	files, err := filepath.Glob(filepath.Join(agyRoot(home), "conversations", "*.db"))
-	if err != nil {
-		return nil, err
-	}
-	var details []Session
-	var failures []error
-	for _, path := range files {
-		d, err := ParseAgySessionFile(path)
-		if err != nil {
-			failures = append(failures, fmt.Errorf("read agy session %s: %w", path, err))
-			continue
-		}
-		details = append(details, d)
-	}
-	summaryPath := filepath.Join(agyRoot(home), "conversation_summaries.db")
-	if _, err := os.Stat(summaryPath); os.IsNotExist(err) {
-		return details, errors.Join(failures...)
-	}
-	db, err := agyOpen(summaryPath, true)
-	if err != nil {
-		return details, errors.Join(append(failures, err)...)
-	}
-	defer db.Close()
-	rows, err := db.Query(`SELECT conversation_id,title FROM conversation_summaries`)
-	if err != nil {
-		return details, errors.Join(append(failures, fmt.Errorf("read agy summaries %s: %w", summaryPath, err))...)
-	}
-	defer rows.Close()
-	titles := map[string]string{}
-	for rows.Next() {
-		var id, title string
-		if err := rows.Scan(&id, &title); err != nil {
-			return details, errors.Join(append(failures, err)...)
-		}
-		titles[id] = title
-	}
-	if err := rows.Err(); err != nil {
-		return details, errors.Join(append(failures, err)...)
-	}
-	for i := range details {
-		if t := titles[details[i].ID]; t != "" {
-			details[i].Title = t
-		}
-	}
-	return details, errors.Join(failures...)
-}
-
 // ParseAgySessionFile reads SQLite directly, including committed WAL records.
 func ParseAgySessionFile(path string) (Session, error) {
 	d := newDetail("agy", path)
@@ -245,33 +196,14 @@ func ParseAgySessionFile(path string) (Session, error) {
 		return d, err
 	}
 	defer db.Close()
-	var version int
-	if err = db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+	header, err := agyHeader(db, path)
+	if err != nil {
 		return d, err
 	}
-	if version != 1 {
-		return d, fmt.Errorf("unsupported agy SQLite user_version %d", version)
-	}
-	if err = db.QueryRow(`SELECT cascade_id FROM trajectory_meta LIMIT 1`).Scan(&d.ID); err != nil {
-		return d, fmt.Errorf("read agy trajectory identity: %w", err)
-	}
-	var meta []byte
-	err = db.QueryRow(`SELECT data FROM trajectory_metadata_blob WHERE id='main'`).Scan(&meta)
-	if err != nil && err != sql.ErrNoRows {
-		return d, err
-	}
-	if len(meta) > 0 {
-		p, e := agyDecode(meta)
-		if e != nil {
-			return d, e
-		}
-		d.Workspace = agyWorkspace(p.text(7))
-		d.StartedAt, e = agyTime(p.bytes(2))
-		if e != nil {
-			return d, e
-		}
-		d.IsSubagent = p.text(5) != "" || p.integer(17) > 0
-	}
+	d.ID = header.ID
+	d.Workspace = header.Workspace
+	d.StartedAt = header.StartedAt
+	d.IsSubagent = header.IsSubagent
 	rows, err := db.Query(`SELECT idx,step_payload,step_format FROM steps ORDER BY idx`)
 	if err != nil {
 		return d, err
