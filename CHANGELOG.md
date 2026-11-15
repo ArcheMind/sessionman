@@ -4,8 +4,19 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-11-15
+
 ### Changed
 
+- Read JSONL session metadata with up to four file workers for Codex, Claude,
+  and Pi, preserving discovery result and error order. On the same 1.3 GiB
+  session snapshot, nine alternating warm-start measurements per build reduced
+  median interactive home load time from 753.60 ms to 343.15 ms (54.47%).
+- Centralize native session discovery, filtering, sorting, and summary loading.
+  Load latest-user previews only for selected recent-session entries and read
+  a selected session directly from its source without rescanning the catalog.
+- Decode only the needed Codex metadata fields during discovery and share one
+  file handle for JSONL header and native timestamp reads.
 - Depend on `sessionman-protocol/go` v0.5.0 (renamed from `agentx-protocol`); thinking blocks may carry an optional `id`.
 
 ## [0.14.0] - 2026-11-13
