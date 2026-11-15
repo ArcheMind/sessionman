@@ -5,13 +5,23 @@
 [![Release](https://img.shields.io/github/v/release/ArcheMind/sessionMan?display_name=tag)](https://github.com/ArcheMind/sessionMan/releases)
 [![License](https://img.shields.io/github/license/ArcheMind/sessionMan)](LICENSE)
 
-**SessionMan (`sm`) maintains reverse-engineered session formats and invocation interfaces of different coding agents. This makes the previously impossible possible.**
+**SessionMan (`sm`) helps you keep working across coding agents.**
 
-Most common use cases:
+### **Load** your Claude Code session in Codex when your usage runs out, and keep working.
 
-1. **Load and continue any agent's session in any other agent** — pick up a Claude session in Codex, or vice versa.
-2. **Expose an agent to another agent as a sub-agent** — let Claude call Codex as a tool, or Pi call Claude.
-3. **Export a session and send it to a friend** — they restore it into their own agent and keep going.
+![Load a session in Codex](docs/assets/readme/load.png)
+
+### **Trim** a bloated session and continue seamlessly.
+
+![Trim a session before resuming](docs/assets/readme/trim.png)
+
+### **Find** an old session across all your agents and get back to work.
+
+![Browse sessions across agents and workspaces](docs/assets/readme/find.png)
+
+### **Ship** your session to someone else so they can pick up where you left off.
+
+![Export a session and resume the shared transcript](docs/assets/readme/ship.png)
 
 Minimal footprint, near-zero dependencies — easy to integrate.
 
