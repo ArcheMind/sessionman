@@ -39,6 +39,7 @@ type App struct {
 	Color      bool
 	termWidth  int
 	termHeight int
+	debug      bool
 }
 
 type OutputFormat string
@@ -56,6 +57,7 @@ func New(debug bool, stdin io.Reader, stdout, stderr io.Writer) App {
 		Runner:   runtime.ExecRunner{Debug: debug, Log: stderr},
 		Stdin:    stdin, Stdout: stdout, Stderr: stderr,
 		Color: colorEnabled(stdout),
+		debug: debug,
 	}
 	app.Skills = skills.New(app.Runner)
 	app.Hooks = hooks.New()
@@ -105,6 +107,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		}
 		fmt.Fprintf(a.Stdout, "sessionman %s\n", Version)
 		return nil
+	case "update":
+		return a.update(ctx, args[1:])
 	case "status":
 		return a.overview(ctx, args[1:])
 	case "agent":
@@ -1063,6 +1067,7 @@ Usage:
   sm agent exec <agy|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
   sm --json session continue <agy|claude|codex|pi> [--stream (claude|codex|pi)] [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
 
+  sm update
   sm version
 
 Examples:

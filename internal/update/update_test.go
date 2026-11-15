@@ -105,6 +105,81 @@ func TestCheckOwnEndpointRedirectAndCache(t *testing.T) {
 	}
 }
 
+func TestCheckNowBypassesCacheAndRetriesFailures(t *testing.T) {
+	s := testService(t)
+	if err := os.WriteFile(s.cachePath, []byte("broken"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			http.Error(w, "original error", http.StatusServiceUnavailable)
+			return
+		}
+		json.NewEncoder(w).Encode(testRelease(s, "https://example.test"))
+	}))
+	defer server.Close()
+	s.endpoint = server.URL
+	if _, err := s.CheckNow(context.Background()); err == nil {
+		t.Fatal("HTTP failure accepted")
+	}
+	for i := 0; i < 2; i++ {
+		release, err := s.CheckNow(context.Background())
+		if err != nil || release == nil || release.Tag != "v1.3.0" {
+			t.Fatalf("check = %#v, %v", release, err)
+		}
+	}
+	if calls != 3 {
+		t.Fatalf("explicit checks reused cache: %d requests", calls)
+	}
+	data, err := os.ReadFile(s.cachePath)
+	if err != nil || string(data) != "broken" {
+		t.Fatalf("explicit check changed startup cache: %q, %v", data, err)
+	}
+	s.cachePath = ""
+	if release, err := s.CheckNow(context.Background()); err != nil || release == nil {
+		t.Fatalf("explicit check requires cache: %#v, %v", release, err)
+	}
+}
+
+func TestCheckNowReleaseAndVersionErrors(t *testing.T) {
+	for _, kind := range []string{"current", "older", "missing archive", "missing checksum", "draft", "prerelease", "dev", "unsupported platform"} {
+		t.Run(kind, func(t *testing.T) {
+			s := testService(t)
+			release := testRelease(s, "https://example.test")
+			wantErr := true
+			switch kind {
+			case "current":
+				release.Tag, wantErr = "v1.2.3", false
+			case "older":
+				release.Tag, wantErr = "v1.2.2", false
+			case "missing archive":
+				release.Assets = release.Assets[1:]
+			case "missing checksum":
+				release.Assets = release.Assets[:1]
+			case "draft":
+				release.Draft = true
+			case "prerelease":
+				release.Prerelease = true
+			case "dev":
+				s.version = "dev"
+			case "unsupported platform":
+				s.goarch = "386"
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(release)
+			}))
+			defer server.Close()
+			s.endpoint = server.URL
+			got, err := s.CheckNow(context.Background())
+			if got != nil || (err != nil) != wantErr {
+				t.Fatalf("check = %#v, %v", got, err)
+			}
+		})
+	}
+}
+
 func TestReleaseMustBePublishedForCurrentPlatform(t *testing.T) {
 	s := testService(t)
 	for _, kind := range []string{"draft", "prerelease", "missing archive", "missing checksum", "tag only", "older"} {

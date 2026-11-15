@@ -95,6 +95,37 @@ func (s *Service) Check(ctx context.Context) (*Release, error) {
 	if !claimed {
 		return s.available(saved.Release), nil
 	}
+	release, err := s.fetchRelease(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Only the claim owner writes a result; atomic replacement keeps readers independent.
+	saved.Release = release
+	saved.CheckedAt = s.now()
+	if err := s.writeCache(saved); err != nil {
+		return nil, err
+	}
+	return s.available(release), nil
+}
+
+func (s *Service) CheckNow(ctx context.Context) (*Release, error) {
+	if _, ok := versionParts(s.version); !ok {
+		return nil, fmt.Errorf("cannot update non-stable version %q", s.version)
+	}
+	if _, err := archiveName(s.goos, s.goarch); err != nil {
+		return nil, err
+	}
+	release, err := s.fetchRelease(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if newer(release.Tag, s.version) && s.available(release) == nil {
+		return nil, fmt.Errorf("release %s is missing the archive or checksums for %s/%s", release.Tag, s.goos, s.goarch)
+	}
+	return s.available(release), nil
+}
+
+func (s *Service) fetchRelease(ctx context.Context) (*Release, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	body, err := s.get(ctx, s.endpoint, 2<<20)
@@ -108,13 +139,7 @@ func (s *Service) Check(ctx context.Context) (*Release, error) {
 	if _, ok := versionParts(release.Tag); !ok || release.Draft || release.Prerelease {
 		return nil, fmt.Errorf("update endpoint did not return a stable release")
 	}
-	// Only the claim owner writes a result; atomic replacement keeps readers independent.
-	saved.Release = &release
-	saved.CheckedAt = s.now()
-	if err := s.writeCache(saved); err != nil {
-		return nil, err
-	}
-	return s.available(&release), nil
+	return &release, nil
 }
 
 func (s *Service) available(release *Release) *Release {

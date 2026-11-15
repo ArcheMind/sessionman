@@ -26,7 +26,15 @@ SM_VERSION=0.1.0 \
 
 The installer accepts a version with or without the `v` prefix.
 
-## Startup updates
+## Updates
+
+```bash
+sm update
+```
+
+Checks the latest stable release immediately, bypassing the daily cache, and installs a newer version without a confirmation prompt. If the installed version is already current or newer, it reports that no update is needed. Lookup and installation errors are reported and exit with a failure status. This command works without a terminal and ignores `SM_NO_UPDATE_CHECK`. Development and prerelease builds cannot self-update through this command.
+
+### Startup updates
 
 Only bare `sm` with both stdin and stdout attached to a terminal checks for updates. The check starts at `https://sessionman.dev/releases/latest`, follows redirects, and has a two-second total network deadline. Network failures do not prevent the home screen from opening. Attempts are cached for 24 hours under the operating system's user cache directory in `sessionman/update-check.json`.
 
@@ -34,7 +42,7 @@ When a newer stable release includes an archive for the current OS and architect
 
 macOS and Linux replace the executable in its existing directory. Windows starts a temporary helper that waits for the original process to exit, replaces the executable, and then exits. Symlink installations update the resolved executable. The shell installer is not used for self-updates.
 
-Set `SM_NO_UPDATE_CHECK=1` to disable both checking and prompting, including cached prompts. For example, use `SM_NO_UPDATE_CHECK=1 sm` on macOS/Linux, or `$env:SM_NO_UPDATE_CHECK='1'; sm` in PowerShell. Agent commands, resume commands, MCP, all other subcommands, and invocations with any arguments skip the check. Development and prerelease version strings skip it as well.
+Set `SM_NO_UPDATE_CHECK=1` to disable both startup checking and prompting, including cached prompts. For example, use `SM_NO_UPDATE_CHECK=1 sm` on macOS/Linux, or `$env:SM_NO_UPDATE_CHECK='1'; sm` in PowerShell. Invocations with any arguments skip the startup check; only `sm update` explicitly checks for updates. Development and prerelease version strings skip startup checking as well.
 
 `SM_LOG=debug` records the request URL, final response headers, raw response bytes as base64, and original errors. The lookup endpoint currently redirects to GitHub; until the server changes that response, lookup and artifact downloads still require GitHub access.
 

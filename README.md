@@ -172,7 +172,7 @@ The Go module retains the original `agentx` path; the installed executable is `s
 
 Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https://github.com/ArcheMind/sessionMan/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
 
-Interactive bare `sm` checks for a stable update at most once a day and asks before installing it. A successful update exits without starting a session. Set `SM_NO_UPDATE_CHECK=1` to disable the check and prompt. Agent commands, MCP, and non-interactive invocations never check for updates.
+Run `sm update` to immediately check for and install the latest stable release, bypassing the daily cache. Interactive bare `sm` checks for a stable update at most once a day and asks before installing it. A successful update exits without starting a session. Set `SM_NO_UPDATE_CHECK=1` to disable the startup check and prompt. Agent commands, MCP, and other non-interactive invocations never check for updates.
 
 ## Supported agents
 
@@ -210,6 +210,7 @@ sm [--json|--yaml] hook list
 sm [--json|--yaml] mcp <list|show|serve> [args...]
 sm [--json|--yaml] preset <list|show> [args...]
 
+sm update
 sm version
 ```
 

@@ -23,6 +23,10 @@ func (f *fakeStartupUpdater) Check(context.Context) (*update.Release, error) {
 	return f.release, f.checkErr
 }
 
+func (f *fakeStartupUpdater) CheckNow(context.Context) (*update.Release, error) {
+	return f.release, f.checkErr
+}
+
 func (f *fakeStartupUpdater) Install(context.Context, update.Release, io.Writer, io.Writer) (bool, error) {
 	f.installRuns++
 	return f.handedOff, f.installErr
@@ -86,6 +90,56 @@ func TestStartupUpdateSkipsNonTerminalAndOptOut(t *testing.T) {
 		stop, err := a.CheckStartupUpdate(context.Background(), true)
 		if stop || err != nil || output.Len() != 0 || logs.Len() != 0 {
 			t.Fatalf("disabled=%q stop=%v error=%v output=%s logs=%s", disabled, stop, err, &output, &logs)
+		}
+	}
+}
+
+func TestManualUpdateWithoutTerminalOrConfirmation(t *testing.T) {
+	t.Setenv("SM_NO_UPDATE_CHECK", "1")
+	for _, test := range []struct {
+		name        string
+		release     *update.Release
+		checkErr    error
+		installErr  error
+		handedOff   bool
+		wantInstall int
+		wantOutput  string
+	}{
+		{name: "current", wantOutput: "is up to date"},
+		{name: "new release", release: &update.Release{Tag: "v99.0.0"}, wantInstall: 1, wantOutput: "Updated SessionMan to v99.0.0"},
+		{name: "check failure", checkErr: errors.New("original network error")},
+		{name: "install failure", release: &update.Release{Tag: "v99.0.0"}, installErr: errors.New("permission denied"), wantInstall: 1},
+		{name: "Windows helper", release: &update.Release{Tag: "v99.0.0"}, handedOff: true, wantInstall: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			a := App{Stdin: strings.NewReader(""), Stdout: &output, Stderr: io.Discard}
+			service := &fakeStartupUpdater{release: test.release, checkErr: test.checkErr, installErr: test.installErr, handedOff: test.handedOff}
+			err := a.runUpdate(context.Background(), service)
+			wantErr := test.checkErr
+			if wantErr == nil {
+				wantErr = test.installErr
+			}
+			if !errors.Is(err, wantErr) || service.installRuns != test.wantInstall {
+				t.Fatalf("error=%v installs=%d", err, service.installRuns)
+			}
+			if test.wantOutput != "" && !strings.Contains(output.String(), test.wantOutput) {
+				t.Fatalf("missing %q in %q", test.wantOutput, output.String())
+			}
+			if strings.Contains(output.String(), "Update now?") || ((wantErr != nil || test.handedOff) && strings.Contains(output.String(), "Updated SessionMan")) {
+				t.Fatalf("unexpected prompt or success message: %s", output.String())
+			}
+		})
+	}
+}
+
+func TestManualUpdateRejectsArgumentsAndStructuredOutput(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, args := range [][]string{{"update", "extra"}, {"--json", "update"}, {"--yaml", "update"}} {
+		var output bytes.Buffer
+		a := New(false, strings.NewReader(""), &output, io.Discard)
+		if err := a.Run(context.Background(), args); err == nil || output.Len() != 0 {
+			t.Fatalf("args=%v error=%v output=%s", args, err, &output)
 		}
 	}
 }
