@@ -112,6 +112,7 @@ func summarizeSessions(items []Summary, includeCount bool, limit int, failures *
 				continue
 			}
 			summary = item
+			summary.TurnCount = -1
 		}
 		counts[item.Agent]++
 		result = append(result, summary)

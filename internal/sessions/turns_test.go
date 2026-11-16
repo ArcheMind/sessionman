@@ -34,9 +34,13 @@ func TestTurnCountExcludesToolsAndAssistantMessages(t *testing.T) {
 		t.Run(test.agent, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "session.jsonl")
 			writeFixture(t, path, strings.Join(test.lines, "\n"))
-			count, err := countSessionTurns(Summary{Agent: test.agent, Source: path})
-			if err != nil || count != 2 {
-				t.Fatalf("turns = %d, error = %v; want 2", count, err)
+			item, err := summarizeJSONL(Summary{Agent: test.agent, Source: path}, false)
+			if err != nil || item.TurnCount != 2 || item.FirstUserMessage != "first request" || item.LatestUserMessage != "latest request" {
+				t.Fatalf("summary = %+v, error = %v; want two turns with first/latest request", item, err)
+			}
+			again, err := summarizeJSONL(item, false)
+			if err != nil || again.TurnCount != 2 || again.FirstUserMessage != item.FirstUserMessage || again.LatestUserMessage != item.LatestUserMessage {
+				t.Fatalf("repeated summary accumulated counts or changed previews: %+v, %v", again, err)
 			}
 		})
 	}

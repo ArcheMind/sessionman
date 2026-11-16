@@ -54,16 +54,23 @@ func summarizeOpenCode(item Summary, includeCount bool) (Summary, error) {
 	if !ok {
 		return item, fmt.Errorf("parse opencode session %s: not a recognizable session", item.Source)
 	}
-	if err := openCodeUserPreview(&item, messages, true); err != nil {
-		return item, err
-	}
+	item.TurnCount = 0
+	item.FirstUserMessage, item.LatestUserMessage = "", ""
 	if includeCount {
 		item.MessageCount = 0
-		for _, message := range messages {
-			blocks, tools, _, err := openCodePartSummary(item, message)
-			if err != nil {
-				return item, err
-			}
+	}
+	for _, message := range messages {
+		if !includeCount && message.role != "user" {
+			continue
+		}
+		blocks, tools, text, err := openCodePartSummary(item, message)
+		if err != nil {
+			return item, err
+		}
+		if message.role == "user" {
+			item.addUserMessage(text)
+		}
+		if includeCount {
 			if blocks {
 				item.MessageCount++
 			}

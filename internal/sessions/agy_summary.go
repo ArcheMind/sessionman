@@ -84,14 +84,6 @@ func agyTitles(path, id string) (map[string]string, error) {
 }
 
 func summarizeAgy(item Summary, _ bool) (Summary, error) {
-	db, err := agyOpen(item.Source, true)
-	if err != nil {
-		return item, err
-	}
-	defer db.Close()
-	if err := agyLatestUser(db, &item); err != nil {
-		return item, err
-	}
 	return item, nil
 }
 
@@ -150,7 +142,8 @@ func agyTimeline(db *sql.DB, item *Summary) error {
 		return err
 	}
 	defer rows.Close()
-	item.MessageCount = 0
+	item.MessageCount, item.TurnCount = 0, 0
+	item.FirstUserMessage, item.LatestUserMessage = "", ""
 	for rows.Next() {
 		var idx, format int
 		var raw []byte
@@ -184,7 +177,7 @@ func agyTimeline(db *sql.DB, item *Summary) error {
 			return fmt.Errorf("agy step %d: %w", idx, err)
 		}
 		item.MessageCount++
-		if kind == 14 && item.FirstUserMessage == "" {
+		if kind == 14 {
 			user, err := agyDecode(p.bytes(19))
 			if err != nil {
 				return fmt.Errorf("agy step %d user: %w", idx, err)
@@ -211,40 +204,4 @@ func agySummaryTimestamp(item *Summary, meta agyProto) error {
 		item.UpdatedAt = timestamp
 	}
 	return nil
-}
-
-func agyLatestUser(db *sql.DB, item *Summary) error {
-	rows, err := db.Query(`SELECT idx,step_payload,step_format FROM steps ORDER BY idx DESC`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var idx, format int
-		var raw []byte
-		if err := rows.Scan(&idx, &raw, &format); err != nil {
-			return err
-		}
-		if format != 0 {
-			return fmt.Errorf("unsupported agy step format %d", format)
-		}
-		p, err := agyDecode(raw)
-		if err != nil {
-			return fmt.Errorf("agy step %d: %w", idx, err)
-		}
-		if p.integer(1) != 14 {
-			continue
-		}
-		user, err := agyDecode(p.bytes(19))
-		if err != nil {
-			return fmt.Errorf("agy step %d user: %w", idx, err)
-		}
-		text := user.text(2)
-		if !isSessionTitle(text) {
-			continue
-		}
-		item.LatestUserMessage = oneLine(text, 60)
-		break
-	}
-	return rows.Err()
 }
