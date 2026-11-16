@@ -126,16 +126,25 @@ func TestAgySignedThinking(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(actual.Messages[0].Content, d.Messages[0].Content) {
-				t.Fatalf("signature changed: %+v", actual.Messages)
+			want := []ContentBlock{{Type: "thinking", Text: "readable thought"}}
+			if len(actual.Messages) != 1 || !reflect.DeepEqual(actual.Messages[0].Content, want) {
+				t.Fatalf("unsigned thinking = %+v, want %#v", actual.Messages, want)
+			}
+			if d.Messages[0].Content[0].Signature != signature {
+				t.Fatal("source signature was mutated")
 			}
 		})
 	}
-	d := agyTestSession()
-	d.Messages = []Message{{Role: "assistant", Content: []ContentBlock{{Type: "thinking", Signature: "opaque"}}}}
-	steps, err := SerializeAgy(d)
-	if err != nil || len(steps) != 0 {
-		t.Fatalf("foreign opaque survived: %d %v", len(steps), err)
+	for _, provider := range []string{"agy", "claude", "codex", "pi", "unknown", ""} {
+		t.Run(provider+"/opaque", func(t *testing.T) {
+			d := agyTestSession()
+			d.Provider = provider
+			d.Messages = []Message{{Role: "assistant", Content: []ContentBlock{{Type: "thinking", Signature: "opaque"}}}, {Role: "assistant"}}
+			steps, err := SerializeAgy(d)
+			if err != nil || len(steps) != 0 {
+				t.Fatalf("opaque or empty assistant survived: %d %v", len(steps), err)
+			}
+		})
 	}
 }
 func TestAgyWALAndPartialMetadata(t *testing.T) {
@@ -372,7 +381,7 @@ func TestAgyWindowsFileURIs(t *testing.T) {
 	}
 }
 
-func TestAgyNativeSignedMessageBoundaries(t *testing.T) {
+func TestAgyNativeThinkingDowngradesToSeparateTaggedStep(t *testing.T) {
 	source, err := ParseAgySessionFile("testdata/agy/native-v1.5.8.db")
 	if err != nil {
 		t.Fatal(err)
@@ -385,8 +394,32 @@ func TestAgyNativeSignedMessageBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(output.Messages, source.Messages) {
-		t.Fatalf("native message boundaries changed: got %+v want %+v", output.Messages, source.Messages)
+	assertMessageRoles(t, output.Messages, []string{"user", "assistant", "assistant", "tool"})
+	wantThought := []ContentBlock{{Type: "thinking", Text: "Native readable thought"}}
+	if !reflect.DeepEqual(output.Messages[1].Content, wantThought) {
+		t.Fatalf("downgraded thinking = %#v, want %#v", output.Messages[1].Content, wantThought)
+	}
+	if !reflect.DeepEqual(output.Messages[0].Content, source.Messages[0].Content) ||
+		!reflect.DeepEqual(output.Messages[2].Content, source.Messages[1].Content[1:]) {
+		t.Fatalf("non-thinking content changed: %+v", output.Messages)
+	}
+	for i, message := range output.Messages {
+		if i > 0 && message.ParentID != output.Messages[i-1].ID {
+			t.Fatalf("message[%d] parent = %q", i, message.ParentID)
+		}
+		if i == 1 || i == 2 {
+			if message.Timestamp != source.Messages[1].Timestamp {
+				t.Fatalf("split assistant timestamp changed: %+v", message)
+			}
+		}
+	}
+	gotTool, wantTool := output.Messages[3], source.Messages[2]
+	gotTool.ID, gotTool.ParentID = wantTool.ID, wantTool.ParentID
+	if !reflect.DeepEqual(gotTool, wantTool) {
+		t.Fatalf("tool result changed: got %+v want %+v", gotTool, wantTool)
+	}
+	if source.Messages[1].Content[0].Signature != "agy:bytes:AP9C" {
+		t.Fatal("native source signature was mutated")
 	}
 }
 
@@ -407,7 +440,7 @@ func TestAgyRawOnlyThinkingRemainsReadable(t *testing.T) {
 			if len(message.Content) != 2 || message.Content[0].Type != "thinking" || message.Content[0].Text != text || message.Content[0].Signature != signature {
 				t.Fatalf("raw thinking lost: %+v", message.Content)
 			}
-			foreign := replayMessages(Session{Provider: "agy", Messages: []Message{message}}, "claude")
+			foreign := replayMessages(Session{Provider: "agy", Messages: []Message{message}})
 			if len(foreign) != 1 || foreign[0].Content[0].Text != text || foreign[0].Content[0].Signature != "" {
 				t.Fatalf("cross-agent raw thinking lost: %+v", foreign)
 			}

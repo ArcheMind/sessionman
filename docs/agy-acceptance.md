@@ -5,6 +5,14 @@ repeatable checks from actual native observations; a listed command is not a
 claim that it passed. Final evidence will record the exact command, result,
 and retained evidence directory.
 
+Current thinking output policy is defined in
+[Thinking input and output policy](unified-transcript-format.md#thinking-input-and-output-policy).
+All target agents, including same-agent output, omit thinking signatures and
+ciphertext, emit readable thoughts as `<think>` text, and drop opaque-only
+thoughts. Native input parsing and unified transcripts retain signatures.
+Historical signature-preservation results below describe earlier behavior;
+they are retained as evidence and do not define the current output contract.
+
 ## Acceptance matrix
 
 | Surface | Required observation | Repeatable check |

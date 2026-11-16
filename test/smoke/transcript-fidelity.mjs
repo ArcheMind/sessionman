@@ -22,7 +22,7 @@ function axBytes(args,input){
   const prefix=join(home,`native-call-${log.length+1}`)
   writeFileSync(prefix+'-input.bin',Buffer.from(input??''));writeFileSync(prefix+'-stdout.bin',result.stdout??Buffer.alloc(0));writeFileSync(prefix+'-stderr.txt',result.stderr??Buffer.alloc(0))
   log.push({argv:['ax',...args],status:result.status,evidence:prefix,error:result.error?.message})
-  if(result.error||result.status!==0)fail('agy',`ax ${args.join(' ')} failed: ${result.error?.message??result.status}`)
+  if(result.error||result.status!==0)fail('convert',`ax ${args.join(' ')} failed: ${result.error?.message??result.status}`)
   return result.stdout
 }
 function fail(provider,message){writeFileSync(join(home,'cli-log.json'),JSON.stringify(log,null,2));console.error(JSON.stringify({passed:false,provider,failure:message,home,cli:log},null,2));process.exit(1)}
@@ -30,6 +30,29 @@ const check=(provider,item,value,detail='')=>{if(!value)fail(provider,`${item}${
 const same=(provider,item,actual,expected)=>check(provider,item,isDeepStrictEqual(actual,expected),`expected ${JSON.stringify(expected)} got ${JSON.stringify(actual)}`)
 const jsonl=async path=>(await readFile(path,'utf8')).split('\n').filter(Boolean).map(line=>JSON.parse(line))
 const pick=(records,provider,item,predicate)=>{const found=records.filter(predicate);check(provider,item,found.length===1,`expected exactly one record, found ${found.length}`);return found[0]}
+
+const thinkText=text=>`<think>\n${text}\n</think>`
+const thinkingBlocks=transcript=>transcript.messages.flatMap(m=>m.content??[]).filter(b=>b.type==='thinking')
+function checkUnsignedNative(provider,records){
+  const visit=value=>{
+    if(!value||typeof value!=='object')return
+    check(provider,'native output has no typed thinking or ciphertext blocks',!['thinking','reasoning','redacted_thinking'].includes(value.type),JSON.stringify(value))
+    for(const [key,child] of Object.entries(value)){
+      check(provider,'native output has no thinking signature fields',!['signature','thinkingSignature','encrypted_content'].includes(key),key)
+      visit(child)
+    }
+  }
+  visit(records)
+}
+function unsignedMessages(messages){
+  return structuredClone(messages).map(m=>{
+    if(m.content)m.content=m.content.flatMap(b=>{
+      if(b.type!=='thinking')return [b]
+      return b.text?[{type:'thinking',text:b.text}]:[]
+    })
+    return m
+  }).filter(m=>m.role!=='assistant'||m.content?.length)
+}
 
 let validate=null,schema='skipped: no sessionman-protocol module dir'
 if(protocolDir){
@@ -44,7 +67,8 @@ if(protocolDir){
 
 async function roundTrip(provider,id,nativePath,locate){
   await mkdir(dirname(join(home,nativePath)),{recursive:true})
-  await copyFile(join(fixtures,provider+'.jsonl'),join(home,nativePath))
+  const fixturePath=join(fixtures,provider+'.jsonl'),original=await readFile(fixturePath)
+  await copyFile(fixturePath,join(home,nativePath))
   const exported=ax('--json','session','export',id,'--source',provider)
   const transcript=JSON.parse(exported)
   if(validate&&!validate(transcript))fail(provider,'export violates unified-transcript schema: '+JSON.stringify(validate.errors))
@@ -55,7 +79,11 @@ async function roundTrip(provider,id,nativePath,locate){
   check(provider,'import agent',imported.agent===provider,JSON.stringify(imported))
   const written=await locate(imported.session)
   check(provider,'import landed inside isolated HOME',written?.startsWith(home+'/'),String(written))
-  return {source:await jsonl(join(home,nativePath)),transcript,output:await jsonl(written),written}
+  same(provider,'original fixture read-only',await readFile(fixturePath),original)
+  same(provider,'native input read-only',await readFile(join(home,nativePath)),original)
+  const output=await jsonl(written)
+  checkUnsignedNative(provider,output)
+  return {source:await jsonl(join(home,nativePath)),transcript,output,written}
 }
 
 async function findFile(root,suffix){
@@ -73,8 +101,8 @@ const ws='/tmp/agentx-fidelity-ws'
   same(P,'export roles (attachment dropped, system kept)',transcript.messages.map(m=>m.role),['user','assistant','tool','assistant','tool','user','system','assistant'])
   const blocks=records=>records.filter(r=>r.type==='assistant').flatMap(r=>r.message.content)
   const results_=records=>records.filter(r=>r.type==='user'&&Array.isArray(r.message.content)).flatMap(r=>r.message.content).filter(b=>b.type==='tool_result')
-  const srcThinking=blocks(source).find(b=>b.type==='thinking'),outThinking=blocks(output).filter(b=>b.type==='thinking')
-  same(P,'thinking block with signature',outThinking,[srcThinking])
+  const srcThinking=blocks(source).find(b=>b.type==='thinking')
+  same(P,'native input retains readable thinking and signature',thinkingBlocks(transcript),[{type:'thinking',text:srcThinking.thinking,signature:srcThinking.signature}])
   same(P,'tool_use blocks',blocks(output).filter(b=>b.type==='tool_use'),blocks(source).filter(b=>b.type==='tool_use'))
   const [srcStructured,srcBare]=results_(source),[outStructured,outBare]=results_(output)
   check(P,'tool_result structured content stays an array',Array.isArray(outStructured?.content),JSON.stringify(outStructured))
@@ -89,7 +117,7 @@ const ws='/tmp/agentx-fidelity-ws'
   const srcSystem=pick(source,P,'source system record',r=>r.type==='system'),outSystem=pick(output,P,'system informational record',r=>r.type==='system')
   same(P,'system record subtype and text',{subtype:outSystem.subtype,content:outSystem.content},{subtype:'informational',content:srcSystem.content})
   check(P,'attachment dropped by design',!output.some(r=>r.type==='attachment'))
-  same(P,'assistant final text',blocks(output).filter(b=>b.type==='text'),blocks(source).filter(b=>b.type==='text'))
+  same(P,'readable thinking becomes think text and final text stays intact',blocks(output).filter(b=>b.type==='text'),blocks(source).flatMap(b=>b.type==='thinking'?[{type:'text',text:thinkText(b.thinking)}]:b.type==='text'?[b]:[]))
   results[P]={written,records:output.length}
 }
 
@@ -102,9 +130,17 @@ const ws='/tmp/agentx-fidelity-ws'
   const one=(list,item,predicate)=>pick(list.map(payload=>({payload})),P,item,r=>predicate(r.payload)).payload
   const srcDev=one(src,'source developer message',p=>p.type==='message'&&p.role==='developer'),outDev=one(out,'developer message',p=>p.type==='message'&&p.role==='developer')
   same(P,'developer message content',outDev.content,srcDev.content)
-  const srcReasoning=one(src,'source reasoning',p=>p.type==='reasoning'),outReasoning=one(out,'reasoning',p=>p.type==='reasoning')
-  same(P,'reasoning empty summary',outReasoning.summary,[])
-  check(P,'reasoning encrypted_content byte-exact',outReasoning.encrypted_content===srcReasoning.encrypted_content,JSON.stringify(outReasoning))
+  const srcReasoning=one(src,'source reasoning',p=>p.type==='reasoning')
+  same(P,'native input retains opaque reasoning and ID',thinkingBlocks(transcript),[{type:'thinking',signature:srcReasoning.encrypted_content,id:srcReasoning.id}])
+  check(P,'pure ciphertext reasoning is dropped',!out.some(p=>p.type==='reasoning')&&!JSON.stringify(output).includes(srcReasoning.encrypted_content))
+  // Exercise readable signed native input without changing the opaque-only fixture.
+  const readableSource=structuredClone(source)
+  readableSource.find(r=>r.payload?.type==='reasoning').payload.summary=[{type:'summary_text',text:'Readable Codex fidelity thought.'}]
+  const readableUnified=JSON.parse(axBytes(['--json','convert','from',P],Buffer.from(readableSource.map(r=>JSON.stringify(r)).join('\n')+'\n')).toString())
+  same(P,'native input retains readable summary, ciphertext and ID',thinkingBlocks(readableUnified),[{type:'thinking',text:'Readable Codex fidelity thought.',signature:srcReasoning.encrypted_content,id:srcReasoning.id}])
+  const readableOutput=axBytes(['convert','to',P],Buffer.from(JSON.stringify(readableUnified))).toString().split('\n').filter(Boolean).map(line=>JSON.parse(line))
+  checkUnsignedNative(P,readableOutput)
+  same(P,'readable signed summary becomes think text',items(readableOutput).filter(p=>p.type==='message'&&p.role==='assistant').flatMap(p=>p.content),[{type:'output_text',text:thinkText('Readable Codex fidelity thought.')},...out.filter(p=>p.type==='message'&&p.role==='assistant').flatMap(p=>p.content)])
   const srcFn=one(src,'source function_call',p=>p.type==='function_call'),outFn=one(out,'function_call',p=>p.type==='function_call')
   same(P,'function_call name/call_id',{name:outFn.name,call_id:outFn.call_id},{name:srcFn.name,call_id:srcFn.call_id})
   same(P,'function_call arguments (JSON-equal)',JSON.parse(outFn.arguments),JSON.parse(srcFn.arguments))
@@ -140,7 +176,8 @@ const ws='/tmp/agentx-fidelity-ws'
   const calls=records=>assistant(records).flatMap(r=>r.message.content).filter(b=>b.type==='toolCall')
   check(P,'toolCall arguments stay objects',calls(out).length===2&&calls(out).every(b=>b.arguments!==null&&typeof b.arguments==='object'&&!Array.isArray(b.arguments)),JSON.stringify(calls(out)))
   same(P,'toolCall blocks',calls(out),calls(src))
-  same(P,'assistant thinking and text blocks',assistant(out).map(r=>r.message.content.filter(b=>b.type!=='toolCall')),assistant(src).map(r=>r.message.content.filter(b=>b.type!=='toolCall')))
+  same(P,'native input retains readable thinking and signature',thinkingBlocks(transcript),assistant(src).flatMap(r=>r.message.content).filter(b=>b.type==='thinking').map(b=>({type:'thinking',text:b.thinking,signature:b.thinkingSignature})))
+  same(P,'readable thinking becomes think text and other text stays intact',assistant(out).map(r=>r.message.content.filter(b=>b.type!=='toolCall')),assistant(src).map(r=>r.message.content.flatMap(b=>b.type==='thinking'?[{type:'text',text:thinkText(b.thinking)}]:b.type!=='toolCall'?[b]:[])))
   const toolResults=records=>records.filter(r=>r.message.role==='toolResult').map(r=>({toolCallId:r.message.toolCallId,toolName:r.message.toolName,content:r.message.content,isError:r.message.isError}))
   same(P,'toolResult content arrays and isError',toolResults(out),toolResults(src))
   check(P,'toolResult isError:true present',toolResults(out).some(r=>r.isError===true))
@@ -154,7 +191,7 @@ const ws='/tmp/agentx-fidelity-ws'
   const fixture=join(dirname(fileURLToPath(import.meta.url)),'../../internal/sessions/testdata/agy/native-fidelity-v1.5.8.db')
   const sourcePath=join(home,'.gemini','antigravity-cli','conversations',id+'.db')
   await mkdir(dirname(sourcePath),{recursive:true})
-  const source=await readFile(fixture),placeholder=Buffer.from('file:///'+'X'.repeat(232))
+  const original=await readFile(fixture),source=Buffer.from(original),placeholder=Buffer.from('file:///'+'X'.repeat(232))
   const uriPrefix=pathToFileURL(join(home,'agy-offload-')).href
   check(P,'offload fixture URI fits fixed-width field',uriPrefix.length<240)
   const offloadURI=uriPrefix+'x'.repeat(240-uriPrefix.length)
@@ -189,14 +226,20 @@ const ws='/tmp/agentx-fidelity-ws'
   same(P,'SQLite bytes input semantics',{...convertedFrom,source:undefined},{...transcript,source:undefined})
   const nativeBytes=axBytes(['convert','to',P],Buffer.from(exported))
   check(P,'convert emits SQLite bytes',nativeBytes.subarray(0,16).equals(Buffer.from('SQLite format 3\0')))
-  check(P,'native output retains raw signature bytes',nativeBytes.includes(signatureBytes))
-  check(P,'native output retains deprecated signature string',nativeBytes.includes(Buffer.from('native-string-signature+/==')))
+  const signatures=[signatureBytes,Buffer.from('native-string-signature+/=='),Buffer.from('raw-only-string-signature')]
+  const checkNative=bytes=>{
+    for(const signature of signatures)check(P,'native output drops signature bytes and strings',!bytes.includes(signature),signature.toString('base64'))
+    for(const b of thinking)check(P,'native output retains readable thought as think text',bytes.includes(Buffer.from(thinkText(b.text))),b.text)
+  }
+  checkNative(nativeBytes)
   check(P,'native output removes source URI reference',!nativeBytes.includes(Buffer.from(offloadURI)))
   const file=join(home,'agy-transcript.json');await writeFile(file,exported)
   const imported=JSON.parse(ax('--json','session','import',P,file))
   check(P,'fresh native session identity',imported.agent===P&&imported.session!==id&&!imported.session.includes('/'),JSON.stringify(imported))
   const written=join(dirname(sourcePath),imported.session+'.db')
   const importedBytes=await readFile(written)
+  checkNative(importedBytes)
+  same(P,'original database fixture read-only',await readFile(fixture),original)
   check(P,'import writes native SQLite',importedBytes.subarray(0,16).equals(Buffer.from('SQLite format 3\0')))
   check(P,'import has no external result dependency',!importedBytes.includes(Buffer.from(offloadURI)))
   check(P,'import has no source session identity dependency',!importedBytes.includes(Buffer.from(id)))
@@ -205,14 +248,19 @@ const ws='/tmp/agentx-fidelity-ws'
   await rm(sourcePath);await rm(offloadPath)
   const output=JSON.parse(ax('--json','session','export',imported.session,'--source',P))
   const projected=JSON.parse(axBytes(['--json','convert','from',P],nativeBytes).toString())
-  same(P,'same-agent message shapes, typed blocks, tool links, complete results and timestamps after source removal',output.messages,transcript.messages)
-  same(P,'native SQLite byte conversion preserves same-agent message semantics',projected.messages,transcript.messages)
+  // Tagged thoughts require separate native steps, so generated message IDs and boundaries can change.
+  const semantics=messages=>messages.flatMap(({id,parentId,...m})=>m.role==='assistant'&&m.content?.length?m.content.map(b=>({...m,content:[b]})):[m])
+  const expected=semantics(unsignedMessages(transcript.messages))
+  same(P,'ordered thoughts, text, images, tool links, complete results and timestamps after source removal',semantics(output.messages),expected)
+  same(P,'native SQLite byte conversion preserves ordered message semantics',semantics(projected.messages),expected)
   same(P,'session time bounds',[output.startedAt,output.updatedAt],[transcript.startedAt,transcript.updatedAt])
   same(P,'workspace roundtrip',output.workspace,transcript.workspace)
-  check(P,'native thinking stays typed, with signatures',output.messages.flatMap(m=>m.content??[]).filter(b=>b.type==='thinking').every(b=>b.signature&&!b.text.includes('<think>')))
+  const unsignedThinking=thinking.map(({text})=>({type:'thinking',text}))
+  same(P,'reparsed readable thinking has no signatures',thinkingBlocks(output),unsignedThinking)
+  same(P,'converted readable thinking has no signatures',thinkingBlocks(projected),unsignedThinking)
   same(P,'import ID survives source removal',output.id,imported.session)
-  results[P]={written,records:output.messages.length,nativeBytes:nativeBytes.length,sourceIndependent:true,rawSignatures:true,inlineImage:true,completeToolResult:true}
+  results[P]={written,records:output.messages.length,nativeBytes:nativeBytes.length,sourceIndependent:true,unsignedThinkText:true,inlineImage:true,completeToolResult:true}
 }
 
 await writeFile(join(home,'cli-log.json'),JSON.stringify(log,null,2))
-console.log(JSON.stringify({passed:true,test:'transcript round-trip fidelity: native fixture -> ax session export -> ax session import -> native file keeps fidelity-critical content',schema,home,results},null,2))
+console.log(JSON.stringify({passed:true,test:'transcript round-trip fidelity: native fixture -> ax session export -> ax session import -> native output drops thinking signatures and ciphertext while preserving readable thoughts, tools and images',schema,home,results},null,2))

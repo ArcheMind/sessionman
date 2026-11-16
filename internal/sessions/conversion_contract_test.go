@@ -30,7 +30,16 @@ func TestUnifiedTranscriptToNativeFormats(t *testing.T) {
 			}
 
 			got := parseNativeContract(t, test.agent, native)
-			assertSessionContract(t, got, test.unified)
+			want := test.unified
+			want.Messages = append([]Message(nil), want.Messages...)
+			if test.agent == "claude" || test.agent == "pi" {
+				want.Messages[1].Content = []ContentBlock{
+					{Type: "thinking", Text: "inspect"},
+					{Type: "text", Text: "checking"},
+					test.unified.Messages[1].Content[2],
+				}
+			}
+			assertSessionContract(t, got, want)
 		})
 	}
 }

@@ -59,7 +59,7 @@ function normalize(unified){
 }
 
 // ---------------------------------------------------------------------------------------------
-// degrade: the lawful loss of each destination, derived from the unified spec
+// degrade: agentx thinking output policy plus destination losses derived from the unified spec
 // (sessionman-protocol docs/unified-transcript-format.md, v0.2.0) and the native formats in docs/native-rollout-protocols/.
 // Written independently of the serializers; every rule cites its justification. "spec gap:" marks a rule the spec does not state.
 // ---------------------------------------------------------------------------------------------
@@ -69,12 +69,11 @@ const textProjection=result=>typeof result==='string'?result:Array.isArray(resul
 
 function degrade(dst,messages){
   let list=structuredClone(messages)
-  // Cross-agent signatures cannot be replayed. Only their readable text survives.
+  // Every target drops signatures and opaque-only thoughts, including same-agent output.
   for(const m of list)if(m.content)m.content=m.content.flatMap(b=>{
     if(b.type!=='thinking')return [b]
     if(!b.text)return []
-    delete b.signature
-    return [b]
+    return [{type:'thinking',text:b.text}]
   })
   list=list.filter(m=>m.role!=='assistant'||m.content?.length)
   // Pi now serializes and parses system messages (b945e49).
@@ -110,7 +109,7 @@ function degrade(dst,messages){
       const claudeShaped=typeof m.result==='string'||(Array.isArray(m.result)&&m.result.every(b=>b&&(b.type==='text'||b.type==='image')))
       if(!claudeShaped)m.result=textProjection(m.result)
     }
-    // Claude: spec Claude table reverses every row (image -> image, system -> system record, model/stop_reason, thinking signature), so nothing else is lost.
+    // Claude retains images, system records and model/stopReason after thinking projection.
     return m
   })
 }
@@ -144,7 +143,6 @@ function lintClaude(records,file,warnings){
   const userBlocks=blockOf({text:textBlock,image:imageBlock,tool_result:toolResultBlock})
   const assistantBlocks=blockOf({
     text:textBlock,
-    thinking:{required:{type:literal('thinking'),thinking:isStr},optional:{signature:isStr}},
     tool_use:{required:{type:literal('tool_use'),id:isStr,name:isStr,input:isObj}},
   })
   const uuids=new Set()
@@ -199,8 +197,6 @@ function lintCodex(records,file,warnings){
           if(p.role==='assistant'&&c.type!=='output_text')errors.push(`${where}: assistant content must be output_text, got ${c.type}`)
           if(p.role!=='assistant'&&c.type==='output_text')errors.push(`${where}: ${p.role} content must not be output_text`)
         }
-      }else if(p.type==='reasoning'){
-        shape(p,{required:{type:literal('reasoning'),summary:arrayOf(blockOf({summary_text:{required:{type:literal('summary_text'),text:isStr}}}))},optional:{id:isStr,encrypted_content:isStr}},where,errors)
       }else if(p.type==='function_call'||p.type==='custom_tool_call'){
         const argKey=p.type==='function_call'?'arguments':'input'
         shape(p,{required:{type:literal(p.type),name:isStr,[argKey]:isStr,call_id:isStr},optional:{id:isStr,status:isStr}},where,errors)
@@ -224,7 +220,6 @@ function lintPi(records,file,warnings){
   const userBlocks=blockOf({text:textBlock,image:{required:{type:literal('image'),data:isStr,mimeType:isStr}}})
   const assistantBlocks=blockOf({
     text:{required:{type:literal('text'),text:isStr},optional:{textSignature:isStr}},
-    thinking:{required:{type:literal('thinking'),thinking:isStr},optional:{thinkingSignature:isStr}},
     // The spec Pi table and the fixture use an arguments object; the PROTOCOL.md prose says "JSON string" (documentation inconsistency, object wins).
     toolCall:{required:{type:literal('toolCall'),id:isStr,name:isStr,arguments:isObj}},
   })
@@ -271,6 +266,7 @@ for(const [provider,spec] of Object.entries(providers)){
 
 async function runPair(src,dst){
   const detail={}
+  const sourcePath=join(home,providers[src].path(providers[src].id)),sourceBytes=await readFile(sourcePath)
   const u1Text=ax('--json','session','export',providers[src].id,'--source',src)
   const u1=JSON.parse(u1Text)
   const u1File=join(home,`${src}-to-${dst}-u1.json`)
@@ -291,8 +287,29 @@ async function runPair(src,dst){
   }
   if(!written?.startsWith(home+'/'))throw new Error('import did not land inside isolated HOME: '+written)
   const u2=JSON.parse(ax('--json','session','export',id,'--source',dst))
+  const nativeBytes=await readFile(written)
+  const nativeRecords=dst==='agy'?null:nativeBytes.toString('utf8').split('\n').filter(Boolean).map(line=>JSON.parse(line))
+  // Compare decoded assistant text blocks because Go escapes HTML characters in JSON.
+  const nativeTexts=dst==='agy'?[]:nativeRecords.flatMap(r=>{
+    if(dst==='codex')return r.type==='response_item'&&r.payload?.type==='message'&&r.payload.role==='assistant'?(r.payload.content??[]).filter(b=>b.type==='output_text').map(b=>b.text):[]
+    return r.message?.role==='assistant'?(r.message.content??[]).filter(b=>b.type==='text').map(b=>b.text):[]
+  })
+  const policyErrors=[]
+  for(const b of u1.messages.flatMap(m=>m.content??[]).filter(b=>b.type==='thinking')){
+    if(b.signature){
+      const secret=b.signature.startsWith('agy:bytes:')?Buffer.from(b.signature.slice('agy:bytes:'.length),'base64'):Buffer.from(b.signature)
+      if(secret.length&&nativeBytes.includes(secret))policyErrors.push('source thinking signature/ciphertext leaked into native output')
+    }
+    if(b.text){
+      const tagged=`<think>\n${b.text}\n</think>`
+      const projected=dst==='agy'?nativeBytes.includes(Buffer.from(tagged)):nativeTexts.includes(tagged)
+      if(!projected)policyErrors.push('readable thinking missing its native <think> text projection: '+b.text)
+    }
+  }
+  if(!(await readFile(sourcePath)).equals(sourceBytes))policyErrors.push('source native file was modified')
   const warnings=[]
-  detail.native={file:written,errors:dst==='agy'?((await readFile(written)).subarray(0,16).toString()==='SQLite format 3\0'?[]:['missing native SQLite header']):lint[dst](await jsonl(written),written,warnings),warnings}
+  detail.native={file:written,errors:dst==='agy'?(nativeBytes.subarray(0,16).toString()==='SQLite format 3\0'?[]:['missing native SQLite header']):lint[dst](nativeRecords,written,warnings),warnings}
+  detail.native.errors.push(...policyErrors)
   const n1=normalize(u1),n2=normalize(u2),expected=degrade(dst,n1)
   if(src==='agy'||dst==='agy'){
     const squash=messages=>messages.flatMap(m=>m.role==='assistant'&&m.content?.length?m.content.map(b=>({...m,content:[b]})):m)

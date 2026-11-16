@@ -111,11 +111,8 @@ type FileEntry struct {
 	Content map[string]any `json:"content"`
 }
 
-// Signatures only belong to their source agent; readable thinking crosses as text.
-func replayMessages(detail Session, target string) []Message {
-	if detail.Provider == target {
-		return detail.Messages
-	}
+// Native signature compatibility cannot be inferred from the session provider.
+func replayMessages(detail Session) []Message {
 	messages := make([]Message, 0, len(detail.Messages))
 	dropped := false
 	for _, message := range detail.Messages {
@@ -156,7 +153,7 @@ func SerializeClaude(detail Session) []map[string]any {
 			"isSidechain": false, "entrypoint": "cli",
 		}
 	}
-	for _, m := range replayMessages(detail, "claude") {
+	for _, m := range replayMessages(detail) {
 		switch m.Role {
 		case "user":
 			rec := claudeEnvelope("user", m.ID, m.ParentID, m.Timestamp)
@@ -170,13 +167,9 @@ func SerializeClaude(detail Session) []map[string]any {
 			for _, b := range m.Content {
 				switch b.Type {
 				case "thinking":
-					if b.Signature == "" {
-						if b.Text != "" {
-							blocks = append(blocks, map[string]any{"type": "text", "text": thinkTagText(b.Text)})
-						}
-						continue
+					if b.Text != "" {
+						blocks = append(blocks, map[string]any{"type": "text", "text": thinkTagText(b.Text)})
 					}
-					blocks = append(blocks, map[string]any{"type": "thinking", "thinking": b.Text, "signature": b.Signature})
 				case "text":
 					blocks = append(blocks, map[string]any{"type": "text", "text": b.Text})
 				case "tool_use":
@@ -307,7 +300,7 @@ func SerializeCodex(detail Session) []map[string]any {
 		turnOpen = false
 	}
 
-	for _, m := range replayMessages(detail, "codex") {
+	for _, m := range replayMessages(detail) {
 		switch m.Role {
 		case "user":
 			closeTurn(m.Timestamp)
@@ -370,22 +363,9 @@ func SerializeCodex(detail Session) []map[string]any {
 				case "text":
 					appendText(b.Text)
 				case "thinking":
-					if b.Signature == "" {
-						if b.Text != "" {
-							appendText(thinkTagText(b.Text))
-						}
-						continue
-					}
-					flushText()
-					summary := []any{}
 					if b.Text != "" {
-						summary = append(summary, map[string]any{"type": "summary_text", "text": b.Text})
+						appendText(thinkTagText(b.Text))
 					}
-					payload := map[string]any{"type": "reasoning", "summary": summary, "encrypted_content": b.Signature}
-					if b.ID != "" {
-						payload["id"] = b.ID
-					}
-					records = append(records, map[string]any{"type": "response_item", "timestamp": m.Timestamp, "payload": payload})
 				case "tool_use":
 					flushText()
 					payload := map[string]any{"call_id": b.ID, "name": b.Name}
@@ -464,7 +444,7 @@ func SerializePi(detail Session) []map[string]any {
 			"timestamp": recTS, "message": msg,
 		}
 	}
-	for _, m := range replayMessages(detail, "pi") {
+	for _, m := range replayMessages(detail) {
 		switch m.Role {
 		case "system":
 			records = append(records, envelope(m, map[string]any{"role": "system", "content": textContent(m.Content)}))
@@ -481,13 +461,9 @@ func SerializePi(detail Session) []map[string]any {
 			for _, b := range m.Content {
 				switch b.Type {
 				case "thinking":
-					if b.Signature == "" {
-						if b.Text != "" {
-							content = append(content, map[string]any{"type": "text", "text": thinkTagText(b.Text)})
-						}
-						continue
+					if b.Text != "" {
+						content = append(content, map[string]any{"type": "text", "text": thinkTagText(b.Text)})
 					}
-					content = append(content, map[string]any{"type": "thinking", "thinking": b.Text, "thinkingSignature": b.Signature})
 				case "text":
 					content = append(content, map[string]any{"type": "text", "text": b.Text})
 				case "tool_use":

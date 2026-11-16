@@ -35,7 +35,7 @@ function modelArgs(agent) {
 function continueTurn(agent, workspace, messages, extraArgs = []) {
   const transcript = JSON.stringify({
     id: `roundtrip-${randomUUID()}`,
-    provider: "smoke",
+    provider: agent,
     workspace,
     messageCount: messages.length,
     messages,
@@ -107,6 +107,38 @@ function runToolHistoryScenario(agent, workspace) {
   }
 }
 
+function runSignedThinkingScenario(agent, workspace) {
+  const marker = `THOUGHT-${randomUUID()}`;
+  const messages = [
+    {
+      id: "thinking-u1",
+      role: "user",
+      content: [{ type: "text", text: "Choose a unique marker and remember it for my next question." }],
+    },
+    {
+      id: "thinking-a1",
+      parentId: "thinking-u1",
+      role: "assistant",
+      content: [
+        { type: "thinking", text: `The unique marker to remember is ${marker}.`, signature: "invalid-foreign-readable-signature" },
+        { type: "text", text: "I have chosen and remembered a marker." },
+        { type: "thinking", signature: "invalid-foreign-opaque-ciphertext" },
+      ],
+    },
+    {
+      id: "thinking-u2",
+      parentId: "thinking-a1",
+      role: "user",
+      content: [{ type: "text", text: "What exact unique marker did you remember in your earlier thinking? Reply with just that marker, without tools." }],
+    },
+  ];
+  const delta = continueTurn(agent, workspace, messages);
+  const answer = texts(delta.messages).join("\n");
+  if (!answer.includes(marker)) {
+    throw new Error(`same-agent signed thinking lost its readable marker; answer: ${answer.slice(0, 300)}`);
+  }
+}
+
 let failed = false;
 for (const agent of agents) {
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), "ax-continue-roundtrip-")));
@@ -135,6 +167,8 @@ for (const agent of agents) {
       throw new Error(`second turn lost the first turn's context; answer: ${answer.slice(0, 300)}`);
     }
     console.log(`PASS continue round-trip ${agent}: passphrase recalled through delta-as-is append`);
+    runSignedThinkingScenario(agent, workspace);
+    console.log(`PASS continue round-trip ${agent}: same-agent mixed signed thinking recalled its marker without foreign-signature rejection`);
     if (agent === "claude" || agent === "codex") {
       runToolHistoryScenario(agent, workspace);
       console.log(`PASS continue round-trip ${agent}: tool history with legacy-scoped ids survived re-import`);

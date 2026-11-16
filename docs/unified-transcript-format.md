@@ -34,13 +34,39 @@ entry in `conversation_summaries.db`. It does not clone a source database or
 retain a raw database backup in the unified transcript. Source files are only
 read. Native conversion output for `agy` is SQLite bytes, not JSON text.
 
-Thinking text and its signature are distinct. Same-provider thinking retains
-its native signature; cross-provider conversion clears the foreign signature
-and projects readable thought text into `<think>` text. Native signature
-acceptance and provider replay are separate facts: an unsigned native thought
-is not guaranteed to be replayed by a model. Tool call identifiers remain
-linked to their results, including complete results recovered from local
-native resource files.
+## Thinking input and output policy
+
+Thinking text and its signature are distinct. Native input parsing and the
+unified transcript preserve readable thinking, native signatures, and opaque
+ciphertext, including thoughts that contain only ciphertext. This input
+representation does not authorize replay of those signatures.
+
+Every target agent (Claude, Codex, Pi, and Antigravity CLI) follows the same
+output policy for session import and native conversion, including conversion
+back to the source agent:
+
+- Never restore thinking signatures or encrypted thinking payloads.
+- Emit readable thinking as ordinary text wrapped in `<think>` and `</think>`.
+- Drop thoughts containing only ciphertext; do not emit empty thinking blocks
+  or an assistant message left empty by this removal.
+- Preserve other supported text, tool calls, linked tool results, and images
+  according to the destination's native format.
+
+For example, a unified thinking block with `text: "Inspect the files."` and a
+native signature becomes this ordinary native text, without its signature:
+
+```text
+<think>
+Inspect the files.
+</think>
+```
+
+Reparsing that standalone text block lifts it into unsigned unified thinking;
+it does not recover the original signature or ciphertext. Native source files
+and resource files remain read-only. Tool call identifiers remain linked to
+their results, including complete results recovered from local native resource
+files. The shared protocol schema is unchanged; this is an agentx output
+policy and does not require an `originAgent` field.
 
 See [Antigravity acceptance](agy-acceptance.md) for the conversion matrix and
 live evidence boundaries.
