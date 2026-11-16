@@ -110,6 +110,9 @@ func testSerializePiRoundTrip(t *testing.T) {
 	}, "\n"))
 
 	detail := parseAndSerializeRoundTrip(t, home, "pi1", "pi", func(detail Session) string {
+		if detail.Messages[2].Content[0].Signature != "sig-abc" {
+			t.Fatalf("imported thinking signature = %q", detail.Messages[2].Content[0].Signature)
+		}
 		records := SerializePi(detail)
 		return marshalJSONL(t, records)
 	}, func(home2 string, content string) {
@@ -127,8 +130,8 @@ func testSerializePiRoundTrip(t *testing.T) {
 	if detail.Messages[2].Content[0].Text != "reasoning" {
 		t.Fatalf("thinking text = %q", detail.Messages[2].Content[0].Text)
 	}
-	if detail.Messages[2].Content[0].Signature != "sig-abc" {
-		t.Fatalf("thinking signature = %q", detail.Messages[2].Content[0].Signature)
+	if detail.Messages[2].Content[0].Signature != "" {
+		t.Fatalf("exported thinking signature = %q", detail.Messages[2].Content[0].Signature)
 	}
 	if detail.Messages[3].ToolUseID != "pc-1" || detail.Messages[3].ToolName != "shell" {
 		t.Fatalf("tool message: useID=%q name=%q", detail.Messages[3].ToolUseID, detail.Messages[3].ToolName)
@@ -248,6 +251,26 @@ func marshalJSONL(t *testing.T, records []map[string]any) string {
 
 func assertMessagesEquivalent(t *testing.T, a, b []Message) {
 	t.Helper()
+	// Fidelity allows only the deliberate loss of opaque thinking on export.
+	var expected []Message
+	for _, message := range a {
+		var content []ContentBlock
+		for _, block := range message.Content {
+			if block.Type == "thinking" {
+				if block.Text == "" {
+					continue
+				}
+				block.Signature, block.ID = "", ""
+			}
+			content = append(content, block)
+		}
+		if message.Role == "assistant" && len(content) == 0 {
+			continue
+		}
+		message.Content = content
+		expected = append(expected, message)
+	}
+	a = expected
 	if len(a) != len(b) {
 		t.Fatalf("message count: got %d, want %d\n  a roles: %v\n  b roles: %v",
 			len(b), len(a), messageRoles(a), messageRoles(b))
@@ -429,7 +452,7 @@ func TestCodexFidelityRoundTrip(t *testing.T) {
 			t.Fatalf("custom input rewritten: %q", rec.Payload.Input)
 		}
 	}
-	for typ, want := range map[string]int{"custom_tool_call": 1, "custom_tool_call_output": 1, "function_call": 1, "function_call_output": 1, "reasoning": 2, "developer": 1} {
+	for typ, want := range map[string]int{"custom_tool_call": 1, "custom_tool_call_output": 1, "function_call": 1, "function_call_output": 1, "reasoning": 0, "developer": 1} {
 		if types[typ] != want {
 			t.Fatalf("record type %s count = %d, want %d (all: %v)", typ, types[typ], want, types)
 		}
@@ -472,9 +495,8 @@ func TestSerializeCodexThinkingChannels(t *testing.T) {
 		"message:before|<think>\nunsigned plan\n</think>",
 		"agent_message:before\n<think>\nunsigned plan\n</think>",
 		"function_call",
-		`reasoning:[{"text":"signed plan","type":"summary_text"}]:enc-1`,
-		"message:<think>\nafter signed\n</think>|after",
-		"agent_message:<think>\nafter signed\n</think>\nafter",
+		"message:<think>\nsigned plan\n</think>|<think>\nafter signed\n</think>|after",
+		"agent_message:<think>\nsigned plan\n</think>\n<think>\nafter signed\n</think>\nafter",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("codex records =\n%q\nwant\n%q", got, want)
@@ -526,7 +548,7 @@ func TestPiFidelityRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSerializeUnsignedThinkingAsThinkTagText(t *testing.T) {
+func TestSerializeThinkingAsThinkTagText(t *testing.T) {
 	detail := Session{ID: "think-tag", Workspace: "/w", Messages: []Message{
 		{ID: "u1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "go"}}, Timestamp: "2026-09-01T11:00:00Z"},
 		{ID: "a1", ParentID: "u1", Role: "assistant", Timestamp: "2026-09-01T11:01:00Z", Content: []ContentBlock{
@@ -535,23 +557,20 @@ func TestSerializeUnsignedThinkingAsThinkTagText(t *testing.T) {
 			{Type: "text", Text: "after"},
 		}},
 	}}
-	for name, test := range map[string]struct {
-		serialize func(Session) []map[string]any
-		sigKey    string
-	}{
-		"claude": {SerializeClaude, "signature"},
-		"pi":     {SerializePi, "thinkingSignature"},
+	for name, serialize := range map[string]func(Session) []map[string]any{
+		"claude": SerializeClaude,
+		"pi":     SerializePi,
 	} {
 		detail.Provider = name
 		var content []any
-		for _, rec := range test.serialize(detail) {
+		for _, rec := range serialize(detail) {
 			if msg, ok := rec["message"].(map[string]any); ok && msg["role"] == "assistant" {
 				content = msg["content"].([]any)
 			}
 		}
 		want := []any{
 			map[string]any{"type": "text", "text": "<think>\nunsigned plan\n</think>"},
-			map[string]any{"type": "thinking", "thinking": "signed plan", test.sigKey: "sig-1"},
+			map[string]any{"type": "text", "text": "<think>\nsigned plan\n</think>"},
 			map[string]any{"type": "text", "text": "after"},
 		}
 		if !reflect.DeepEqual(content, want) {
@@ -560,7 +579,7 @@ func TestSerializeUnsignedThinkingAsThinkTagText(t *testing.T) {
 	}
 }
 
-func TestUnsignedThinkingRoundTripsThroughThinkTag(t *testing.T) {
+func TestThinkingRoundTripsThroughThinkTag(t *testing.T) {
 	detail := Session{ID: "3f9a1c2e-aaaa-4bbb-8ccc-123456789abc", Workspace: "/w", Messages: []Message{
 		{ID: "u1", Role: "user", Content: []ContentBlock{{Type: "text", Text: "go"}}, Timestamp: "2026-09-01T11:00:00Z"},
 		{ID: "a1", ParentID: "u1", Role: "assistant", Timestamp: "2026-09-01T11:01:00Z", Content: []ContentBlock{
@@ -573,7 +592,7 @@ func TestUnsignedThinkingRoundTripsThroughThinkTag(t *testing.T) {
 	want := []ContentBlock{
 		{Type: "text", Text: "before"},
 		{Type: "thinking", Text: "\nunsigned\nplan "},
-		{Type: "thinking", Text: "signed plan", Signature: "sig-1"},
+		{Type: "thinking", Text: "signed plan"},
 		{Type: "text", Text: "after"},
 	}
 	for agent, serialize := range map[string]func(Session) []map[string]any{

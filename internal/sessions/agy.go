@@ -436,7 +436,7 @@ func parseAgyStep(p agyProto, idx int) (Message, error) {
 // SerializeAgy returns native Step protobuf payloads without source-store metadata.
 func SerializeAgy(detail Session) ([][]byte, error) {
 	var steps [][]byte
-	for _, m := range replayMessages(detail, "agy") {
+	for _, m := range replayMessages(detail) {
 		stamp := agyTimestamp(m.Timestamp)
 		meta := agyJoin(agyBytes(1, stamp), agyBytes(6, stamp), agyBytes(7, stamp), agyBytes(8, stamp), agyBytes(32, stamp))
 		var body []byte
@@ -484,22 +484,9 @@ func SerializeAgy(detail Session) ([][]byte, error) {
 					pendingHasText = true
 				case "thinking":
 					flush()
-					if b.Signature == "" {
-						if b.Text != "" {
-							pending = agyText(1, thinkTagText(b.Text))
-							flush()
-						}
-						continue
-					}
-					pending = agyText(3, b.Text)
-					if strings.HasPrefix(b.Signature, "agy:bytes:") {
-						raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(b.Signature, "agy:bytes:"))
-						if err != nil {
-							return nil, err
-						}
-						pending = append(pending, agyBytes(14, raw)...)
-					} else {
-						pending = append(pending, agyText(4, b.Signature)...)
+					if b.Text != "" {
+						pending = agyText(1, thinkTagText(b.Text))
+						flush()
 					}
 				case "tool_use":
 					args, err := json.Marshal(b.Input)
