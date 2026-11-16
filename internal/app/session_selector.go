@@ -47,6 +47,7 @@ type contentRow struct {
 	title      string
 	firstUser  string
 	latestUser string
+	turnCount  int
 }
 
 type contentRowKind int
@@ -80,23 +81,21 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 			if first == "" {
 				first = title
 			}
-			latest := item.LatestUserMessage
+			first = singleLine(first, 60)
+			latest := singleLine(item.LatestUserMessage, 60)
 			title = sessionMessagePreview(first, latest, 0)
 			updated := displaySessionTime(item.UpdatedAt, now)
-			if duration := displaySessionDuration(item.StartedAt, item.UpdatedAt); duration != "" {
-				updated += " " + duration
-			}
 			if group.Heading == "Global" {
-				text := fmt.Sprintf("%-8s  %-25s  %-20s  %s", item.Agent, updated, displayWorkspace(item.Workspace, 20), title)
+				text := fmt.Sprintf("%-10s  %-8s  %-20s  [%dt] %s", updated, item.Agent, displayWorkspace(item.Workspace, 20), item.TurnCount, title)
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: title, firstUser: first, latestUser: latest,
+					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount,
 				})
 			} else {
-				text := fmt.Sprintf("%-8s  %-25s  %s", item.Agent, updated, title)
+				text := fmt.Sprintf("%-10s  %-8s  [%dt] %s", updated, item.Agent, item.TurnCount, title)
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, title: title, firstUser: first, latestUser: latest,
+					agent: item.Agent, updated: updated, title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount,
 				})
 			}
 			itemIndex++
@@ -105,32 +104,44 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 	return rows
 }
 
-func sessionMessagePreview(first, latest string, width int) string {
+func sessionMessageParts(first, latest string, width int) (string, string) {
 	first = singleLine(first, 60)
 	latest = singleLine(latest, 60)
 	if latest == "" || latest == first {
 		if width > 0 {
-			return runewidth.Truncate(first, width, "…")
+			first = runewidth.Truncate(first, width, "…")
 		}
-		return first
+		return "", first
 	}
 	if width <= 0 {
-		return first + " → " + latest
+		return latest, first
 	}
 	if width < 5 {
-		return runewidth.Truncate(first+" → "+latest, width, "…")
+		return runewidth.Truncate(latest+" ← "+first, width, "…"), ""
 	}
 	available := width - 3
-	firstWidth := min(runewidth.StringWidth(first), available/2)
-	latestWidth := min(runewidth.StringWidth(latest), available-firstWidth)
-	firstWidth = min(runewidth.StringWidth(first), available-latestWidth)
-	return runewidth.Truncate(first, firstWidth, "…") + " → " + runewidth.Truncate(latest, latestWidth, "…")
+	latestWidth := min(runewidth.StringWidth(latest), available/2)
+	firstWidth := min(runewidth.StringWidth(first), available-latestWidth)
+	latestWidth = min(runewidth.StringWidth(latest), available-firstWidth)
+	return runewidth.Truncate(latest, latestWidth, "…"), runewidth.Truncate(first, firstWidth, "…")
+}
+
+func sessionMessagePreview(first, latest string, width int) string {
+	latest, first = sessionMessageParts(first, latest, width)
+	if latest == "" {
+		return first
+	}
+	if first == "" {
+		return latest
+	}
+	return latest + " ← " + first
 }
 
 func fitSessionRow(row contentRow, width int) contentRow {
 	base := runewidth.StringWidth(styledContentRow(row, false, false)) - runewidth.StringWidth(row.title)
 	if width > base {
-		row.title = sessionMessagePreview(row.firstUser, row.latestUser, width-base)
+		row.latestUser, row.firstUser = sessionMessageParts(row.firstUser, row.latestUser, width-base)
+		row.title = sessionMessagePreview(row.firstUser, row.latestUser, 0)
 	} else {
 		row.text = runewidth.Truncate(styledContentRow(row, false, false), max(0, width), "…")
 		row.kind = contentRowPlain
@@ -493,18 +504,29 @@ func styledContentRow(row contentRow, selected, color bool) string {
 		}
 		return name + "  " + colorize(color, ansiRed, row.text)
 	case contentRowSession:
-		agent := colorize(color, agentColor(row.agent), fmt.Sprintf("%-8s", row.agent))
-		updated := colorize(color, ansiDim, fmt.Sprintf("%-25s", row.updated))
+		agent := colorize(color, agentColor(row.agent)+ansiDim, fmt.Sprintf("%-8s", row.agent))
+		updated := colorize(color, ansiDim, fmt.Sprintf("%-10s", row.updated))
 		titleStyle := ""
 		if selected {
 			titleStyle = ansiBold
 		}
-		title := colorize(color && titleStyle != "", titleStyle, row.title)
+		title := colorize(color, titleStyle, row.title)
+		if row.latestUser != "" && row.firstUser != row.latestUser {
+			title = colorize(color, ansiDim, row.latestUser)
+			if row.firstUser != "" {
+				title += " ← " + colorize(color, titleStyle, row.firstUser)
+			}
+		}
+		turns := fmt.Sprintf("[%dt] ", row.turnCount)
+		if row.turnCount < 0 {
+			turns = "[?t] "
+		}
+		title = colorize(color, ansiDim, turns) + title
 		if row.workspace == "" {
-			return fmt.Sprintf("%s  %s  %s", agent, updated, title)
+			return fmt.Sprintf("%s  %s  %s", updated, agent, title)
 		}
 		workspace := colorize(color, ansiDim, fmt.Sprintf("%-20s", row.workspace))
-		return fmt.Sprintf("%s  %s  %s  %s", agent, updated, workspace, title)
+		return fmt.Sprintf("%s  %s  %s  %s", updated, agent, workspace, title)
 	default:
 		style := agentColor(row.agent)
 		if selected {
@@ -587,19 +609,26 @@ func makeRaw(input io.Reader) (func(), error) {
 func displaySessionTime(value string, now time.Time) string {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
-		return singleLine(value, 15)
+		return singleLine(value, 10)
 	}
 	parsed = parsed.In(now.Location())
-	if sameCalendarDay(parsed, now) {
-		return "Today " + parsed.Format("15:04")
+	elapsed := now.Sub(parsed)
+	if elapsed < time.Minute {
+		return "Just now"
+	}
+	if elapsed < time.Hour {
+		return fmt.Sprintf("%dm ago", int(elapsed/time.Minute))
+	}
+	if elapsed < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(elapsed/time.Hour))
 	}
 	if sameCalendarDay(parsed, now.AddDate(0, 0, -1)) {
-		return "Yesterday " + parsed.Format("15:04")
+		return "Yesterday"
 	}
-	if parsed.Year() == now.Year() {
-		return parsed.Format("Jan 2 15:04")
+	if elapsed < 30*24*time.Hour {
+		return fmt.Sprintf("%dd ago", int(elapsed/(24*time.Hour)))
 	}
-	return parsed.Format("Jan 2 2006")
+	return parsed.Format("2006-01-02")
 }
 
 func displaySessionDuration(startedAt, updatedAt string) string {

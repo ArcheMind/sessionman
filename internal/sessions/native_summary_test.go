@@ -64,7 +64,7 @@ func TestAgyRecentDoesNotReadExternalTranscriptResources(t *testing.T) {
 				t.Fatalf("recent depends on external resource: %+v %v", groups, err)
 			}
 			item := groups.Current[0]
-			if item.ID != id || item.FirstUserMessage != "retain marker" || item.LatestUserMessage != "retain marker" || item.StartedAt != before.StartedAt || item.UpdatedAt != before.UpdatedAt {
+			if item.TurnCount != 1 || item.ID != id || item.FirstUserMessage != "retain marker" || item.LatestUserMessage != "retain marker" || item.StartedAt != before.StartedAt || item.UpdatedAt != before.UpdatedAt {
 				t.Fatalf("summary changed: %+v", item)
 			}
 			list, err := service.List(ListOptions{Agent: "agy", All: true})
@@ -99,7 +99,7 @@ func TestOpenCodeRecentDoesNotReadUnrelatedMessageParts(t *testing.T) {
 		t.Fatalf("recent read unrelated parts: %+v %v", groups, err)
 	}
 	item := groups.Current[0]
-	if item.FirstUserMessage != "request 0" || item.LatestUserMessage != "request 2" {
+	if item.TurnCount != 2 || item.FirstUserMessage != "request 0" || item.LatestUserMessage != "request 2" {
 		t.Fatalf("incorrect preview: %+v", item)
 	}
 	if _, err := service.Info("session", "opencode"); err == nil {

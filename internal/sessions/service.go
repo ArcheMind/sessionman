@@ -33,6 +33,7 @@ func hasSubagentMarker(text string) bool {
 }
 
 type Summary struct {
+	TurnCount         int    `json:"-" yaml:"-"`
 	ID                string `json:"id" yaml:"id"`
 	Agent             string `json:"agent" yaml:"agent"`
 	IsSubagent        bool   `json:"isSubagent,omitempty" yaml:"isSubagent,omitempty"`

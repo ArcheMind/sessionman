@@ -35,5 +35,16 @@ func (s Service) RecentGroups(workspace string, limit int, includeSubagents bool
 	}
 	result.Current = summarizeSessions(result.Current, false, limit, failures)
 	result.Global = summarizeSessions(result.Global, false, limit, failures)
+	for _, group := range [][]Summary{result.Current, result.Global} {
+		for i := range group {
+			count, err := countSessionTurns(group[i])
+			if err != nil {
+				group[i].TurnCount = -1
+				failures.Causes = append(failures.Causes, fmt.Errorf("count %s session turns %s: %w", group[i].Agent, group[i].Source, err))
+				continue
+			}
+			group[i].TurnCount = count
+		}
+	}
 	return result, failures.err()
 }

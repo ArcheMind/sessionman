@@ -279,7 +279,7 @@ func TestInteractiveSelectorUsesAgentThemeColors(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			row := contentRow{
 				text: provider + " row", itemIndex: 0, kind: contentRowSession,
-				agent: provider, updated: "Today 12:00", title: "Theme task",
+				agent: provider, updated: "10m ago", title: "Theme task", turnCount: 24,
 			}
 			colored := styledMarker("> ", row, true) + styledContentRow(row, true, true)
 			for _, expected := range []string{agentColor(provider), ansiBold, ansiDim, ansiReset} {
@@ -291,7 +291,7 @@ func TestInteractiveSelectorUsesAgentThemeColors(t *testing.T) {
 			if strings.Contains(plain, "\x1b[") {
 				t.Fatalf("plain row contains ANSI: %q", plain)
 			}
-			if plain != fmt.Sprintf("> %-8s  %-25s  %s", provider, "Today 12:00", "Theme task") {
+			if plain != fmt.Sprintf("> %-10s  %-8s  [24t] %s", "10m ago", provider, "Theme task") {
 				t.Fatalf("plain row = %q", plain)
 			}
 		})
@@ -567,10 +567,10 @@ func TestSessionPresentationUsesLocalTimeWorkspaceAndUnicode(t *testing.T) {
 		value string
 		want  string
 	}{
-		{value: "2026-09-10T22:23:23.05Z", want: "Today 15:23"},
-		{value: "2026-09-09T20:03:54Z", want: "Yesterday 13:03"},
-		{value: "2026-08-21T19:30:00Z", want: "Aug 21 12:30"},
-		{value: "2025-09-10T19:30:00Z", want: "Sep 10 2025"},
+		{value: "2026-09-10T22:23:23.05Z", want: "36m ago"},
+		{value: "2026-09-09T20:03:54Z", want: "Yesterday"},
+		{value: "2026-08-21T19:30:00Z", want: "20d ago"},
+		{value: "2025-09-10T19:30:00Z", want: "2025-09-10"},
 	} {
 		if got := displaySessionTime(test.value, now); got != test.want {
 			t.Fatalf("displaySessionTime(%q) = %q, want %q", test.value, got, test.want)
@@ -642,24 +642,24 @@ func TestSessionRowsUseWorkspaceColumnOnlyForGlobal(t *testing.T) {
 	if strings.Contains(currentRow, groups[0].Items[0].Workspace) || !strings.HasSuffix(currentRow, currentTitle) {
 		t.Fatalf("current row should omit workspace column: %q", currentRow)
 	}
-	if !strings.Contains(currentRow, "Today 15:00 (1h 00m)") {
-		t.Fatalf("current row should include session duration in the time column: %q", currentRow)
+	if !strings.HasPrefix(currentRow, "1h ago      claude    [0t] ") {
+		t.Fatalf("current row should use compact time, agent, and inline turns: %q", currentRow)
 	}
-	if len([]rune(currentRow)) != 97 {
-		t.Fatalf("current row width = %d, want 97 before selection marker: %q", len([]rune(currentRow)), currentRow)
+	if len([]rune(currentRow)) != 87 {
+		t.Fatalf("current row width = %d, want 87 before selection marker: %q", len([]rune(currentRow)), currentRow)
 	}
 
 	globalRow := rows[5].text
 	workspace := displayWorkspace(groups[1].Items[0].Workspace, 20)
 	globalTitle := singleLine(groups[1].Items[0].Title, 60)
-	if !strings.Contains(globalRow, workspace+"  "+globalTitle) {
+	if !strings.Contains(globalRow, workspace+"  [0t] "+globalTitle) {
 		t.Fatalf("global row does not put workspace before title: %q", globalRow)
 	}
 	if !strings.HasPrefix(workspace, "…") || !strings.HasSuffix(workspace, "long-project-name") {
 		t.Fatalf("workspace = %q, want suffix-preserving truncation", workspace)
 	}
-	if len([]rune(globalRow)) != 119 {
-		t.Fatalf("global row width = %d, want 119 before selection marker: %q", len([]rune(globalRow)), globalRow)
+	if len([]rune(globalRow)) != 109 {
+		t.Fatalf("global row width = %d, want 109 before selection marker: %q", len([]rune(globalRow)), globalRow)
 	}
 }
 
@@ -965,7 +965,7 @@ func TestSessionRowShowsFirstAndLatestUserMessages(t *testing.T) {
 		Agent: "codex", Title: "Native title", FirstUserMessage: strings.Repeat("首", 70), LatestUserMessage: strings.Repeat("末", 70),
 	}}}}
 	row := buildContentRows(groups, time.Now())[2]
-	want := strings.Repeat("首", 59) + "… → " + strings.Repeat("末", 59) + "…"
+	want := strings.Repeat("末", 59) + "… ← " + strings.Repeat("首", 59) + "…"
 	if row.title != want || strings.ContainsAny(row.text, "\r\n") {
 		t.Fatalf("row = %#v", row)
 	}
@@ -981,5 +981,26 @@ func TestSessionRowShowsFirstAndLatestUserMessages(t *testing.T) {
 	}
 	if got := sessionMessagePreview("only\nmessage", "only message", 100); got != "only message" {
 		t.Fatalf("single message repeated: %q", got)
+	}
+}
+
+func TestSessionPreviewDimsLatestAndKeepsTurnsInline(t *testing.T) {
+	row := buildContentRows([]sessionGroup{{Heading: "Current workspace", Items: []sessions.Summary{{Agent: "claude", TurnCount: 24, FirstUserMessage: "first request", LatestUserMessage: "latest request"}}}}, time.Now())[2]
+	for _, width := range []int{28, 30, 40, 80} {
+		fitted := fitSessionRow(row, width)
+		plain := styledContentRow(fitted, true, false)
+		if runewidth.StringWidth(plain) > width {
+			t.Fatalf("width %d: %q", width, plain)
+		}
+	}
+	line := styledContentRow(row, true, true)
+	if !strings.Contains(line, ansiDim+"latest request"+ansiReset+" ← "+ansiBold+"first request") {
+		t.Fatalf("preview styles = %q", line)
+	}
+	if !strings.Contains(line, agentColor("claude")+ansiDim) {
+		t.Fatalf("agent is not dimmed: %q", line)
+	}
+	if !strings.Contains(styledContentRow(row, true, false), "[24t] latest request ← first request") {
+		t.Fatalf("turn prefix = %q", line)
 	}
 }
