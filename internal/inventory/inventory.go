@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 )
 
 type Evidence struct {
@@ -237,6 +239,14 @@ func ProjectDirectories(project string) []string {
 }
 
 func UserDirectory(home, agent string) string {
+	// When SM_CONFIG_DIR is active, the nativedirs resolver's ConfigDir takes precedence
+	dirs := nativedirs.FromEnv()
+	if dirs.ConfigDir != "" {
+		ad, err := nativedirs.Resolve(agent, dirs)
+		if err == nil && ad.ConfigDir != "" {
+			return ad.ConfigDir
+		}
+	}
 	variable, fallback := "", ""
 	switch agent {
 	case "claude":

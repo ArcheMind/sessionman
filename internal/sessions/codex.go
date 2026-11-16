@@ -8,7 +8,11 @@ import (
 )
 
 func discoverCodex(home string, _ bool) ([]Summary, error) {
-	return discoverCodexRollouts(filepath.Join(home, ".codex", "sessions"))
+	return discoverCodexIn(filepath.Join(home, ".codex", "sessions"), false)
+}
+
+func discoverCodexIn(root string, _ bool) ([]Summary, error) {
+	return discoverCodexRollouts(root)
 }
 
 func discoverCodexRollouts(root string) ([]Summary, error) {

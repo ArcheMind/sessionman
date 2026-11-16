@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
@@ -137,7 +138,19 @@ func (d *Daemon) startAgyLocked() error {
 	if err != nil {
 		return err
 	}
-	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: mapped.Args, Cwd: req.Cwd, Env: d.agyEnvironment()})
+	agyEnv := d.agyEnvironment()
+	ad, adErr := nativedirs.Resolve("agy", nativedirs.FromEnv())
+	if adErr == nil {
+		if err := nativedirs.Prepare(ad); err != nil {
+			return err
+		}
+		resolved, _ := nativedirs.MergeEnv(ad)
+		for k, v := range resolved {
+			agyEnv[k] = v
+		}
+		mapped.Args = append(ad.Args, mapped.Args...)
+	}
+	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: mapped.Args, Cwd: req.Cwd, Env: agyEnv})
 	if err != nil {
 		return err
 	}

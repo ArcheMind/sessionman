@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	transcript "github.com/ArcheMind/sessionman-protocol/go"
 )
 
@@ -87,21 +88,39 @@ type ListOptions struct {
 }
 
 type Service struct {
-	HomeDir  string
-	LookPath func(string) (string, error)
+	HomeDir      string
+	LookPath     func(string) (string, error)
+	// SessionRoots overrides the default session root per agent, populated from
+	// SM_SESSION_DIR / SM_CONFIG_DIR via nativedirs.Resolve.
+	SessionRoots map[string][]string
 }
 
 func New() Service {
 	home, _ := os.UserHomeDir()
-	return Service{HomeDir: home, LookPath: exec.LookPath}
+	svc := Service{HomeDir: home, LookPath: exec.LookPath, SessionRoots: map[string][]string{}}
+	dirs := nativedirs.FromEnv()
+	if !dirs.Empty() {
+		for _, id := range []string{"agy", "claude", "codex", "opencode", "pi", "dsh"} {
+			ad, err := nativedirs.Resolve(id, dirs)
+			if err != nil || len(ad.SessionRoots) == 0 {
+				continue
+			}
+			svc.SessionRoots[id] = ad.SessionRoots
+		}
+	}
+	return svc
 }
 
 func (s Service) Agents() []Agent {
 	agents := make([]Agent, 0, len(agentSpecs))
 	for _, spec := range agentSpecs {
 		_, err := s.lookPath(spec.binary)
+		root := spec.root(s.HomeDir)
+		if overrides, ok := s.SessionRoots[spec.id]; ok && len(overrides) > 0 {
+			root = overrides[0]
+		}
 		agents = append(agents, Agent{
-			ID: spec.id, Name: spec.name, Installed: err == nil, Root: spec.root(s.HomeDir),
+			ID: spec.id, Name: spec.name, Installed: err == nil, Root: root,
 		})
 	}
 	return agents

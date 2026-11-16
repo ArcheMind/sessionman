@@ -24,8 +24,9 @@ func (a Auth) String() string {
 	return fmt.Sprintf("%s=%q", a.Key, a.Dir)
 }
 
-// authSource is the native agent's own credential directory: its environment variable when set,
-// otherwise the native default under the user's home. SM_SUBAGENT_HOME never changes it.
+// authSource resolves the native credential directory via the nativedirs
+// native recovery rule (SM_NATIVE_<VAR> >> <VAR> >> default), preventing
+// shadow-of-shadow when SM overrides an agent home var.
 func authSource(agent string) (string, string, error) {
 	if agent == "claude" || agent == "agy" {
 		return "", "", nil
@@ -36,6 +37,10 @@ func authSource(agent string) (string, string, error) {
 	key, rel := "CODEX_HOME", ".codex"
 	if agent == "pi" {
 		key, rel = "PI_CODING_AGENT_DIR", filepath.Join(".pi", "agent")
+	}
+	// Native recovery: SM_NATIVE_<VAR> >> <VAR> >> default
+	if v := os.Getenv("SM_NATIVE_" + key); v != "" {
+		return key, filepath.Clean(v), nil
 	}
 	if dir := os.Getenv(key); dir != "" {
 		if !filepath.IsAbs(dir) {

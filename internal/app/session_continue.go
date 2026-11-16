@@ -14,6 +14,7 @@ import (
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 	"github.com/ArcheMind/agentx/internal/subagents"
@@ -98,6 +99,13 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	ad, err := nativedirs.Resolve(agent.ID, nativedirs.FromEnv())
+	if err != nil {
+		return err
+	}
+	if err := nativedirs.Prepare(ad); err != nil {
+		return err
+	}
 	token := ""
 	prefix := 0
 	// Pi always gets a session file (even an empty one): --session is how pi
@@ -132,7 +140,15 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	plan.Env, plan.UnsetEnv = subagents.AuthEnvironment(auth)
+	plan.Env, plan.UnsetEnv = nativedirs.MergeEnv(ad)
+	// Merge auth pinning for agents that need it (codex, pi)
+	authEnv, authUnset := subagents.AuthEnvironment(auth)
+	for k, v := range authEnv {
+		if _, alreadySet := plan.Env[k]; !alreadySet {
+			plan.Env[k] = v
+		}
+	}
+	plan.UnsetEnv = append(plan.UnsetEnv, authUnset...)
 	if agent.ID == "agy" {
 		if err := a.prepareHooks(&runtime.RunRequest{Cwd: workspace}, "agy", true); err != nil {
 			return err

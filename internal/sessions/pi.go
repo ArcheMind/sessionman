@@ -7,7 +7,11 @@ import (
 )
 
 func discoverPi(home string, _ bool) ([]Summary, error) {
-	return discoverJSONL("pi", filepath.Join(home, ".pi", "agent", "sessions", "*", "*.jsonl"))
+	return discoverPiIn(filepath.Join(home, ".pi", "agent", "sessions"), false)
+}
+
+func discoverPiIn(root string, _ bool) ([]Summary, error) {
+	return discoverJSONL("pi", filepath.Join(root, "*", "*.jsonl"))
 }
 
 func parsePi(path string, records []map[string]any) (Session, bool) {

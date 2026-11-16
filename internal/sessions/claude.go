@@ -7,7 +7,10 @@ import (
 )
 
 func discoverClaude(home string, includeSubagents bool) ([]Summary, error) {
-	root := filepath.Join(home, ".claude", "projects")
+	return discoverClaudeIn(filepath.Join(home, ".claude", "projects"), includeSubagents)
+}
+
+func discoverClaudeIn(root string, includeSubagents bool) ([]Summary, error) {
 	patterns := []string{filepath.Join(root, "*", "*.jsonl")}
 	if includeSubagents {
 		patterns = append(patterns, filepath.Join(root, "*", "*", "subagents", "*.jsonl"))

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -113,6 +114,13 @@ func (d *Daemon) startPiLocked() error {
 	if err != nil {
 		return err
 	}
+	ad, err := nativedirs.Resolve("pi", nativedirs.FromEnv())
+	if err != nil {
+		return err
+	}
+	if err := nativedirs.Prepare(ad); err != nil {
+		return err
+	}
 	req, err := d.parameterRequest(roleInstructions)
 	if err != nil {
 		return err
@@ -122,7 +130,14 @@ func (d *Daemon) startPiLocked() error {
 		return err
 	}
 	plan := runtime.CommandPlan{Executable: "pi", Args: mapped.Args, Cwd: req.Cwd}
-	plan.Env, plan.UnsetEnv = AuthEnvironment(auth)
+	plan.Env, plan.UnsetEnv = nativedirs.MergeEnv(ad)
+	// Auth pinning: if resolver didn't set PI_CODING_AGENT_DIR, fall back
+	if _, ok := plan.Env["PI_CODING_AGENT_DIR"]; !ok {
+		authEnv, _ := AuthEnvironment(auth)
+		for k, v := range authEnv {
+			plan.Env[k] = v
+		}
+	}
 	if err := d.injectPiDelegation(&plan); err != nil {
 		return err
 	}

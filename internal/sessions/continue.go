@@ -43,7 +43,7 @@ func readJSONLSession(agentID, path string, parse func(string, []map[string]any)
 // workspace; the encoding must match WriteSessionFile's.
 func ClaudeProjectFile(homeDir, workspace, sessionID string) string {
 	encoded := strings.ReplaceAll(workspace, "/", "-")
-	return filepath.Join(homeDir, ".claude", "projects", encoded, sessionID+".jsonl")
+	return filepath.Join(claudeProjectsRoot(homeDir), encoded, sessionID+".jsonl")
 }
 
 // FindCodexRollout uses the same session identity and latest-record selection as listing.

@@ -21,7 +21,11 @@ func openCodeRoot(home string) string {
 }
 
 func discoverOpenCode(home string, includeSubagents bool) ([]Summary, error) {
-	paths, err := filepath.Glob(filepath.Join(openCodeRoot(home), "*", "storage", "session", "info", "*.json"))
+	return discoverOpenCodeIn(openCodeRoot(home), includeSubagents)
+}
+
+func discoverOpenCodeIn(root string, includeSubagents bool) ([]Summary, error) {
+	paths, err := filepath.Glob(filepath.Join(root, "*", "storage", "session", "info", "*.json"))
 	if err != nil {
 		return nil, err
 	}

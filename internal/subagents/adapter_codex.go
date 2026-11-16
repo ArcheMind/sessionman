@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -147,8 +148,22 @@ func (d *Daemon) startCodexLocked() error {
 	if err != nil {
 		return err
 	}
+	ad, err := nativedirs.Resolve("codex", nativedirs.FromEnv())
+	if err != nil {
+		return err
+	}
+	if err := nativedirs.Prepare(ad); err != nil {
+		return err
+	}
 	plan := runtime.CommandPlan{Executable: "codex", Args: mapped.Args, Cwd: req.Cwd}
-	plan.Env, plan.UnsetEnv = AuthEnvironment(auth)
+	plan.Env, plan.UnsetEnv = nativedirs.MergeEnv(ad)
+	// Auth pinning: if resolver didn't set CODEX_HOME, fall back to auth pinning
+	if _, ok := plan.Env["CODEX_HOME"]; !ok {
+		authEnv, _ := AuthEnvironment(auth)
+		for k, v := range authEnv {
+			plan.Env[k] = v
+		}
+	}
 	plan.Env["RUST_LOG"] = codexTelemetryFilter
 	stream, err := d.startStream(plan)
 	if err != nil {

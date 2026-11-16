@@ -41,7 +41,19 @@ func (s Service) catalog(agent string, includeSubagents bool) ([]Summary, error)
 		if agent != "" && spec.id != agent {
 			continue
 		}
-		found, err := spec.discover(s.HomeDir, includeSubagents)
+		var found []Summary
+		var err error
+		if overrides, ok := s.SessionRoots[spec.id]; ok && len(overrides) > 0 && spec.discoverIn != nil {
+			for _, root := range overrides {
+				f, e := spec.discoverIn(root, includeSubagents)
+				found = append(found, f...)
+				if e != nil {
+					err = e
+				}
+			}
+		} else {
+			found, err = spec.discover(s.HomeDir, includeSubagents)
+		}
 		if err != nil {
 			failures.Causes = append(failures.Causes, fmt.Errorf("load %s sessions: %w", spec.id, err))
 		}

@@ -27,6 +27,20 @@ func main() {
 			debug = true
 		case "--json", "--yaml":
 			appArgs = append(appArgs, args[0])
+		case "--session-dir":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "--session-dir requires an absolute path")
+				os.Exit(1)
+			}
+			os.Setenv("SM_SESSION_DIR", args[1])
+			args = args[1:]
+		case "--config-dir":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "--config-dir requires an absolute path")
+				os.Exit(1)
+			}
+			os.Setenv("SM_CONFIG_DIR", args[1])
+			args = args[1:]
 		default:
 			appArgs = append(appArgs, args...)
 			args = nil

@@ -9,7 +9,11 @@ import (
 )
 
 func discoverAgy(home string, includeSubagents bool) ([]Summary, error) {
-	paths, err := filepath.Glob(filepath.Join(agyRoot(home), "conversations", "*.db"))
+	return discoverAgyIn(agyRoot(home), includeSubagents)
+}
+
+func discoverAgyIn(root string, includeSubagents bool) ([]Summary, error) {
+	paths, err := filepath.Glob(filepath.Join(root, "conversations", "*.db"))
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +29,7 @@ func discoverAgy(home string, includeSubagents bool) ([]Summary, error) {
 			items = append(items, item)
 		}
 	}
-	titles, err := agyTitles(filepath.Join(agyRoot(home), "conversation_summaries.db"), "")
+	titles, err := agyTitles(filepath.Join(root, "conversation_summaries.db"), "")
 	if err != nil {
 		return items, errors.Join(append(failures, err)...)
 	}

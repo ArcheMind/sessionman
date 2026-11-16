@@ -10,6 +10,27 @@ import (
 	"time"
 )
 
+// claudeProjectsRoot returns the claude projects directory, following
+// CLAUDE_CONFIG_DIR set by the nativedirs resolver.
+func claudeProjectsRoot(homeDir string) string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, "projects")
+	}
+	return filepath.Join(homeDir, ".claude", "projects")
+}
+
+// piSessionRoot returns the pi session directory, following
+// PI_CODING_AGENT_SESSION_DIR or PI_CODING_AGENT_DIR set by the resolver.
+func piSessionRoot(homeDir string) string {
+	if dir := os.Getenv("PI_CODING_AGENT_SESSION_DIR"); dir != "" {
+		return dir
+	}
+	if dir := os.Getenv("PI_CODING_AGENT_DIR"); dir != "" {
+		return filepath.Join(dir, "sessions")
+	}
+	return filepath.Join(homeDir, ".pi", "agent", "sessions")
+}
+
 func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("create resume directory: %w", err)
@@ -25,7 +46,8 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 	case "claude":
 		newID := newUUID()
 		cwdEncoded := strings.ReplaceAll(detail.Workspace, "/", "-")
-		claudeDir := filepath.Join(homeDir, ".claude", "projects", cwdEncoded)
+		projectsDir := claudeProjectsRoot(homeDir)
+		claudeDir := filepath.Join(projectsDir, cwdEncoded)
 		if err := os.MkdirAll(claudeDir, 0700); err != nil {
 			return "", fmt.Errorf("create claude session directory: %w", err)
 		}
@@ -42,7 +64,7 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 			}
 			workspace = wd
 		}
-		piDir := filepath.Join(homeDir, ".pi", "agent", "sessions", piSessionDirName(workspace))
+		piDir := filepath.Join(piSessionRoot(homeDir), piSessionDirName(workspace))
 		if err := os.MkdirAll(piDir, 0700); err != nil {
 			return "", fmt.Errorf("create pi session directory: %w", err)
 		}
