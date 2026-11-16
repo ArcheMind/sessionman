@@ -45,6 +45,7 @@ type contentRow struct {
 	updated    string
 	workspace  string
 	title      string
+	titleWidth int
 	firstUser  string
 	latestUser string
 }
@@ -86,19 +87,15 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 			if duration := displaySessionDuration(item.StartedAt, item.UpdatedAt); duration != "" {
 				updated += " " + duration
 			}
-			if group.Heading == "Global" {
-				text := fmt.Sprintf("%-8s  %-25s  %-20s  %s", item.Agent, updated, displayWorkspace(item.Workspace, 20), title)
-				rows = append(rows, contentRow{
-					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: title, firstUser: first, latestUser: latest,
-				})
-			} else {
-				text := fmt.Sprintf("%-8s  %-25s  %s", item.Agent, updated, title)
-				rows = append(rows, contentRow{
-					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, title: title, firstUser: first, latestUser: latest,
-				})
+			row := contentRow{
+				itemIndex: itemIndex, kind: contentRowSession,
+				agent: item.Agent, updated: updated, title: title, firstUser: first, latestUser: latest,
 			}
+			if group.Heading == "Global" {
+				row.workspace = displayWorkspace(item.Workspace, 20)
+			}
+			row.text = styledContentRow(row, false, false)
+			rows = append(rows, row)
 			itemIndex++
 		}
 	}
@@ -128,12 +125,22 @@ func sessionMessagePreview(first, latest string, width int) string {
 }
 
 func fitSessionRow(row contentRow, width int) contentRow {
-	base := runewidth.StringWidth(styledContentRow(row, false, false)) - runewidth.StringWidth(row.title)
-	if width > base {
-		row.title = sessionMessagePreview(row.firstUser, row.latestUser, width-base)
-	} else {
-		row.text = runewidth.Truncate(styledContentRow(row, false, false), max(0, width), "…")
-		row.kind = contentRowPlain
+	metadataWidth := func() int {
+		return runewidth.StringWidth(styledContentRow(row, false, false)) - runewidth.StringWidth(row.title)
+	}
+	if metadataWidth() > width/2 {
+		row.workspace = ""
+	}
+	if metadataWidth() > width/2 {
+		row.updated = ""
+	}
+	if metadataWidth() > width/2 {
+		row.agent = ""
+	}
+	row.titleWidth = max(0, width-metadataWidth())
+	row.title = sessionMessagePreview(row.firstUser, row.latestUser, row.titleWidth)
+	if row.titleWidth == 0 {
+		row.title = ""
 	}
 	return row
 }
@@ -457,6 +464,9 @@ func styledMarker(marker string, row contentRow, color bool) string {
 	if row.kind == contentRowPreset || row.kind == contentRowCreate || row.kind == contentRowProblem {
 		return colorize(color, presetAccent+ansiBold, marker)
 	}
+	if row.kind == contentRowSession {
+		return colorize(color, ansiBold, marker)
+	}
 	style := agentColor(row.agent)
 	if style == "" {
 		style = ansiCyan
@@ -493,18 +503,22 @@ func styledContentRow(row contentRow, selected, color bool) string {
 		}
 		return name + "  " + colorize(color, ansiRed, row.text)
 	case contentRowSession:
-		agent := colorize(color, agentColor(row.agent), fmt.Sprintf("%-8s", row.agent))
-		updated := colorize(color, ansiDim, fmt.Sprintf("%-25s", row.updated))
-		titleStyle := ""
+		title := row.title + strings.Repeat(" ", max(0, row.titleWidth-runewidth.StringWidth(row.title)))
 		if selected {
-			titleStyle = ansiBold
+			title = colorize(color, ansiBold, title)
 		}
-		title := colorize(color && titleStyle != "", titleStyle, row.title)
-		if row.workspace == "" {
-			return fmt.Sprintf("%s  %s  %s", agent, updated, title)
+		var parts []string
+		if row.updated != "" {
+			parts = append(parts, colorize(color, ansiDim, row.updated))
 		}
-		workspace := colorize(color, ansiDim, fmt.Sprintf("%-20s", row.workspace))
-		return fmt.Sprintf("%s  %s  %s  %s", agent, updated, workspace, title)
+		parts = append(parts, title)
+		if row.agent != "" {
+			parts = append(parts, colorize(color, agentColor(row.agent), fmt.Sprintf("%-8s", row.agent)))
+		}
+		if row.workspace != "" {
+			parts = append(parts, colorize(color, ansiDim, row.workspace))
+		}
+		return strings.Join(parts, "  ")
 	default:
 		style := agentColor(row.agent)
 		if selected {

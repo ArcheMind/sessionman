@@ -291,7 +291,7 @@ func TestInteractiveSelectorUsesAgentThemeColors(t *testing.T) {
 			if strings.Contains(plain, "\x1b[") {
 				t.Fatalf("plain row contains ANSI: %q", plain)
 			}
-			if plain != fmt.Sprintf("> %-8s  %-25s  %s", provider, "Today 12:00", "Theme task") {
+			if plain != fmt.Sprintf("> Today 12:00  Theme task  %-8s", provider) {
 				t.Fatalf("plain row = %q", plain)
 			}
 		})
@@ -639,27 +639,27 @@ func TestSessionRowsUseWorkspaceColumnOnlyForGlobal(t *testing.T) {
 	}
 	currentRow := rows[2].text
 	currentTitle := singleLine(groups[0].Items[0].Title, 60)
-	if strings.Contains(currentRow, groups[0].Items[0].Workspace) || !strings.HasSuffix(currentRow, currentTitle) {
+	if strings.Contains(currentRow, groups[0].Items[0].Workspace) || !strings.Contains(currentRow, "  "+currentTitle+"  ") {
 		t.Fatalf("current row should omit workspace column: %q", currentRow)
 	}
 	if !strings.Contains(currentRow, "Today 15:00 (1h 00m)") {
 		t.Fatalf("current row should include session duration in the time column: %q", currentRow)
 	}
-	if len([]rune(currentRow)) != 97 {
-		t.Fatalf("current row width = %d, want 97 before selection marker: %q", len([]rune(currentRow)), currentRow)
+	if len([]rune(currentRow)) != 92 {
+		t.Fatalf("current row width = %d, want 92 before selection marker: %q", len([]rune(currentRow)), currentRow)
 	}
 
 	globalRow := rows[5].text
 	workspace := displayWorkspace(groups[1].Items[0].Workspace, 20)
 	globalTitle := singleLine(groups[1].Items[0].Title, 60)
-	if !strings.Contains(globalRow, workspace+"  "+globalTitle) {
-		t.Fatalf("global row does not put workspace before title: %q", globalRow)
+	if !strings.Contains(globalRow, "  "+globalTitle+"  ") || !strings.HasSuffix(globalRow, workspace) {
+		t.Fatalf("global row should put time first and workspace last: %q", globalRow)
 	}
 	if !strings.HasPrefix(workspace, "…") || !strings.HasSuffix(workspace, "long-project-name") {
 		t.Fatalf("workspace = %q, want suffix-preserving truncation", workspace)
 	}
-	if len([]rune(globalRow)) != 119 {
-		t.Fatalf("global row width = %d, want 119 before selection marker: %q", len([]rune(globalRow)), globalRow)
+	if len([]rune(globalRow)) != 109 {
+		t.Fatalf("global row width = %d, want 109 before selection marker: %q", len([]rune(globalRow)), globalRow)
 	}
 }
 
