@@ -4,10 +4,14 @@ import (
 	"fmt"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 func Plan(agent string, transport agentparams.Transport, request agentparams.Request) (runtime.CommandPlan, error) {
+	if err := nativedirs.CachedError(agent); err != nil {
+		return runtime.CommandPlan{}, err
+	}
 	plan, err := agentparams.Build(agent, transport, request)
 	if err != nil {
 		return runtime.CommandPlan{}, err
@@ -15,5 +19,6 @@ func Plan(agent string, transport agentparams.Transport, request agentparams.Req
 	if len(plan.Params) > 0 || len(plan.Settings) > 0 {
 		return runtime.CommandPlan{}, fmt.Errorf("%s %s requires a native protocol session", agent, transport)
 	}
-	return runtime.CommandPlan{Executable: agent, Args: plan.Args, Cwd: request.Cwd}, nil
+	args := append(nativedirs.ResolvedArgs(agent), plan.Args...)
+	return runtime.CommandPlan{Executable: agent, Args: args, Cwd: request.Cwd}, nil
 }

@@ -1,8 +1,10 @@
 package nativedirs
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -91,6 +93,12 @@ func TestResolvePiBoth(t *testing.T) {
 }
 
 func TestResolveCodexSessionOnly(t *testing.T) {
+	// D6: S also moves CODEX_HOME, so auth.json at native is required
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "auth.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", tmp)
 	ad, err := Resolve("codex", Dirs{SessionDir: "/tmp/sessions"})
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +161,11 @@ func TestResolveCodexConfigOnlyWithAuth(t *testing.T) {
 }
 
 func TestResolveCodexBoth(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "auth.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", tmp)
 	ad, err := Resolve("codex", Dirs{SessionDir: "/tmp/sessions", ConfigDir: "/tmp/config"})
 	if err != nil {
 		t.Fatal(err)
@@ -316,3 +329,189 @@ func TestNativeEnvExport(t *testing.T) {
 		t.Errorf("SM_NATIVE_CODEX_HOME = %q", exports["SM_NATIVE_CODEX_HOME"])
 	}
 }
+
+func TestResolveCodexSessionKeychainError(t *testing.T) {
+	// D6: S also requires file-based auth
+	tmp := t.TempDir()
+	t.Setenv("CODEX_HOME", tmp)
+	_, err := Resolve("codex", Dirs{SessionDir: "/tmp/sessions"})
+	if err == nil {
+		t.Error("expected keychain error for S without auth.json")
+	}
+}
+
+func TestResolveDSHPatchFormat(t *testing.T) {
+	// D4: patch YAML must be a top-level array of loader entries
+	ad, err := Resolve("dsh", Dirs{SessionDir: "/tmp/sessions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ad.PatchFiles) != 1 {
+		t.Fatalf("expected 1 patch file, got %d", len(ad.PatchFiles))
+	}
+	content := string(ad.PatchFiles[0].Content)
+	if content[0] != '-' {
+		t.Errorf("patch file must start with a YAML array entry '- id:', got %q", content[:20])
+	}
+	if !strings.Contains(content, "- id: session-persistence-jsonl") || !strings.Contains(content, "- id: storage-json") {
+		t.Errorf("patch file missing expected entries:\n%s", content)
+	}
+}
+
+func TestResolveAgyConfigOnly(t *testing.T) {
+	// D7: C-only must pass --app_data_dir pinned to native
+	ad, err := Resolve("agy", Dirs{ConfigDir: "/tmp/config"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasGeminiDir := false
+	hasAppDataDir := false
+	for _, arg := range ad.Args {
+		if len(arg) > 13 && arg[:13] == "--gemini_dir=" {
+			hasGeminiDir = true
+		}
+		if len(arg) > 15 && arg[:15] == "--app_data_dir=" {
+			hasAppDataDir = true
+		}
+	}
+	if !hasGeminiDir {
+		t.Error("C-only should set --gemini_dir")
+	}
+	if !hasAppDataDir {
+		t.Error("C-only should set --app_data_dir to pin sessions to native")
+	}
+}
+
+func TestResolveOpenCodeSessionRoots(t *testing.T) {
+	// D8: SessionRoots must follow S
+	ad, err := Resolve("opencode", Dirs{SessionDir: "/tmp/sessions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "/tmp/sessions/opencode"
+	if len(ad.SessionRoots) != 1 || ad.SessionRoots[0] != want {
+		t.Errorf("SessionRoots = %v, want [%s]", ad.SessionRoots, want)
+	}
+}
+
+func TestSymlinkCollision(t *testing.T) {
+	// D9a: refuse to re-point existing symlink to a different target
+	tmp := t.TempDir()
+	link := filepath.Join(tmp, "link")
+	if err := os.Symlink("/original/target", link); err != nil {
+		t.Fatal(err)
+	}
+	err := EnsureSymlinks([]Symlink{{link, "/different/target"}})
+	if err == nil {
+		t.Error("expected collision error when re-pointing symlink")
+	}
+}
+
+func TestSymlinkSameTarget(t *testing.T) {
+	tmp := t.TempDir()
+	link := filepath.Join(tmp, "link")
+	if err := os.Symlink("/same/target", link); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureSymlinks([]Symlink{{link, "/same/target"}}); err != nil {
+		t.Errorf("same-target symlink should not error: %v", err)
+	}
+}
+
+func TestApplyToProcess(t *testing.T) {
+	// Need a codex auth.json for the resolver
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "auth.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", tmp)
+
+	sessDir := t.TempDir()
+	t.Setenv("SM_SESSION_DIR", sessDir)
+	t.Setenv("SM_CONFIG_DIR", "")
+
+	if err := ApplyToProcess(FromEnv()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		resolvedMu.Lock()
+		resolved = nil
+		resolvedErrs = nil
+		resolvedMu.Unlock()
+	}()
+
+	// claude's CLAUDE_CONFIG_DIR should now be set in process env
+	ccd := os.Getenv("CLAUDE_CONFIG_DIR")
+	if ccd == "" {
+		t.Error("CLAUDE_CONFIG_DIR should be set in process env after ApplyToProcess")
+	}
+	// codex's CODEX_HOME should be overridden
+	ch := os.Getenv("CODEX_HOME")
+	if ch == tmp {
+		t.Error("CODEX_HOME should be overridden by ApplyToProcess")
+	}
+	// Cached should return the resolution
+	if Cached("claude") == nil {
+		t.Error("Cached(claude) should be non-nil after ApplyToProcess")
+	}
+	if args := ResolvedArgs("agy"); args == nil {
+		t.Error("ResolvedArgs(agy) should be non-nil when S is set")
+	}
+}
+
+func TestGeminiDirFollowsConfig(t *testing.T) {
+	// Set up cached resolution with C
+	resolvedMu.Lock()
+	resolved = map[string]*AgentDirs{
+		"agy": {ConfigDir: "/custom/config/agy/config"},
+	}
+	resolvedMu.Unlock()
+	defer func() {
+		resolvedMu.Lock()
+		resolved = nil
+		resolvedMu.Unlock()
+	}()
+
+	got := GeminiDir("/fallback")
+	want := "/custom/config/agy"
+	if got != want {
+		t.Errorf("GeminiDir = %q, want %q", got, want)
+	}
+}
+
+func TestGeminiDirFallback(t *testing.T) {
+	resolvedMu.Lock()
+	resolved = nil
+	resolvedMu.Unlock()
+
+	got := GeminiDir("/myhome")
+	want := "/myhome/.gemini"
+	if got != want {
+		t.Errorf("GeminiDir = %q, want %q", got, want)
+	}
+}
+
+func TestCachedErrorOpenCode(t *testing.T) {
+	resolvedMu.Lock()
+	resolvedErrs = map[string]error{
+		"opencode": fmt.Errorf("opencode does not support --config-dir"),
+	}
+	resolved = map[string]*AgentDirs{
+		"opencode": {Env: map[string]string{}, SessionRoots: []string{}},
+	}
+	resolvedMu.Unlock()
+	defer func() {
+		resolvedMu.Lock()
+		resolved = nil
+		resolvedErrs = nil
+		resolvedMu.Unlock()
+	}()
+
+	if err := CachedError("opencode"); err == nil {
+		t.Error("expected cached error for opencode")
+	}
+	if err := CachedError("claude"); err != nil {
+		t.Errorf("unexpected cached error for claude: %v", err)
+	}
+}
+

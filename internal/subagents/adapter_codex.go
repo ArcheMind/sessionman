@@ -3,12 +3,12 @@ package subagents
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -148,17 +148,9 @@ func (d *Daemon) startCodexLocked() error {
 	if err != nil {
 		return err
 	}
-	ad, err := nativedirs.Resolve("codex", nativedirs.FromEnv())
-	if err != nil {
-		return err
-	}
-	if err := nativedirs.Prepare(ad); err != nil {
-		return err
-	}
-	plan := runtime.CommandPlan{Executable: "codex", Args: mapped.Args, Cwd: req.Cwd}
-	plan.Env, plan.UnsetEnv = nativedirs.MergeEnv(ad)
+	plan := runtime.CommandPlan{Executable: "codex", Args: mapped.Args, Cwd: req.Cwd, Env: map[string]string{}}
 	// Auth pinning: if resolver didn't set CODEX_HOME, fall back to auth pinning
-	if _, ok := plan.Env["CODEX_HOME"]; !ok {
+	if os.Getenv("CODEX_HOME") == "" {
 		authEnv, _ := AuthEnvironment(auth)
 		for k, v := range authEnv {
 			plan.Env[k] = v

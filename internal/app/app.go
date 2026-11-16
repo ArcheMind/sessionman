@@ -1050,7 +1050,7 @@ func (a App) printHelp() {
 	fmt.Fprint(a.Stdout, `SessionMan — The translator between your favorite coding agents.
 
 USAGE
-  sm [--include-subagents]
+  sm [--session-dir <path>] [--config-dir <path>] [--include-subagents]
   sm --resume <transcript-file>
   sm <agent> [options] [-- <native args...>]
   sm [--json|--yaml] <command> [args...]
@@ -1094,6 +1094,10 @@ AGENT OPTIONS
   --cwd <path>               Set the working directory
   --dry-run                  Show the invocation without launching
   -- <native args...>        Pass arguments to the native agent
+
+DIRECTORY ISOLATION
+  --session-dir <path>       Override session storage for all agents (absolute)
+  --config-dir <path>        Override user config for all agents (absolute)
 
 OUTPUT & DIAGNOSTICS
   --json | --yaml            Structured command output

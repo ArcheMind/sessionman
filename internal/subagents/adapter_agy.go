@@ -139,18 +139,8 @@ func (d *Daemon) startAgyLocked() error {
 		return err
 	}
 	agyEnv := d.agyEnvironment()
-	ad, adErr := nativedirs.Resolve("agy", nativedirs.FromEnv())
-	if adErr == nil {
-		if err := nativedirs.Prepare(ad); err != nil {
-			return err
-		}
-		resolved, _ := nativedirs.MergeEnv(ad)
-		for k, v := range resolved {
-			agyEnv[k] = v
-		}
-		mapped.Args = append(ad.Args, mapped.Args...)
-	}
-	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: mapped.Args, Cwd: req.Cwd, Env: agyEnv})
+	args := append(nativedirs.ResolvedArgs("agy"), mapped.Args...)
+	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: args, Cwd: req.Cwd, Env: agyEnv})
 	if err != nil {
 		return err
 	}

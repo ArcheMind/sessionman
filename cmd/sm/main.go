@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/ArcheMind/agentx/internal/app"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/update"
 )
 
@@ -49,6 +50,10 @@ func main() {
 		args = args[1:]
 	}
 	args = appArgs
+	if err := nativedirs.ApplyToProcess(nativedirs.FromEnv()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	application := app.New(debug, os.Stdin, os.Stdout, os.Stderr)
 	if bare {
 		stop, err := application.CheckStartupUpdate(context.Background(), debug)

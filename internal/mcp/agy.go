@@ -7,12 +7,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 )
 
 const agyOwner = "sessionman native agy plugin\n"
 
 func PrepareAgyPlugin(home, executable string, write bool) (string, error) {
-	root := filepath.Join(home, ".gemini", "config", "plugins", "sessionman")
+	gemini := nativedirs.GeminiDir(home)
+	root := filepath.Join(gemini, "config", "plugins", "sessionman")
 	marker := filepath.Join(root, ".sessionman-owned")
 	exists := false
 	if info, err := os.Lstat(root); err == nil {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // Dirs holds SM's two optional, orthogonal directory parameters.
@@ -23,6 +24,93 @@ func FromEnv() Dirs {
 }
 
 func (d Dirs) Empty() bool { return d.SessionDir == "" && d.ConfigDir == "" }
+
+var (
+	resolved     map[string]*AgentDirs
+	resolvedErrs map[string]error
+	resolvedMu   sync.Mutex
+)
+
+// KnownAgents lists agents the resolver handles.
+var KnownAgents = []string{"pi", "codex", "claude", "opencode", "dsh", "agy"}
+
+// ApplyToProcess resolves all agents once and writes the results into sm's own
+// process environment so every code path (session lookup, history import, list)
+// and every child process sees the same directories. Call once from main after
+// parsing --session-dir / --config-dir.
+func ApplyToProcess(dirs Dirs) error {
+	if dirs.Empty() {
+		return nil
+	}
+	resolvedMu.Lock()
+	defer resolvedMu.Unlock()
+	resolved = make(map[string]*AgentDirs, len(KnownAgents))
+	resolvedErrs = make(map[string]error, len(KnownAgents))
+	for _, agent := range KnownAgents {
+		ad, err := Resolve(agent, dirs)
+		if err != nil {
+			resolvedErrs[agent] = err
+			resolved[agent] = &AgentDirs{Env: map[string]string{}, SessionRoots: []string{}}
+			continue
+		}
+		if err := Prepare(ad); err != nil {
+			return fmt.Errorf("prepare %s directories: %w", agent, err)
+		}
+		resolved[agent] = ad
+		for k, v := range ad.Env {
+			os.Setenv(k, v)
+		}
+		for _, k := range ad.UnsetEnv {
+			os.Unsetenv(k)
+		}
+		for k, v := range NativeEnvExport(ad) {
+			os.Setenv(k, v)
+		}
+	}
+	return nil
+}
+
+// Cached returns the cached AgentDirs from ApplyToProcess, or nil if not cached.
+func Cached(agent string) *AgentDirs {
+	resolvedMu.Lock()
+	defer resolvedMu.Unlock()
+	if resolved == nil {
+		return nil
+	}
+	return resolved[agent]
+}
+
+// CachedError returns any error from ApplyToProcess for this agent.
+func CachedError(agent string) error {
+	resolvedMu.Lock()
+	defer resolvedMu.Unlock()
+	if resolvedErrs == nil {
+		return nil
+	}
+	return resolvedErrs[agent]
+}
+
+// ResolvedArgs returns the agent-specific CLI args (--gemini_dir, --patch, etc.)
+// from the cached resolution. Returns nil when no cache exists or dirs are empty.
+func ResolvedArgs(agent string) []string {
+	if ad := Cached(agent); ad != nil {
+		return ad.Args
+	}
+	return nil
+}
+
+// GeminiDir returns the resolved gemini directory (native or overridden by C).
+// When fallbackHome is non-empty, it is used as the base for the native default;
+// otherwise the user home directory is used.
+func GeminiDir(fallbackHome string) string {
+	if ad := Cached("agy"); ad != nil && ad.ConfigDir != "" {
+		return filepath.Dir(ad.ConfigDir)
+	}
+	if fallbackHome == "" {
+		fallbackHome = userHome()
+	}
+	return filepath.Join(fallbackHome, ".gemini")
+}
 
 // AgentDirs is the resolved directory configuration for one agent.
 type AgentDirs struct {
@@ -114,7 +202,9 @@ func NativeEnvExport(ad *AgentDirs) map[string]string {
 	return out
 }
 
-// EnsureSymlinks creates all symlinks idempotently.
+// EnsureSymlinks creates all symlinks idempotently. When a symlink already
+// points to a different target, it fails with a collision error (D9a) instead
+// of silently re-pointing, unless allowRepoint is true.
 func EnsureSymlinks(links []Symlink) error {
 	for _, link := range links {
 		if err := os.MkdirAll(filepath.Dir(link.Link), 0700); err != nil {
@@ -125,9 +215,7 @@ func EnsureSymlinks(links []Symlink) error {
 			if existing == link.Target {
 				continue
 			}
-			if err := os.Remove(link.Link); err != nil {
-				return fmt.Errorf("replace stale symlink %s: %w", link.Link, err)
-			}
+			return fmt.Errorf("symlink collision: %s already points to %s, refusing to re-point to %s; use a different --session-dir or --config-dir", link.Link, existing, link.Target)
 		} else if !os.IsNotExist(err) {
 			info, statErr := os.Lstat(link.Link)
 			if statErr != nil {
@@ -257,6 +345,11 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		ad.ConfigDir = configSource
 	}
 
+	// S moves CODEX_HOME, changing the keyring key; check in both S and C-only paths
+	if _, err := os.Stat(filepath.Join(native, "auth.json")); os.IsNotExist(err) {
+		return nil, fmt.Errorf("codex requires file-based auth (auth.json at %s); keychain-based login is not supported with --session-dir or --config-dir", native)
+	}
+
 	if dirs.SessionDir != "" {
 		codexHome := filepath.Join(dirs.SessionDir, "codex")
 		ad.Env["CODEX_HOME"] = codexHome
@@ -295,10 +388,6 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(shadow, "auth.json"), filepath.Join(native, "auth.json"),
 		})
-		// Codex keychain check: if no auth.json exists at native, keychain mode might be active
-		if _, err := os.Stat(filepath.Join(native, "auth.json")); os.IsNotExist(err) {
-			return nil, fmt.Errorf("codex shadow home requires file-based auth (auth.json at %s); keychain-based login is not supported with --config-dir", native)
-		}
 	}
 
 	return ad, nil
@@ -385,6 +474,7 @@ func resolveOpenCode(dirs Dirs) (*AgentDirs, error) {
 	if dirs.SessionDir != "" {
 		dbDir := filepath.Join(dirs.SessionDir, "opencode")
 		ad.Env["OPENCODE_DB"] = filepath.Join(dbDir, "opencode.db")
+		ad.SessionRoots = []string{dbDir}
 	}
 
 	return ad, nil
@@ -405,27 +495,27 @@ func resolveDSH(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
-	// Generate overlay YAML for --patch
-	var rows []string
+	// Generate overlay YAML for --patch (top-level array of loader patch entries)
+	var entries []string
 	if dirs.SessionDir != "" {
 		sessDir := filepath.Join(dirs.SessionDir, "dsh", "sessions")
 		storDir := filepath.Join(dirs.SessionDir, "dsh", "storages")
-		rows = append(rows,
-			fmt.Sprintf("session-persistence-jsonl:\n  config:\n    root: %q", sessDir),
-			fmt.Sprintf("storage-json:\n  config:\n    root: %q", storDir),
+		entries = append(entries,
+			fmt.Sprintf("- id: session-persistence-jsonl\n  config:\n    root: %q", sessDir),
+			fmt.Sprintf("- id: storage-json\n  config:\n    root: %q", storDir),
 		)
 		ad.SessionRoots = []string{sessDir}
 	}
 	if dirs.ConfigDir != "" {
 		settingsPath := filepath.Join(dirs.ConfigDir, "dsh", "settings.yaml")
-		rows = append(rows, fmt.Sprintf("settings:\n  config:\n    path: %q", settingsPath))
+		entries = append(entries, fmt.Sprintf("- id: settings\n  config:\n    path: %q", settingsPath))
 		ad.ConfigDir = filepath.Join(dirs.ConfigDir, "dsh")
 	}
-	if len(rows) > 0 {
+	if len(entries) > 0 {
 		patchDir := filepath.Join(userHome(), ".local", "state", "sessionman", "dsh-patches")
 		h := sha256.Sum256([]byte(dirs.SessionDir + "\x00" + dirs.ConfigDir))
 		patchPath := filepath.Join(patchDir, hex.EncodeToString(h[:8])+".yaml")
-		content := strings.Join(rows, "\n")
+		content := strings.Join(entries, "\n")
 		ad.PatchFiles = append(ad.PatchFiles, PatchFile{patchPath, []byte(content)})
 		ad.Args = append(ad.Args, "--patch", patchPath)
 	}
@@ -462,9 +552,12 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 		ad.SessionRoots = []string{filepath.Join(sessionDir, "conversations")}
 		ad.Limitation = "agy: CLI settings.json lives with the session dir"
 	} else if dirs.ConfigDir != "" {
-		// C only: gemini_dir moved, but sessions stay in the moved dir's app data
-		// (agy has no independent session-only parameter without also moving gemini_dir).
-		// Keep session roots at native.
+		// C only: gemini_dir moved; pin --app_data_dir to native so sessions stay native
+		nativeRel, err := filepath.Rel(geminiDir, filepath.Join(native, "antigravity-cli"))
+		if err != nil {
+			return nil, fmt.Errorf("agy --app_data_dir cannot be expressed relative to gemini_dir %s: %w", geminiDir, err)
+		}
+		ad.Args = append(ad.Args, "--app_data_dir="+nativeRel)
 		ad.SessionRoots = []string{filepath.Join(native, "antigravity-cli")}
 	}
 

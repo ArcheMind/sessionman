@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -65,14 +64,6 @@ func (d *Daemon) startClaudeLocked() error {
 		plan.Args = append(plan.Args, "--allowedTools", "mcp__sessionman__StartExternalSubagent", "mcp__sessionman__SendExternalSubagentMessage", "mcp__sessionman__StopExternalSubagent", "mcp__sessionman__ListExternalSubagentSessions", "mcp__sessionman__MessageHost")
 	}
 	d.procAuth = Auth{}
-	ad, err := nativedirs.Resolve("claude", nativedirs.FromEnv())
-	if err != nil {
-		return err
-	}
-	if err := nativedirs.Prepare(ad); err != nil {
-		return err
-	}
-	plan.Env, plan.UnsetEnv = nativedirs.MergeEnv(ad)
 	stream, err := d.startStream(plan)
 	if err != nil {
 		return err

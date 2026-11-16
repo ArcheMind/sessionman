@@ -93,17 +93,8 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	detail.Workspace = workspace
 
-	// Resolve the directory before importing history so the same store
-	// serves the import, the native execution, and the result lookup.
 	auth, err := subagents.DiscoverAuth(agent.ID)
 	if err != nil {
-		return err
-	}
-	ad, err := nativedirs.Resolve(agent.ID, nativedirs.FromEnv())
-	if err != nil {
-		return err
-	}
-	if err := nativedirs.Prepare(ad); err != nil {
 		return err
 	}
 	token := ""
@@ -140,13 +131,13 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	plan.Env, plan.UnsetEnv = nativedirs.MergeEnv(ad)
-	// Merge auth pinning for agents that need it (codex, pi)
+	// Auth pinning for agents that need it (codex, pi)
 	authEnv, authUnset := subagents.AuthEnvironment(auth)
 	for k, v := range authEnv {
-		if _, alreadySet := plan.Env[k]; !alreadySet {
-			plan.Env[k] = v
+		if plan.Env == nil {
+			plan.Env = map[string]string{}
 		}
+		plan.Env[k] = v
 	}
 	plan.UnsetEnv = append(plan.UnsetEnv, authUnset...)
 	if agent.ID == "agy" {
@@ -336,7 +327,8 @@ func resolveContinueWorkspace(flagValue, transcriptValue string) (string, error)
 func (a App) continueSessionFile(agentID, workspace, token, codexHome string) (string, error) {
 	switch agentID {
 	case "agy":
-		return filepath.Join(a.Sessions.HomeDir, ".gemini", "antigravity-cli", "conversations", token+".db"), nil
+		gemini := nativedirs.GeminiDir(a.Sessions.HomeDir)
+		return filepath.Join(gemini, "antigravity-cli", "conversations", token+".db"), nil
 	case "claude":
 		return sessions.ClaudeProjectFile(a.Sessions.HomeDir, workspace, token), nil
 	case "codex":
