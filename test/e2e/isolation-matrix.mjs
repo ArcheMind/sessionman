@@ -10,7 +10,7 @@
 // Requires: pi, codex, claude, agy, dsh installed natively with valid auth.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, existsSync, rmSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, existsSync, rmSync, readdirSync, lstatSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, resolve, relative } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -38,7 +38,7 @@ function tree(root) {
   const walk = (dir) => {
     for (const name of readdirSync(dir)) {
       const full = join(dir, name);
-      if (statSync(full).isDirectory()) walk(full); else files.push(relative(root, full));
+      if (lstatSync(full).isDirectory()) walk(full); else files.push(relative(root, full));
     }
   };
   if (existsSync(root)) walk(root);
@@ -79,6 +79,7 @@ function testDirectLaunchDryRun(agent, s, c) {
 
 // 2. Session continue: the main live entry point. Sends a minimal transcript, asserts session lands in S.
 function testSessionContinue(agent, s, c) {
+  if (agent === "dsh") return null; // dsh has no headless continue adapter
   const workspace = tmpBase(`continue-${agent}`);
   const marker = `MARKER-${randomUUID().slice(0, 8)}`;
   const transcript = JSON.stringify({
