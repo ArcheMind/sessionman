@@ -2,7 +2,7 @@
 .PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-duplex test-mcp-race test-mcp-syntax
 .PHONY: smoke-mcp-contract smoke-transcript-fidelity smoke-transcript-cross smoke-continue-live
 .PHONY: smoke-mcp-presets smoke-presets smoke-mcp-effort-live smoke-mcp-isolation-live
-.PHONY: check-update-platforms
+.PHONY: check-update-platforms e2e
 
 # Schema validation reuses the protocol module's ajv; empty when the module dir is unresolvable, and the smoke reports it skipped.
 SESSIONMAN_PROTOCOL_DIR ?= $(shell go list -m -f '{{.Dir}}' github.com/ArcheMind/sessionman-protocol 2>/dev/null)
@@ -42,6 +42,9 @@ build:
 
 install: build
 	install -m 0755 bin/sm "$${SM_INSTALL_DIR:-$$HOME/.local/bin}/sm"
+
+e2e: build
+	node test/e2e/isolation-matrix.mjs "$(CURDIR)/bin/sm"
 
 smoke-mcp-duplex: build
 	node test/smoke/mcp-duplex.mjs "$(CURDIR)/bin/sm"

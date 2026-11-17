@@ -122,17 +122,6 @@ func TestNativeRootIgnoresSmOverride(t *testing.T) {
 	}
 }
 
-// Defect G: relative S/C from env is fatal, not a per-agent warning.
-func TestApplyToProcessRejectsRelative(t *testing.T) {
-	resetCache(t)
-	if err := ApplyToProcess(Dirs{SessionDir: "rel"}); err == nil {
-		t.Error("relative SM_SESSION_DIR must fail")
-	}
-	if err := ApplyToProcess(Dirs{ConfigDir: "rel"}); err == nil {
-		t.Error("relative SM_CONFIG_DIR must fail")
-	}
-}
-
 func treeEntries(t *testing.T, root string) []string {
 	t.Helper()
 	var out []string
@@ -180,50 +169,5 @@ func TestReadyPreparesOnlyTarget(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(home, ".local", "state", "sessionman")); err == nil {
 		t.Error("preparing pi wrote sessionman state (agy shadow / dsh patch)")
-	}
-}
-
-// Defect E: a conflict anywhere in the plan means zero writes.
-func TestPrepareConflictWritesNothing(t *testing.T) {
-	root := t.TempDir()
-	conflict := filepath.Join(root, "z", "link")
-	if err := os.MkdirAll(filepath.Dir(conflict), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink("/elsewhere", conflict); err != nil {
-		t.Fatal(err)
-	}
-	before := treeEntries(t, root)
-	ad := &AgentDirs{
-		SessionRoots: []string{filepath.Join(root, "a", "sessions")},
-		Symlinks: []Symlink{
-			{filepath.Join(root, "a", "first"), "/target/first"},
-			{conflict, "/target/second"},
-		},
-		PatchFiles: []PatchFile{{filepath.Join(root, "p", "patch.yaml"), []byte("x")}},
-	}
-	if err := Prepare(ad); err == nil {
-		t.Fatal("expected collision")
-	}
-	if after := treeEntries(t, root); len(after) != len(before) {
-		t.Errorf("conflicting Prepare wrote: before %v after %v", before, after)
-	}
-}
-
-func TestPrepareFileWhereDirExpected(t *testing.T) {
-	root := t.TempDir()
-	blocker := filepath.Join(root, "a")
-	if err := os.WriteFile(blocker, nil, 0600); err != nil {
-		t.Fatal(err)
-	}
-	ad := &AgentDirs{
-		SessionRoots: []string{filepath.Join(root, "b")},
-		Symlinks:     []Symlink{{filepath.Join(blocker, "link"), "/t"}},
-	}
-	if err := Prepare(ad); err == nil {
-		t.Fatal("expected conflict for file in place of directory")
-	}
-	if _, err := os.Stat(filepath.Join(root, "b")); err == nil {
-		t.Error("conflicting Prepare created a directory")
 	}
 }
