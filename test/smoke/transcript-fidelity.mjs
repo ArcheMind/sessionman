@@ -117,7 +117,7 @@ const ws='/tmp/agentx-fidelity-ws'
   const srcSystem=pick(source,P,'source system record',r=>r.type==='system'),outSystem=pick(output,P,'system informational record',r=>r.type==='system')
   same(P,'system record subtype and text',{subtype:outSystem.subtype,content:outSystem.content},{subtype:'informational',content:srcSystem.content})
   check(P,'attachment dropped by design',!output.some(r=>r.type==='attachment'))
-  same(P,'readable thinking becomes think text and final text stays intact',blocks(output).filter(b=>b.type==='text'),blocks(source).flatMap(b=>b.type==='thinking'?[{type:'text',text:thinkText(b.thinking)}]:b.type==='text'?[b]:[]))
+  same(P,'readable thinking becomes marker-prefixed text and final text stays intact',blocks(output).filter(b=>b.type==='text'),blocks(source).flatMap(b=>b.type==='thinking'?[{type:'text',text:`※\n${b.thinking}`}]:b.type==='text'?[b]:[]))
   results[P]={written,records:output.length}
 }
 

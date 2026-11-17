@@ -18,20 +18,20 @@ import (
 // Native stdout wakes the store reader; the timer covers stores flushed after
 // their corresponding stdout event, including while a native tool is running.
 type continueTranscriptStream struct {
-	mu                                   sync.Mutex
-	app                                  App
+	mu                             sync.Mutex
+	app                            App
 	agent, model, workspace, token string
-	prefix                               int
-	cancel                               func()
-	done, stopped                        chan struct{}
-	err                                  error
-	native                               []byte
-	sessionID, path                      string
-	info                                 os.FileInfo
-	offset                               int64
-	pending                              []byte
-	records                              []map[string]any
-	emitted                              []json.RawMessage
+	prefix                         int
+	cancel                         func()
+	done, stopped                  chan struct{}
+	err                            error
+	native                         []byte
+	sessionID, path                string
+	info                           os.FileInfo
+	offset                         int64
+	pending                        []byte
+	records                        []map[string]any
+	emitted                        []json.RawMessage
 }
 
 func newContinueTranscriptStream(a App, agent, model, workspace, token string, prefix int, cancel func()) *continueTranscriptStream {

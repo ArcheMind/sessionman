@@ -4,11 +4,22 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-11-17
+
 ### Changed
 
 - Write foreign-agent reasoning to Claude Code sessions as a `※` text block
   instead of `<think>` tags, which triggered `reasoning_extraction` refusals
   on resume; the importer accepts both forms.
+
+### Fixed
+
+- Resolve native agent directories once at startup and use the same paths for
+  session discovery, configuration, and subprocess environments.
+- Restore the original native directory environment for nested invocations,
+  and validate directory isolation before preparing only the target agent.
+- Keep dry-run resume free of filesystem writes and create missing directory
+  entries in custom configuration roots so configuration links remain usable.
 
 ## [0.15.0] - 2026-11-16
 

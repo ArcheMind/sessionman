@@ -598,4 +598,3 @@ func TestCachedErrorOpenCode(t *testing.T) {
 		t.Errorf("unexpected cached error for claude: %v", err)
 	}
 }
-

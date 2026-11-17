@@ -301,9 +301,9 @@ async function runPair(src,dst){
       if(secret.length&&nativeBytes.includes(secret))policyErrors.push('source thinking signature/ciphertext leaked into native output')
     }
     if(b.text){
-      const tagged=`<think>\n${b.text}\n</think>`
+      const tagged=dst==='claude'?`※\n${b.text}`:`<think>\n${b.text}\n</think>`
       const projected=dst==='agy'?nativeBytes.includes(Buffer.from(tagged)):nativeTexts.includes(tagged)
-      if(!projected)policyErrors.push('readable thinking missing its native <think> text projection: '+b.text)
+      if(!projected)policyErrors.push('readable thinking missing its native text projection: '+b.text)
     }
   }
   if(!(await readFile(sourcePath)).equals(sourceBytes))policyErrors.push('source native file was modified')
