@@ -109,10 +109,6 @@ func (d *Daemon) startPiLocked() error {
 	} else if _, err := os.Stat(a.Session); err != nil {
 		return fmt.Errorf("original Pi session unavailable: %w; no replacement created", err)
 	}
-	auth, err := DiscoverAuth("pi")
-	if err != nil {
-		return err
-	}
 	req, err := d.parameterRequest(roleInstructions)
 	if err != nil {
 		return err
@@ -122,13 +118,6 @@ func (d *Daemon) startPiLocked() error {
 		return err
 	}
 	plan := runtime.CommandPlan{Executable: "pi", Args: mapped.Args, Cwd: req.Cwd, Env: map[string]string{}}
-	// Auth pinning: if resolver didn't set PI_CODING_AGENT_DIR, fall back
-	if os.Getenv("PI_CODING_AGENT_DIR") == "" {
-		authEnv, _ := AuthEnvironment(auth)
-		for k, v := range authEnv {
-			plan.Env[k] = v
-		}
-	}
 	if err := d.injectPiDelegation(&plan); err != nil {
 		return err
 	}
@@ -147,7 +136,7 @@ func (d *Daemon) startPiLocked() error {
 		return err
 	}
 	proc := &nativeProc{stream: stream, done: make(chan struct{})}
-	d.proc, d.pi, d.procAuth = proc, &piState{replies: make(chan piReply, 1)}, auth
+	d.proc, d.pi, d.procAuth = proc, &piState{replies: make(chan piReply, 1)}, Auth{Key: "PI_CODING_AGENT_DIR", Dir: os.Getenv("PI_CODING_AGENT_DIR")}
 	d.persistMetaLocked()
 	notes := make(chan string, 256)
 	go d.readPi(proc, d.pi, notes)

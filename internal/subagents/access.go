@@ -3,7 +3,6 @@ package subagents
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
@@ -15,7 +14,7 @@ const (
 	ModeYolo   = agentparams.ModeYolo
 )
 
-// Auth is the native credential source discovered for one turn.
+// Auth is the native credential source for one turn's report.
 type Auth struct {
 	Key, Dir string
 }
@@ -24,58 +23,16 @@ func (a Auth) String() string {
 	return fmt.Sprintf("%s=%q", a.Key, a.Dir)
 }
 
-// authSource resolves the native credential directory via the nativedirs
-// native recovery rule (SM_NATIVE_<VAR> >> <VAR> >> default), preventing
-// shadow-of-shadow when SM overrides an agent home var.
-func authSource(agent string) (string, string, error) {
-	if agent == "claude" || agent == "agy" {
-		return "", "", nil
+// AuthFromEnv constructs an Auth from the process env the resolver already set.
+func AuthFromEnv(agent string) Auth {
+	switch agent {
+	case "codex":
+		return Auth{Key: "CODEX_HOME", Dir: os.Getenv("CODEX_HOME")}
+	case "pi":
+		return Auth{Key: "PI_CODING_AGENT_DIR", Dir: os.Getenv("PI_CODING_AGENT_DIR")}
+	default:
+		return Auth{}
 	}
-	if agent != "codex" && agent != "pi" {
-		return "", "", fmt.Errorf("%s has no native credential source", agent)
-	}
-	key, rel := "CODEX_HOME", ".codex"
-	if agent == "pi" {
-		key, rel = "PI_CODING_AGENT_DIR", filepath.Join(".pi", "agent")
-	}
-	// Native recovery: SM_NATIVE_<VAR> >> <VAR> >> default
-	if v := os.Getenv("SM_NATIVE_" + key); v != "" {
-		return key, filepath.Clean(v), nil
-	}
-	if dir := os.Getenv(key); dir != "" {
-		if !filepath.IsAbs(dir) {
-			return key, "", fmt.Errorf("%s=%q must be an absolute path; no fallback identity", key, dir)
-		}
-		return key, filepath.Clean(dir), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return key, "", fmt.Errorf("%s unset and home directory unknown: %w; no fallback identity", key, err)
-	}
-	return key, filepath.Join(home, rel), nil
-}
-
-// AuthEnvironment is the environment override that pins an execution to the
-// discovered credential source.
-func AuthEnvironment(auth Auth) (map[string]string, []string) {
-	if auth.Key == "" {
-		return map[string]string{}, nil
-	}
-	return map[string]string{auth.Key: auth.Dir}, nil
-}
-
-// DiscoverAuth pins the execution to the native agent's own credential directory.
-// Whether that directory can serve the model is the runtime's own call: pi and
-// codex resolve models and credentials themselves and fail loudly in-stream.
-func DiscoverAuth(agent string) (Auth, error) {
-	if agent == "claude" || agent == "agy" {
-		return Auth{}, nil
-	}
-	key, dir, err := authSource(agent)
-	if err != nil {
-		return Auth{}, err
-	}
-	return Auth{Key: key, Dir: dir}, nil
 }
 
 func Limits(o presets.Preset) string {

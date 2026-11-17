@@ -169,9 +169,9 @@ func TestAgySteerWaitsForAllInflightAndThenDeliversQueue(t *testing.T) {
 	if fakeRequest(t, records, "session/set_config_option")["value"] != "low" {
 		t.Fatal(records)
 	}
-	auth, err := DiscoverAuth("agy")
-	if err != nil || auth.Key != "" {
-		t.Fatal(auth, err)
+	auth := AuthFromEnv("agy")
+	if auth.Key != "" {
+		t.Fatal(auth)
 	}
 }
 
@@ -260,8 +260,8 @@ func TestAgyNestedMCPAndUnknownExecutor(t *testing.T) {
 	if response := d.sendAdapterLocked("x", "steer"); !strings.Contains(response.Error, "no native subagent") {
 		t.Fatal(response)
 	}
-	if _, err := DiscoverAuth("unknown"); err == nil {
-		t.Fatal("unknown executor inherited Codex auth")
+	if auth := AuthFromEnv("unknown"); auth.Key != "" {
+		t.Fatal("unknown executor inherited auth")
 	}
 }
 

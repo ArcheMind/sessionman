@@ -98,13 +98,8 @@ type Service struct {
 func New() Service {
 	home, _ := os.UserHomeDir()
 	svc := Service{HomeDir: home, LookPath: exec.LookPath, SessionRoots: map[string][]string{}}
-	dirs := nativedirs.FromEnv()
-	if !dirs.Empty() {
-		for _, id := range []string{"agy", "claude", "codex", "opencode", "pi", "dsh"} {
-			ad, err := nativedirs.Resolve(id, dirs)
-			if err != nil || len(ad.SessionRoots) == 0 {
-				continue
-			}
+	for _, id := range []string{"agy", "claude", "codex", "opencode", "pi", "dsh"} {
+		if ad := nativedirs.Cached(id); ad != nil && len(ad.SessionRoots) > 0 {
 			svc.SessionRoots[id] = ad.SessionRoots
 		}
 	}

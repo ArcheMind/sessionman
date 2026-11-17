@@ -109,19 +109,20 @@ func TestModeIsFixedForContinuation(t *testing.T) {
 	}
 }
 
-func TestAuthSourceIsNativeDefaultUnlessEnvironmentSetsIt(t *testing.T) {
-	t.Setenv("CODEX_HOME", "")
-	t.Setenv("PI_CODING_AGENT_DIR", "")
-	home, _ := os.UserHomeDir()
-	if key, dir, err := authSource("codex"); err != nil || key != "CODEX_HOME" || dir != filepath.Join(home, ".codex") {
-		t.Fatal(key, dir, err)
+func TestAuthFromEnvReadsProcessEnvironment(t *testing.T) {
+	t.Setenv("CODEX_HOME", "/resolved/codex")
+	t.Setenv("PI_CODING_AGENT_DIR", "/resolved/pi")
+	auth := AuthFromEnv("codex")
+	if auth.Key != "CODEX_HOME" || auth.Dir != "/resolved/codex" {
+		t.Fatal(auth)
 	}
-	if key, dir, err := authSource("pi"); err != nil || key != "PI_CODING_AGENT_DIR" || dir != filepath.Join(home, ".pi", "agent") {
-		t.Fatal(key, dir, err)
+	auth = AuthFromEnv("pi")
+	if auth.Key != "PI_CODING_AGENT_DIR" || auth.Dir != "/resolved/pi" {
+		t.Fatal(auth)
 	}
-	t.Setenv("CODEX_HOME", "relative")
-	if _, _, err := authSource("codex"); err == nil || !strings.Contains(err.Error(), "no fallback identity") {
-		t.Fatal(err)
+	auth = AuthFromEnv("claude")
+	if auth.Key != "" {
+		t.Fatal(auth)
 	}
 }
 

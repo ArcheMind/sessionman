@@ -237,20 +237,6 @@ func TestConcurrentWorktreeCreationInOneRepository(t *testing.T) {
 	}
 }
 
-func TestWorktreeIsKeptAndNamedWhenAuthSourceIsInvalid(t *testing.T) {
-	inner := &gitRunner{}
-	s := testServer(t, inner)
-	installFakeNative(t, "codex", nil)
-	dirtyRepo(t, s)
-	t.Setenv("CODEX_HOME", "relative")
-	_, err := s.call("ExternalSubagent", []byte(`{"description":"x","prompt":"x","model":"review","isolation":"worktree","name":"noauth","run_in_background":false}`))
-	s.mu.Lock()
-	a, _ := s.target("noauth")
-	s.mu.Unlock()
-	if err == nil || !strings.Contains(err.Error(), "no fallback identity") || a == nil || a.Worktree == nil || !strings.Contains(err.Error(), "Isolation: worktree path=\""+a.Worktree.Path+"\"") {
-		t.Fatal(err)
-	}
-	if _, statErr := os.Stat(a.Worktree.Path); statErr != nil || len(inner.plans) != 0 {
-		t.Fatal("worktree not kept or native execution started with an invalid auth source", statErr, len(inner.plans))
-	}
-}
+// Auth validation is now the native agent's responsibility; sm no longer
+// rejects upfront via DiscoverAuth. Worktree preservation on native errors
+// is covered by other tests.

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 )
 
 // CatalogError reports unreadable native entries alongside the usable catalog.
@@ -39,6 +41,10 @@ func (s Service) catalog(agent string, includeSubagents bool) ([]Summary, error)
 	failures := &CatalogError{}
 	for _, spec := range agentSpecs {
 		if agent != "" && spec.id != agent {
+			continue
+		}
+		if cachedErr := nativedirs.CachedError(spec.id); cachedErr != nil {
+			failures.Causes = append(failures.Causes, fmt.Errorf("load %s sessions: %w", spec.id, cachedErr))
 			continue
 		}
 		var found []Summary

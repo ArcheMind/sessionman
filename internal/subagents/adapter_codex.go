@@ -144,18 +144,7 @@ func (d *Daemon) startCodexLocked() error {
 	if err != nil {
 		return err
 	}
-	auth, err := DiscoverAuth("codex")
-	if err != nil {
-		return err
-	}
 	plan := runtime.CommandPlan{Executable: "codex", Args: mapped.Args, Cwd: req.Cwd, Env: map[string]string{}}
-	// Auth pinning: if resolver didn't set CODEX_HOME, fall back to auth pinning
-	if os.Getenv("CODEX_HOME") == "" {
-		authEnv, _ := AuthEnvironment(auth)
-		for k, v := range authEnv {
-			plan.Env[k] = v
-		}
-	}
 	plan.Env["RUST_LOG"] = codexTelemetryFilter
 	stream, err := d.startStream(plan)
 	if err != nil {
@@ -163,7 +152,7 @@ func (d *Daemon) startCodexLocked() error {
 	}
 	proc := &nativeProc{stream: stream, done: make(chan struct{})}
 	cs := &codexState{pending: map[int]chan codexReply{}, closed: make(chan struct{})}
-	d.proc, d.codex, d.procAuth = proc, cs, auth
+	d.proc, d.codex, d.procAuth = proc, cs, Auth{Key: "CODEX_HOME", Dir: os.Getenv("CODEX_HOME")}
 	notes := make(chan string, 256)
 	go d.readCodex(proc, cs, notes)
 	go d.pumpCodex(proc, notes)

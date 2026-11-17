@@ -14,7 +14,7 @@ func TestAgyRecentDoesNotReadExternalTranscriptResources(t *testing.T) {
 		t.Run(resource, func(t *testing.T) {
 			home := t.TempDir()
 			source := agyTestSession()
-			id, err := WriteAgySessionFile(source, home)
+			id, err := WriteAgySessionFile(source, agyRoot(home))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -246,7 +246,7 @@ func agySummaryFixture(t *testing.T, path string) string {
 
 func TestReadAgySessionRefreshesTitleWithoutRescanning(t *testing.T) {
 	home := t.TempDir()
-	id, err := WriteAgySessionFile(agyTestSession(), home)
+	id, err := WriteAgySessionFile(agyTestSession(), agyRoot(home))
 	if err != nil {
 		t.Fatal(err)
 	}

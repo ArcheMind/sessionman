@@ -39,35 +39,17 @@ func TestResolvePiSessionOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ad.Env["PI_CODING_AGENT_SESSION_DIR"] != "/tmp/sessions/pi" {
-		t.Errorf("PI_CODING_AGENT_SESSION_DIR = %q", ad.Env["PI_CODING_AGENT_SESSION_DIR"])
-	}
-	if _, ok := ad.Env["PI_CODING_AGENT_DIR"]; ok {
-		t.Error("PI_CODING_AGENT_DIR should not be set for S-only")
-	}
-	if len(ad.SessionRoots) != 1 || ad.SessionRoots[0] != "/tmp/sessions/pi" {
-		t.Errorf("SessionRoots = %v", ad.SessionRoots)
-	}
-}
-
-func TestResolvePiConfigOnly(t *testing.T) {
-	ad, err := Resolve("pi", Dirs{ConfigDir: "/tmp/config"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ad.Env["PI_CODING_AGENT_DIR"] != "/tmp/config/pi" {
+	// S sets PI_CODING_AGENT_DIR to the shadow home at S/pi
+	if ad.Env["PI_CODING_AGENT_DIR"] != "/tmp/sessions/pi" {
 		t.Errorf("PI_CODING_AGENT_DIR = %q", ad.Env["PI_CODING_AGENT_DIR"])
 	}
-	// sessions must be pinned to native
-	native := ad.NativeHome
-	expected := filepath.Join(native, "sessions")
-	if ad.Env["PI_CODING_AGENT_SESSION_DIR"] != expected {
-		t.Errorf("PI_CODING_AGENT_SESSION_DIR = %q, want %q", ad.Env["PI_CODING_AGENT_SESSION_DIR"], expected)
+	if _, ok := ad.Env["PI_CODING_AGENT_SESSION_DIR"]; ok {
+		t.Error("PI_CODING_AGENT_SESSION_DIR should not be set")
 	}
-	if ad.ConfigDir != "/tmp/config/pi" {
-		t.Errorf("ConfigDir = %q", ad.ConfigDir)
+	if len(ad.SessionRoots) != 1 || ad.SessionRoots[0] != "/tmp/sessions/pi/sessions" {
+		t.Errorf("SessionRoots = %v", ad.SessionRoots)
 	}
-	// should have auth symlinks
+	// auth symlinks into shadow home
 	found := 0
 	for _, link := range ad.Symlinks {
 		if filepath.Base(link.Link) == "auth.json" || filepath.Base(link.Link) == "mcp-auth.json" {
@@ -79,16 +61,60 @@ func TestResolvePiConfigOnly(t *testing.T) {
 	}
 }
 
+func TestResolvePiConfigOnly(t *testing.T) {
+	ad, err := Resolve("pi", Dirs{ConfigDir: "/tmp/config"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// C only: shadow home, PI_CODING_AGENT_DIR points there
+	shadow := ad.Env["PI_CODING_AGENT_DIR"]
+	if shadow == "" || shadow == "/tmp/config/pi" {
+		t.Errorf("PI_CODING_AGENT_DIR should be a shadow home, got %q", shadow)
+	}
+	if _, ok := ad.Env["PI_CODING_AGENT_SESSION_DIR"]; ok {
+		t.Error("PI_CODING_AGENT_SESSION_DIR should not be set")
+	}
+	if ad.ConfigDir != "/tmp/config/pi" {
+		t.Errorf("ConfigDir = %q", ad.ConfigDir)
+	}
+	// sessions stay native
+	native := ad.NativeHome
+	if len(ad.SessionRoots) != 1 || ad.SessionRoots[0] != filepath.Join(native, "sessions") {
+		t.Errorf("SessionRoots = %v", ad.SessionRoots)
+	}
+	// should have auth + config symlinks
+	authFound := 0
+	for _, link := range ad.Symlinks {
+		if filepath.Base(link.Link) == "auth.json" || filepath.Base(link.Link) == "mcp-auth.json" {
+			authFound++
+		}
+	}
+	if authFound != 2 {
+		t.Errorf("expected 2 auth symlinks, got %d", authFound)
+	}
+}
+
 func TestResolvePiBoth(t *testing.T) {
 	ad, err := Resolve("pi", Dirs{SessionDir: "/tmp/sessions", ConfigDir: "/tmp/config"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ad.Env["PI_CODING_AGENT_DIR"] != "/tmp/config/pi" {
+	// S+C: shadow home at S/pi, config from C/pi
+	if ad.Env["PI_CODING_AGENT_DIR"] != "/tmp/sessions/pi" {
 		t.Errorf("PI_CODING_AGENT_DIR = %q", ad.Env["PI_CODING_AGENT_DIR"])
 	}
-	if ad.Env["PI_CODING_AGENT_SESSION_DIR"] != "/tmp/sessions/pi" {
-		t.Errorf("PI_CODING_AGENT_SESSION_DIR = %q", ad.Env["PI_CODING_AGENT_SESSION_DIR"])
+	if _, ok := ad.Env["PI_CODING_AGENT_SESSION_DIR"]; ok {
+		t.Error("PI_CODING_AGENT_SESSION_DIR should not be set")
+	}
+	// config entries should come from C
+	configFromC := false
+	for _, link := range ad.Symlinks {
+		if filepath.Base(link.Link) == "settings.json" && filepath.Dir(link.Target) == "/tmp/config/pi" {
+			configFromC = true
+		}
+	}
+	if !configFromC {
+		t.Error("config entries should be symlinked from C/pi")
 	}
 }
 

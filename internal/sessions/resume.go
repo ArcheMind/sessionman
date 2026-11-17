@@ -20,11 +20,8 @@ func claudeProjectsRoot(homeDir string) string {
 }
 
 // piSessionRoot returns the pi session directory, following
-// PI_CODING_AGENT_SESSION_DIR or PI_CODING_AGENT_DIR set by the resolver.
+// PI_CODING_AGENT_DIR set by the nativedirs resolver.
 func piSessionRoot(homeDir string) string {
-	if dir := os.Getenv("PI_CODING_AGENT_SESSION_DIR"); dir != "" {
-		return dir
-	}
 	if dir := os.Getenv("PI_CODING_AGENT_DIR"); dir != "" {
 		return filepath.Join(dir, "sessions")
 	}
@@ -42,7 +39,7 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 
 	switch agentID {
 	case "agy":
-		return WriteAgySessionFile(detail, homeDir)
+		return WriteAgySessionFile(detail, agyRoot(homeDir))
 	case "claude":
 		newID := newUUID()
 		cwdEncoded := strings.ReplaceAll(detail.Workspace, "/", "-")

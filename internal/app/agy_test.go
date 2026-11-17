@@ -58,7 +58,7 @@ func TestAgyContinueStream(t *testing.T) {
 
 func TestAgyContinueNativePath(t *testing.T) {
 	application := App{Sessions: sessions.Service{HomeDir: "/home/native"}}
-	path, err := application.continueSessionFile("agy", "/workspace", "id", "")
+	path, err := application.continueSessionFile("agy", "/workspace", "id")
 	if err != nil || path != "/home/native/.gemini/antigravity-cli/conversations/id.db" {
 		t.Fatalf("%s %v", path, err)
 	}
@@ -79,7 +79,7 @@ func TestAgyMCPRequiresExplicitWorkspace(t *testing.T) {
 func TestAgyCatalogPartialWarningKeepsUsableList(t *testing.T) {
 	home := t.TempDir()
 	valid := sessions.Session{Workspace: t.TempDir(), Messages: []sessions.Message{{ID: "u", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: "usable transcript"}}}}}
-	id, err := sessions.WriteAgySessionFile(valid, home)
+	id, err := sessions.WriteAgySessionFile(valid, filepath.Join(home, ".gemini", "antigravity-cli"))
 	if err != nil {
 		t.Fatal(err)
 	}

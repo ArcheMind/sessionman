@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
 
@@ -19,7 +20,7 @@ import (
 type continueTranscriptStream struct {
 	mu                                   sync.Mutex
 	app                                  App
-	agent, model, workspace, token, home string
+	agent, model, workspace, token string
 	prefix                               int
 	cancel                               func()
 	done, stopped                        chan struct{}
@@ -33,8 +34,8 @@ type continueTranscriptStream struct {
 	emitted                              []json.RawMessage
 }
 
-func newContinueTranscriptStream(a App, agent, model, workspace, token, home string, prefix int, cancel func()) *continueTranscriptStream {
-	s := &continueTranscriptStream{app: a, agent: agent, model: model, workspace: workspace, token: token, home: home, prefix: prefix, cancel: cancel, done: make(chan struct{}), stopped: make(chan struct{})}
+func newContinueTranscriptStream(a App, agent, model, workspace, token string, prefix int, cancel func()) *continueTranscriptStream {
+	s := &continueTranscriptStream{app: a, agent: agent, model: model, workspace: workspace, token: token, prefix: prefix, cancel: cancel, done: make(chan struct{}), stopped: make(chan struct{})}
 	go func() {
 		defer close(s.stopped)
 		ticker := time.NewTicker(100 * time.Millisecond)
@@ -117,7 +118,8 @@ func (s *continueTranscriptStream) resolvePath() (string, error) {
 	if s.agent == "codex" {
 		// Rollout names contain the thread UUID. Avoid cataloging every session
 		// while waiting for a newly started thread's file to become visible.
-		paths, err := filepath.Glob(filepath.Join(s.home, "sessions", "*", "*", "*", "*"+token+"*.jsonl"))
+		codexHome := nativedirs.CodexHome()
+		paths, err := filepath.Glob(filepath.Join(codexHome, "sessions", "*", "*", "*", "*"+token+"*.jsonl"))
 		if err != nil || len(paths) == 0 {
 			return "", err
 		}
@@ -126,7 +128,7 @@ func (s *continueTranscriptStream) resolvePath() (string, error) {
 		}
 		return paths[0], nil
 	}
-	return s.app.continueSessionFile(s.agent, s.workspace, token, s.home)
+	return s.app.continueSessionFile(s.agent, s.workspace, token)
 }
 
 func (s *continueTranscriptStream) readStore() error {

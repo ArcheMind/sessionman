@@ -54,7 +54,9 @@ func ApplyToProcess(dirs Dirs) error {
 			continue
 		}
 		if err := Prepare(ad); err != nil {
-			return fmt.Errorf("prepare %s directories: %w", agent, err)
+			resolvedErrs[agent] = fmt.Errorf("prepare %s directories: %w", agent, err)
+			resolved[agent] = &AgentDirs{Env: map[string]string{}, SessionRoots: []string{}}
+			continue
 		}
 		resolved[agent] = ad
 		for k, v := range ad.Env {
@@ -112,6 +114,28 @@ func GeminiDir(fallbackHome string) string {
 	return filepath.Join(fallbackHome, ".gemini")
 }
 
+// AgyAppDataDir returns the resolved agy app_data_dir (the directory
+// containing conversations/). Falls back to the native default.
+func AgyAppDataDir(fallbackHome string) string {
+	if ad := Cached("agy"); ad != nil && ad.AppDataDir != "" {
+		return ad.AppDataDir
+	}
+	if fallbackHome == "" {
+		fallbackHome = userHome()
+	}
+	return filepath.Join(fallbackHome, ".gemini", "antigravity-cli")
+}
+
+// CodexHome returns the resolved CODEX_HOME. Falls back to the native default.
+func CodexHome() string {
+	if ad := Cached("codex"); ad != nil {
+		if v := ad.Env["CODEX_HOME"]; v != "" {
+			return v
+		}
+	}
+	return nativeHome("CODEX_HOME", ".codex")
+}
+
 // AgentDirs is the resolved directory configuration for one agent.
 type AgentDirs struct {
 	Env          map[string]string
@@ -122,6 +146,7 @@ type AgentDirs struct {
 	SessionRoots []string
 	ConfigDir    string
 	NativeHome   string
+	AppDataDir   string
 	Limitation   string
 }
 
@@ -225,8 +250,17 @@ func EnsureSymlinks(links []Symlink) error {
 				continue // real file already exists; do not replace
 			}
 		}
-		if err := os.Symlink(link.Target, link.Link); err != nil && !os.IsExist(err) {
-			return fmt.Errorf("create symlink %s -> %s: %w", link.Link, link.Target, err)
+		if err := os.Symlink(link.Target, link.Link); err != nil {
+			if !os.IsExist(err) {
+				return fmt.Errorf("create symlink %s -> %s: %w", link.Link, link.Target, err)
+			}
+			actual, readErr := os.Readlink(link.Link)
+			if readErr != nil {
+				return fmt.Errorf("check existing symlink %s: %w", link.Link, readErr)
+			}
+			if actual != link.Target {
+				return fmt.Errorf("symlink collision: %s already points to %s, refusing to re-point to %s; use a different --session-dir or --config-dir", link.Link, actual, link.Target)
+			}
 		}
 	}
 	return nil
@@ -303,23 +337,45 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
+	piConfigEntries := []string{
+		"settings.json", "models.json", "AGENTS.md",
+		"prompts", "themes", "skills", "extensions",
+	}
+	configSource := native
 	if dirs.ConfigDir != "" {
-		configDir := filepath.Join(dirs.ConfigDir, "pi")
-		ad.Env["PI_CODING_AGENT_DIR"] = configDir
-		ad.ConfigDir = configDir
-		ad.Symlinks = append(ad.Symlinks,
-			Symlink{filepath.Join(configDir, "auth.json"), filepath.Join(native, "auth.json")},
-			Symlink{filepath.Join(configDir, "mcp-auth.json"), filepath.Join(native, "mcp-auth.json")},
-		)
+		configSource = filepath.Join(dirs.ConfigDir, "pi")
+		ad.ConfigDir = configSource
 	}
 
 	if dirs.SessionDir != "" {
-		sessionDir := filepath.Join(dirs.SessionDir, "pi")
-		ad.Env["PI_CODING_AGENT_SESSION_DIR"] = sessionDir
-		ad.SessionRoots = []string{sessionDir}
+		piHome := filepath.Join(dirs.SessionDir, "pi")
+		ad.Env["PI_CODING_AGENT_DIR"] = piHome
+		ad.Symlinks = append(ad.Symlinks,
+			Symlink{filepath.Join(piHome, "auth.json"), filepath.Join(native, "auth.json")},
+			Symlink{filepath.Join(piHome, "mcp-auth.json"), filepath.Join(native, "mcp-auth.json")},
+		)
+		for _, entry := range piConfigEntries {
+			ad.Symlinks = append(ad.Symlinks, Symlink{
+				filepath.Join(piHome, entry), filepath.Join(configSource, entry),
+			})
+		}
+		ad.SessionRoots = []string{filepath.Join(piHome, "sessions")}
 	} else {
-		// C only: pin sessions to native so they don't follow PI_CODING_AGENT_DIR
-		ad.Env["PI_CODING_AGENT_SESSION_DIR"] = nativeSessions
+		// C only: shadow home; sessions stay native
+		shadow := shadowDir(dirs.ConfigDir, "pi")
+		ad.Env["PI_CODING_AGENT_DIR"] = shadow
+		ad.Symlinks = append(ad.Symlinks,
+			Symlink{filepath.Join(shadow, "auth.json"), filepath.Join(native, "auth.json")},
+			Symlink{filepath.Join(shadow, "mcp-auth.json"), filepath.Join(native, "mcp-auth.json")},
+		)
+		for _, entry := range piConfigEntries {
+			ad.Symlinks = append(ad.Symlinks, Symlink{
+				filepath.Join(shadow, entry), filepath.Join(configSource, entry),
+			})
+		}
+		ad.Symlinks = append(ad.Symlinks, Symlink{
+			filepath.Join(shadow, "sessions"), nativeSessions,
+		})
 		ad.SessionRoots = []string{nativeSessions}
 	}
 
@@ -406,10 +462,14 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		"settings.json", "CLAUDE.md", "agents", "commands",
 		"skills", "hooks", "plugins", "output-styles",
 	}
-	// .claude.json native location: inside native config dir if it was set,
-	// otherwise ~/.claude.json (home root).
-	nativeClaudeJSON := filepath.Join(native, ".claude.json")
-	if os.Getenv("CLAUDE_CONFIG_DIR") == "" && os.Getenv("SM_NATIVE_CLAUDE_CONFIG_DIR") == "" {
+	// Recover native .claude.json via SM_NATIVE_* / true default only;
+	// CLAUDE_CONFIG_DIR may be an inherited shadow from a parent sm.
+	trueNativeDir := os.Getenv("SM_NATIVE_CLAUDE_CONFIG_DIR")
+	if trueNativeDir == "" {
+		trueNativeDir = filepath.Join(userHome(), ".claude")
+	}
+	nativeClaudeJSON := filepath.Join(trueNativeDir, ".claude.json")
+	if trueNativeDir == filepath.Join(userHome(), ".claude") {
 		nativeClaudeJSON = filepath.Join(userHome(), ".claude.json")
 	}
 
@@ -525,9 +585,11 @@ func resolveDSH(dirs Dirs) (*AgentDirs, error) {
 
 func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 	native := filepath.Join(userHome(), ".gemini")
+	nativeAppData := filepath.Join(native, "antigravity-cli")
 	ad := &AgentDirs{
 		Env: map[string]string{}, NativeHome: native, ConfigDir: filepath.Join(native, "config"),
-		SessionRoots: []string{filepath.Join(native, "antigravity-cli")},
+		AppDataDir:   nativeAppData,
+		SessionRoots: []string{nativeAppData},
 	}
 
 	if dirs.Empty() {
@@ -543,22 +605,20 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 
 	if dirs.SessionDir != "" {
 		sessionDir := filepath.Join(dirs.SessionDir, "agy")
-		// --app_data_dir must be relative to gemini_dir; absolute is rejected
 		rel, err := filepath.Rel(geminiDir, sessionDir)
 		if err != nil {
 			return nil, fmt.Errorf("agy --app_data_dir cannot be expressed relative to gemini_dir %s: %w", geminiDir, err)
 		}
 		ad.Args = append(ad.Args, "--app_data_dir="+rel)
-		ad.SessionRoots = []string{filepath.Join(sessionDir, "conversations")}
+		ad.AppDataDir = sessionDir
+		ad.SessionRoots = []string{sessionDir}
 		ad.Limitation = "agy: CLI settings.json lives with the session dir"
 	} else if dirs.ConfigDir != "" {
-		// C only: gemini_dir moved; pin --app_data_dir to native so sessions stay native
-		nativeRel, err := filepath.Rel(geminiDir, filepath.Join(native, "antigravity-cli"))
+		nativeRel, err := filepath.Rel(geminiDir, nativeAppData)
 		if err != nil {
 			return nil, fmt.Errorf("agy --app_data_dir cannot be expressed relative to gemini_dir %s: %w", geminiDir, err)
 		}
 		ad.Args = append(ad.Args, "--app_data_dir="+nativeRel)
-		ad.SessionRoots = []string{filepath.Join(native, "antigravity-cli")}
 	}
 
 	return ad, nil
@@ -576,7 +636,8 @@ Neither set: pure native behaviour; each agent uses its own default directories.
 Per-agent limitations:
   codex   C-only: session_index.jsonl diverges after thread delete;
           keychain-based auth not supported (file auth required)
-  opencode  --config-dir unsupported (XDG_CONFIG_HOME leaks to children)
+  opencode  --config-dir unsupported (XDG_CONFIG_HOME leaks to children);
+            --session-dir moves the DB only; snapshot/ and log/ stay native
   dsh     AGENTS.md, skills, presets not movable
   agy     CLI settings.json travels with the session dir`
 }

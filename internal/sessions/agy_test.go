@@ -21,7 +21,7 @@ func agyTestSession() Session {
 func TestAgySourceFreeBootstrap(t *testing.T) {
 	home := t.TempDir()
 	source := agyTestSession()
-	id, err := WriteAgySessionFile(source, home)
+	id, err := WriteAgySessionFile(source, agyRoot(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestAgySubagentVisibilityAndFreshImport(t *testing.T) {
 func TestAgyCatalogKeepsValidSessionsAndReportsBrokenEntries(t *testing.T) {
 	home := t.TempDir()
 	source := agyTestSession()
-	id, err := WriteAgySessionFile(source, home)
+	id, err := WriteAgySessionFile(source, agyRoot(home))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,7 +17,6 @@ import (
 	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
-	"github.com/ArcheMind/agentx/internal/subagents"
 )
 
 const sessionContinueUsage = "usage: sm [--json|--yaml] session continue <target-agent> [file] [--stream] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>] [-- <native args...>]"
@@ -93,10 +92,6 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	detail.Workspace = workspace
 
-	auth, err := subagents.DiscoverAuth(agent.ID)
-	if err != nil {
-		return err
-	}
 	token := ""
 	prefix := 0
 	// Pi always gets a session file (even an empty one): --session is how pi
@@ -115,7 +110,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		importPath, err := a.continueSessionFile(agent.ID, workspace, token, auth.Dir)
+		importPath, err := a.continueSessionFile(agent.ID, workspace, token)
 		if err != nil {
 			return err
 		}
@@ -131,15 +126,6 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	// Auth pinning for agents that need it (codex, pi)
-	authEnv, authUnset := subagents.AuthEnvironment(auth)
-	for k, v := range authEnv {
-		if plan.Env == nil {
-			plan.Env = map[string]string{}
-		}
-		plan.Env[k] = v
-	}
-	plan.UnsetEnv = append(plan.UnsetEnv, authUnset...)
 	if agent.ID == "agy" {
 		if err := a.prepareHooks(&runtime.RunRequest{Cwd: workspace}, "agy", true); err != nil {
 			return err
@@ -155,7 +141,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	options := runtime.ExecuteOptions{Stdin: input, CancelProcessGroup: true}
 	var transcriptStream *continueTranscriptStream
 	if stream {
-		transcriptStream = newContinueTranscriptStream(a, agent.ID, model, workspace, token, auth.Dir, prefix, cancelExecution)
+		transcriptStream = newContinueTranscriptStream(a, agent.ID, model, workspace, token, prefix, cancelExecution)
 		options.Stdout = transcriptStream
 	}
 	result, execErr := a.Runner.Execute(execCtx, plan, options)
@@ -188,7 +174,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if agent.ID != "pi" {
 		resultToken = run.sessionID
 	}
-	resultPath, err := a.continueSessionFile(agent.ID, workspace, resultToken, auth.Dir)
+	resultPath, err := a.continueSessionFile(agent.ID, workspace, resultToken)
 	if err != nil {
 		return err
 	}
@@ -242,16 +228,20 @@ func continueDelta(messages []sessions.Message, prefix int) []sessions.Message {
 // because that is the store the codex CLI reads.
 func (a App) writeResumeSession(ctx context.Context, detail sessions.Session, agentID string, request runtime.RunRequest) (string, error) {
 	if agentID == "codex" {
-		auth, err := subagents.DiscoverAuth(agentID)
-		if err != nil {
-			return "", err
+		codexHome := nativedirs.CodexHome()
+		var env map[string]string
+		var unset []string
+		if ad := nativedirs.Cached("codex"); ad != nil {
+			env, unset = nativedirs.MergeEnv(ad)
 		}
-		env, unset := subagents.AuthEnvironment(auth)
 		provider, err := drivers.CodexProvider(ctx, a.Runner, runtime.CommandPlan{Cwd: detail.Workspace, Env: env, UnsetEnv: unset}, request)
 		if err != nil {
 			return "", err
 		}
-		return sessions.WriteCodexSessionFile(detail, auth.Dir, provider)
+		return sessions.WriteCodexSessionFile(detail, codexHome, provider)
+	}
+	if agentID == "agy" {
+		return sessions.WriteAgySessionFile(detail, nativedirs.AgyAppDataDir(a.Sessions.HomeDir))
 	}
 	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "sessionman", "resume")
 	return sessions.WriteSessionFile(detail, agentID, stateDir, a.Sessions.HomeDir)
@@ -324,15 +314,14 @@ func resolveContinueWorkspace(flagValue, transcriptValue string) (string, error)
 }
 
 // continueSessionFile maps a session token to the native file that records it.
-func (a App) continueSessionFile(agentID, workspace, token, codexHome string) (string, error) {
+func (a App) continueSessionFile(agentID, workspace, token string) (string, error) {
 	switch agentID {
 	case "agy":
-		gemini := nativedirs.GeminiDir(a.Sessions.HomeDir)
-		return filepath.Join(gemini, "antigravity-cli", "conversations", token+".db"), nil
+		return filepath.Join(nativedirs.AgyAppDataDir(a.Sessions.HomeDir), "conversations", token+".db"), nil
 	case "claude":
 		return sessions.ClaudeProjectFile(a.Sessions.HomeDir, workspace, token), nil
 	case "codex":
-		return sessions.FindCodexRollout(codexHome, token)
+		return sessions.FindCodexRollout(nativedirs.CodexHome(), token)
 	default:
 		return token, nil
 	}
