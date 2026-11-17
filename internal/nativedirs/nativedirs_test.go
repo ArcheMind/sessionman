@@ -251,18 +251,15 @@ func TestResolveClaudeConfigOnly(t *testing.T) {
 
 func TestResolveOpenCodeConfigError(t *testing.T) {
 	_, err := Resolve("opencode", Dirs{ConfigDir: "/tmp/config"})
-	if err == nil {
-		t.Error("expected error for opencode with --config-dir")
+	if err == nil || !strings.Contains(err.Error(), "does not support") {
+		t.Errorf("expected error for opencode with --config-dir, got %v", err)
 	}
 }
 
-func TestResolveOpenCodeSessionOnly(t *testing.T) {
-	ad, err := Resolve("opencode", Dirs{SessionDir: "/tmp/sessions"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ad.Env["OPENCODE_DB"] != "/tmp/sessions/opencode/opencode.db" {
-		t.Errorf("OPENCODE_DB = %q", ad.Env["OPENCODE_DB"])
+func TestResolveOpenCodeSessionError(t *testing.T) {
+	_, err := Resolve("opencode", Dirs{SessionDir: "/tmp/sessions"})
+	if err == nil || !strings.Contains(err.Error(), "does not support") {
+		t.Errorf("expected error for opencode with --session-dir, got %v", err)
 	}
 }
 
@@ -289,8 +286,9 @@ func TestResolveAgyBoth(t *testing.T) {
 	for _, arg := range ad.Args {
 		if len(arg) > 13 && arg[:13] == "--gemini_dir=" {
 			hasGeminiDir = true
-			if arg[13:] != "/tmp/config/agy" {
-				t.Errorf("--gemini_dir = %q", arg[13:])
+			// Should be a shadow, not the C dir directly
+			if arg[13:] == "/tmp/config/agy" {
+				t.Errorf("--gemini_dir must be a shadow, got %q", arg[13:])
 			}
 		}
 		if len(arg) > 15 && arg[:15] == "--app_data_dir=" {
@@ -385,7 +383,6 @@ func TestResolveDSHPatchFormat(t *testing.T) {
 }
 
 func TestResolveAgyConfigOnly(t *testing.T) {
-	// D7: C-only must pass --app_data_dir pinned to native
 	ad, err := Resolve("agy", Dirs{ConfigDir: "/tmp/config"})
 	if err != nil {
 		t.Fatal(err)
@@ -395,6 +392,10 @@ func TestResolveAgyConfigOnly(t *testing.T) {
 	for _, arg := range ad.Args {
 		if len(arg) > 13 && arg[:13] == "--gemini_dir=" {
 			hasGeminiDir = true
+			// Must be a shadow, not the C dir
+			if arg[13:] == "/tmp/config/agy" {
+				t.Errorf("--gemini_dir must be a shadow, got %q", arg[13:])
+			}
 		}
 		if len(arg) > 15 && arg[:15] == "--app_data_dir=" {
 			hasAppDataDir = true
@@ -406,17 +407,23 @@ func TestResolveAgyConfigOnly(t *testing.T) {
 	if !hasAppDataDir {
 		t.Error("C-only should set --app_data_dir to pin sessions to native")
 	}
+	// Plugin can be written without touching C
+	if len(ad.Symlinks) > 0 {
+		for _, link := range ad.Symlinks {
+			if strings.Contains(link.Link, "plugins") {
+				t.Errorf("plugins/ should not be symlinked (C is read-only); got %s -> %s", link.Link, link.Target)
+			}
+		}
+	}
 }
 
-func TestResolveOpenCodeSessionRoots(t *testing.T) {
-	// D8: SessionRoots must follow S
-	ad, err := Resolve("opencode", Dirs{SessionDir: "/tmp/sessions"})
+func TestResolveOpenCodeNativeRoots(t *testing.T) {
+	ad, err := Resolve("opencode", Dirs{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "/tmp/sessions/opencode"
-	if len(ad.SessionRoots) != 1 || ad.SessionRoots[0] != want {
-		t.Errorf("SessionRoots = %v, want [%s]", ad.SessionRoots, want)
+	if len(ad.SessionRoots) != 1 || !strings.Contains(ad.SessionRoots[0], "opencode") {
+		t.Errorf("SessionRoots = %v", ad.SessionRoots)
 	}
 }
 
@@ -451,6 +458,7 @@ func TestApplyToProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CODEX_HOME", tmp)
+	t.Setenv("HOME", t.TempDir())
 
 	sessDir := t.TempDir()
 	t.Setenv("SM_SESSION_DIR", sessDir)
@@ -486,10 +494,10 @@ func TestApplyToProcess(t *testing.T) {
 }
 
 func TestGeminiDirFollowsConfig(t *testing.T) {
-	// Set up cached resolution with C
+	// Set up cached resolution with C (now a shadow path, not the C dir)
 	resolvedMu.Lock()
 	resolved = map[string]*AgentDirs{
-		"agy": {ConfigDir: "/custom/config/agy/config"},
+		"agy": {ConfigDir: "/shadow/agy/.gemini/config"},
 	}
 	resolvedMu.Unlock()
 	defer func() {
@@ -499,7 +507,7 @@ func TestGeminiDirFollowsConfig(t *testing.T) {
 	}()
 
 	got := GeminiDir("/fallback")
-	want := "/custom/config/agy"
+	want := "/shadow/agy/.gemini"
 	if got != want {
 		t.Errorf("GeminiDir = %q, want %q", got, want)
 	}
@@ -515,6 +523,46 @@ func TestGeminiDirFallback(t *testing.T) {
 	if got != want {
 		t.Errorf("GeminiDir = %q, want %q", got, want)
 	}
+}
+
+func TestRestoreNativeEnvOnEmptyDirs(t *testing.T) {
+	t.Setenv("SM_NATIVE_CODEX_HOME", "/original/codex")
+	t.Setenv("CODEX_HOME", "/shadow/codex")
+	t.Setenv("SM_NATIVE_CLAUDE_CONFIG_DIR", "/original/claude")
+	t.Setenv("CLAUDE_CONFIG_DIR", "/shadow/claude")
+	t.Setenv("SM_SESSION_DIR", "")
+	t.Setenv("SM_CONFIG_DIR", "")
+	t.Setenv("HOME", t.TempDir())
+
+	if err := ApplyToProcess(FromEnv()); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("CODEX_HOME"); got != "/original/codex" {
+		t.Errorf("CODEX_HOME = %q, want /original/codex", got)
+	}
+	if got := os.Getenv("CLAUDE_CONFIG_DIR"); got != "/original/claude" {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q, want /original/claude", got)
+	}
+	if got := os.Getenv("SM_NATIVE_CODEX_HOME"); got != "" {
+		t.Errorf("SM_NATIVE_CODEX_HOME should be cleared, got %q", got)
+	}
+}
+
+func TestClaudeJSONAlwaysLinksToNative(t *testing.T) {
+	ad, err := Resolve("claude", Dirs{SessionDir: "/tmp/sessions", ConfigDir: "/tmp/config"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range ad.Symlinks {
+		if strings.HasSuffix(link.Link, ".claude.json") {
+			// Must NOT point to config source
+			if strings.Contains(link.Target, "/tmp/config") {
+				t.Errorf(".claude.json links to C (%s); must always link to native", link.Target)
+			}
+			return
+		}
+	}
+	t.Error("missing .claude.json symlink")
 }
 
 func TestCachedErrorOpenCode(t *testing.T) {

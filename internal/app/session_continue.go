@@ -92,6 +92,10 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	detail.Workspace = workspace
 
+	if err := nativedirs.CachedError(agent.ID); err != nil {
+		return fmt.Errorf("%s blocked: %w", agent.ID, err)
+	}
+
 	token := ""
 	prefix := 0
 	// Pi always gets a session file (even an empty one): --session is how pi

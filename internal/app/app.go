@@ -17,6 +17,7 @@ import (
 	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/drivers"
 	"github.com/ArcheMind/agentx/internal/hooks"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -384,6 +385,9 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", request.Cwd)
+	}
+	if err := nativedirs.CachedError(agent.ID); err != nil {
+		return fmt.Errorf("%s blocked: %w", agent.ID, err)
 	}
 	if agent.ID == "codex" {
 		injectCodexAgentX(&request)
@@ -825,6 +829,9 @@ func (a App) sessionImport(ctx context.Context, args []string) error {
 	if len(args) == 2 {
 		path = args[1]
 	}
+	if err := nativedirs.CachedError(agent.ID); err != nil {
+		return fmt.Errorf("%s blocked: %w", agent.ID, err)
+	}
 	detail, err := a.readTranscript(path)
 	if err != nil {
 		return err
@@ -927,6 +934,9 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	}
 	if _, err := agentparams.Build(agent.ID, agentparams.Interactive, request); err != nil {
 		return err
+	}
+	if err := nativedirs.CachedError(agent.ID); err != nil {
+		return fmt.Errorf("%s blocked: %w", agent.ID, err)
 	}
 	if agent.ID == "opencode" && (detail.Provider != agent.ID || fresh) {
 		return fmt.Errorf("OpenCode transcript import has no verified native resume mechanism; a native OpenCode session ID is required")
@@ -1083,7 +1093,7 @@ COMMANDS
   sm version                 Show version
 
   Non-interactive execution:
-    sm agent exec <agy|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
+    sm agent exec <agy|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
     sm --json session continue <agy|claude|codex|pi> [--stream (claude|codex|pi)] [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
 
 AGENT OPTIONS

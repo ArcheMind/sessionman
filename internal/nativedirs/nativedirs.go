@@ -40,6 +40,9 @@ var KnownAgents = []string{"pi", "codex", "claude", "opencode", "dsh", "agy"}
 // parsing --session-dir / --config-dir.
 func ApplyToProcess(dirs Dirs) error {
 	if dirs.Empty() {
+		// Nested sm with S/C unset but inherited SM_NATIVE_*: restore native
+		// env so the child and sm agree on directory locations.
+		restoreNativeEnv()
 		return nil
 	}
 	resolvedMu.Lock()
@@ -169,6 +172,28 @@ func nativeHome(envKey, defaultRel string) string {
 func userHome() string {
 	h, _ := os.UserHomeDir()
 	return h
+}
+
+// restoreNativeEnv undoes a parent sm's env overrides when this sm runs
+// without S/C. For each SM_NATIVE_<key>, if <key> differs from the native
+// value, reset <key> to native and clear the SM_NATIVE_ marker.
+func restoreNativeEnv() {
+	pairs := []struct{ envKey, nativeKey, defaultRel string }{
+		{"CODEX_HOME", "SM_NATIVE_CODEX_HOME", ".codex"},
+		{"CLAUDE_CONFIG_DIR", "SM_NATIVE_CLAUDE_CONFIG_DIR", ".claude"},
+		{"PI_CODING_AGENT_DIR", "SM_NATIVE_PI_CODING_AGENT_DIR", filepath.Join(".pi", "agent")},
+	}
+	for _, p := range pairs {
+		native := os.Getenv(p.nativeKey)
+		if native == "" {
+			continue
+		}
+		current := os.Getenv(p.envKey)
+		if current != native {
+			os.Setenv(p.envKey, native)
+		}
+		os.Unsetenv(p.nativeKey)
+	}
 }
 
 func shadowDir(configDir, agent string) string {
@@ -462,12 +487,9 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		"settings.json", "CLAUDE.md", "agents", "commands",
 		"skills", "hooks", "plugins", "output-styles",
 	}
-	// Recover native .claude.json via SM_NATIVE_* / true default only;
-	// CLAUDE_CONFIG_DIR may be an inherited shadow from a parent sm.
-	trueNativeDir := os.Getenv("SM_NATIVE_CLAUDE_CONFIG_DIR")
-	if trueNativeDir == "" {
-		trueNativeDir = filepath.Join(userHome(), ".claude")
-	}
+	// Recover native .claude.json via SM_NATIVE_* >> user's own CLAUDE_CONFIG_DIR
+	// (when not an sm shadow) >> default ~/.claude.
+	trueNativeDir := nativeHome("CLAUDE_CONFIG_DIR", ".claude")
 	nativeClaudeJSON := filepath.Join(trueNativeDir, ".claude.json")
 	if trueNativeDir == filepath.Join(userHome(), ".claude") {
 		nativeClaudeJSON = filepath.Join(userHome(), ".claude.json")
@@ -490,15 +512,9 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 				filepath.Join(claudeHome, entry), filepath.Join(configSource, entry),
 			})
 		}
-		// .claude.json → config source or native
+		// .claude.json holds account/state (credentials); always link to true native
 		ad.Symlinks = append(ad.Symlinks, Symlink{
-			filepath.Join(claudeHome, ".claude.json"),
-			func() string {
-				if dirs.ConfigDir != "" {
-					return filepath.Join(configSource, ".claude.json")
-				}
-				return nativeClaudeJSON
-			}(),
+			filepath.Join(claudeHome, ".claude.json"), nativeClaudeJSON,
 		})
 	} else {
 		// C only: shadow home with projects/ pointing to native
@@ -510,8 +526,9 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 				filepath.Join(shadow, entry), filepath.Join(configSource, entry),
 			})
 		}
+		// .claude.json holds account/state (credentials); always link to true native
 		ad.Symlinks = append(ad.Symlinks,
-			Symlink{filepath.Join(shadow, ".claude.json"), filepath.Join(configSource, ".claude.json")},
+			Symlink{filepath.Join(shadow, ".claude.json"), nativeClaudeJSON},
 			Symlink{filepath.Join(shadow, "projects"), filepath.Join(native, "projects")},
 		)
 	}
@@ -527,14 +544,8 @@ func resolveOpenCode(dirs Dirs) (*AgentDirs, error) {
 		SessionRoots: []string{filepath.Join(home, ".local", "share", "opencode", "project")},
 	}
 
-	if dirs.ConfigDir != "" {
-		return nil, fmt.Errorf("opencode does not support --config-dir: only XDG_CONFIG_HOME would work and it affects all child processes")
-	}
-
-	if dirs.SessionDir != "" {
-		dbDir := filepath.Join(dirs.SessionDir, "opencode")
-		ad.Env["OPENCODE_DB"] = filepath.Join(dbDir, "opencode.db")
-		ad.SessionRoots = []string{dbDir}
+	if !dirs.Empty() {
+		return nil, fmt.Errorf("opencode does not support --session-dir or --config-dir")
 	}
 
 	return ad, nil
@@ -596,11 +607,21 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
+	// C set: use an sm-owned shadow so we never write into the user's C.
+	// Config entries from C are symlinked into the shadow.
 	geminiDir := native
 	if dirs.ConfigDir != "" {
-		geminiDir = filepath.Join(dirs.ConfigDir, "agy")
+		shadow := shadowDir(dirs.ConfigDir, "agy")
+		geminiDir = filepath.Join(shadow, ".gemini")
 		ad.Args = append(ad.Args, "--gemini_dir="+geminiDir)
 		ad.ConfigDir = filepath.Join(geminiDir, "config")
+		configSource := filepath.Join(dirs.ConfigDir, "agy", "config")
+		// Only symlink user-owned config; plugins/ stays in the shadow so sm
+		// can write its own agy plugin without touching C.
+		ad.Symlinks = append(ad.Symlinks, Symlink{
+			filepath.Join(geminiDir, "config", "settings.json"),
+			filepath.Join(configSource, "settings.json"),
+		})
 	}
 
 	if dirs.SessionDir != "" {
@@ -634,10 +655,9 @@ Both set SM_SESSION_DIR / SM_CONFIG_DIR and are inherited by nested sm launches.
 Neither set: pure native behaviour; each agent uses its own default directories.
 
 Per-agent limitations:
-  codex   C-only: session_index.jsonl diverges after thread delete;
-          keychain-based auth not supported (file auth required)
-  opencode  --config-dir unsupported (XDG_CONFIG_HOME leaks to children);
-            --session-dir moves the DB only; snapshot/ and log/ stay native
-  dsh     AGENTS.md, skills, presets not movable
-  agy     CLI settings.json travels with the session dir`
+  codex     C-only: session_index.jsonl diverges after thread delete;
+            keychain-based auth not supported (file auth required)
+  opencode  does not support --session-dir or --config-dir
+  dsh       AGENTS.md, skills, presets not movable
+  agy       CLI settings.json travels with the session dir`
 }

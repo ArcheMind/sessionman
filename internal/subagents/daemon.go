@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
@@ -334,6 +335,9 @@ func (d *Daemon) deliverQueue() {
 // the role instructions.
 func (d *Daemon) preStartLocked() (string, error) {
 	a := d.agent
+	if err := nativedirs.CachedError(a.Option.Agent); err != nil {
+		return "", fmt.Errorf("%s blocked: %w", a.Option.Agent, err)
+	}
 	if current, err := presets.Read(d.Home, a.Option.Name); err != nil || !current.Equal(a.Option) {
 		return "", fmt.Errorf("original preset %s changed or was removed before execution; no replacement selected", a.Option.Name)
 	}

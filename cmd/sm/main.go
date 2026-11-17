@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/ArcheMind/agentx/internal/app"
 	"github.com/ArcheMind/agentx/internal/nativedirs"
@@ -33,11 +34,19 @@ func main() {
 				fmt.Fprintln(os.Stderr, "--session-dir requires an absolute path")
 				os.Exit(1)
 			}
+			if !filepath.IsAbs(args[1]) {
+				fmt.Fprintf(os.Stderr, "--session-dir must be an absolute path, got %q\n", args[1])
+				os.Exit(1)
+			}
 			os.Setenv("SM_SESSION_DIR", args[1])
 			args = args[1:]
 		case "--config-dir":
 			if len(args) < 2 {
 				fmt.Fprintln(os.Stderr, "--config-dir requires an absolute path")
+				os.Exit(1)
+			}
+			if !filepath.IsAbs(args[1]) {
+				fmt.Fprintf(os.Stderr, "--config-dir must be an absolute path, got %q\n", args[1])
 				os.Exit(1)
 			}
 			os.Setenv("SM_CONFIG_DIR", args[1])

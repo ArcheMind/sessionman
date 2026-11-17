@@ -185,7 +185,12 @@ func (s Service) Matches(id, source string) ([]Session, error) {
 	}
 	entries, err := s.catalog(source, true)
 	if err != nil {
-		return nil, err
+		if source == "" && IsCatalogError(err) {
+			// Without --source, skip errored agents (D3)
+			fmt.Fprintf(os.Stderr, "warning: partial session catalog: %s\n", err)
+		} else {
+			return nil, err
+		}
 	}
 	var matches []Session
 	for _, entry := range entries {

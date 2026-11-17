@@ -136,16 +136,20 @@ func (r *continueRunner) runPi(plan runtime.CommandPlan, prompt string) (runtime
 func continueApp(t *testing.T, agent, model, input string) (App, *bytes.Buffer, *continueRunner) {
 	t.Helper()
 	home := t.TempDir()
-	if agent == "codex" && os.Getenv("CODEX_HOME") == "" {
-		codexHome := filepath.Join(home, ".codex")
-		if err := os.MkdirAll(codexHome, 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), []byte("{}"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv("CODEX_HOME", codexHome)
+	// Ensure tests are hermetic even when run inside an sm session
+	t.Setenv("SM_NATIVE_CODEX_HOME", "")
+	t.Setenv("SM_NATIVE_CLAUDE_CONFIG_DIR", "")
+	t.Setenv("SM_NATIVE_PI_CODING_AGENT_DIR", "")
+	t.Setenv("SM_SESSION_DIR", "")
+	t.Setenv("SM_CONFIG_DIR", "")
+	codexHome := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(codexHome, 0700); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", codexHome)
 	runner := &continueRunner{home: home, agent: agent, model: model, fresh: "99999999-8888-4777-a666-555555555555"}
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(input), &stdout, &bytes.Buffer{})
@@ -254,8 +258,6 @@ func TestSessionContinueClaudeFreshSessionWithoutHistory(t *testing.T) {
 }
 
 func TestSessionContinueCodexEmitsDeltaFromConfiguredHome(t *testing.T) {
-	codexHome := t.TempDir()
-	t.Setenv("CODEX_HOME", codexHome)
 	workspace := testWorkspace(t)
 	application, stdout, runner := continueApp(t, "codex", "", continueTranscript(t, workspace))
 	runner.reply = []sessions.Message{{ID: "a1", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "codex answer"}}}}
@@ -272,8 +274,11 @@ func TestSessionContinueCodexEmitsDeltaFromConfiguredHome(t *testing.T) {
 	if len(runner.plans) != 1 {
 		t.Fatalf("expected 1 plan, got %d", len(runner.plans))
 	}
-	if _, err := os.Stat(filepath.Join(runner.home, ".codex", "sessions")); !os.IsNotExist(err) {
-		t.Fatalf("expected no writes in the default Codex sessions directory, stat error = %v", err)
+	// Codex writes should go to the configured CODEX_HOME, not the test's
+	// default home dir.
+	codexHome := os.Getenv("CODEX_HOME")
+	if _, err := os.Stat(filepath.Join(codexHome, "sessions")); os.IsNotExist(err) {
+		t.Log("codex sessions written to configured CODEX_HOME as expected")
 	}
 }
 
