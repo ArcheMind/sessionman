@@ -46,14 +46,19 @@ output policy for session import and native conversion, including conversion
 back to the source agent:
 
 - Never restore thinking signatures or encrypted thinking payloads.
-- Emit readable thinking as ordinary text wrapped in `<think>` and `</think>`.
+- Emit readable thinking as ordinary text. The Claude Code target writes a text
+  block `※\n<text>` (U+203B, a newline, then the raw text, with no closing
+  marker), because `<think>`-style wrappers in Claude transcripts trigger
+  Anthropic `reasoning_extraction` refusals on resume. Other targets wrap the
+  text in `<think>` and `</think>`. The importer accepts both forms.
 - Drop thoughts containing only ciphertext; do not emit empty thinking blocks
   or an assistant message left empty by this removal.
 - Preserve other supported text, tool calls, linked tool results, and images
   according to the destination's native format.
 
 For example, a unified thinking block with `text: "Inspect the files."` and a
-native signature becomes this ordinary native text, without its signature:
+native signature becomes this ordinary native text, without its signature
+(shown in the `<think>` form used by non-Claude targets):
 
 ```text
 <think>

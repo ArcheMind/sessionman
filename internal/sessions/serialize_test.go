@@ -573,6 +573,10 @@ func TestSerializeThinkingAsThinkTagText(t *testing.T) {
 			map[string]any{"type": "text", "text": "<think>\nsigned plan\n</think>"},
 			map[string]any{"type": "text", "text": "after"},
 		}
+		if name == "claude" {
+			want[0] = map[string]any{"type": "text", "text": "※\nunsigned plan"}
+			want[1] = map[string]any{"type": "text", "text": "※\nsigned plan"}
+		}
 		if !reflect.DeepEqual(content, want) {
 			t.Fatalf("%s assistant content = %#v", name, content)
 		}
@@ -619,6 +623,23 @@ func TestThinkingRoundTripsThroughThinkTag(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s assistant blocks =\n%#v\nwant\n%#v", agent, got, want)
+		}
+	}
+}
+
+func TestLiftImportedNotePrefix(t *testing.T) {
+	for text, want := range map[string]ContentBlock{
+		"※\nstep one":                 {Type: "thinking", Text: "step one"},
+		"※\n\n step one \n":           {Type: "thinking", Text: "\n step one \n"},
+		"※\n<think>step one</think>":  {Type: "thinking", Text: "<think>step one</think>"},
+		"<think>\nstep one\n</think>": {Type: "thinking", Text: "step one"},
+		"※ step one":                  {Type: "text", Text: "※ step one"},
+		"note ※\nstep one":            {Type: "text", Text: "note ※\nstep one"},
+	} {
+		blocks := []ContentBlock{{Type: "text", Text: text}}
+		liftThinkTags(blocks)
+		if !reflect.DeepEqual(blocks[0], want) {
+			t.Fatalf("lift(%q) = %#v, want %#v", text, blocks[0], want)
 		}
 	}
 }

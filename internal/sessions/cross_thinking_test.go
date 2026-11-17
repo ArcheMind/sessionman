@@ -78,7 +78,11 @@ func TestThinkingReplayIgnoresSourceAgent(t *testing.T) {
 					}
 				}
 				taggedOutput := strings.NewReplacer(`\u003c`, "<", `\u003e`, ">").Replace(encoded)
-				if !strings.Contains(taggedOutput, "<think>") || !strings.Contains(taggedOutput, "</think>") {
+				if target == "claude" {
+					if !strings.Contains(encoded, `"text":"`+importedNotePrefix[:len("※")]+`\nunique readable marker"`) || strings.Contains(taggedOutput, "<think>") {
+						t.Fatal("readable thinking was not emitted as imported-note text")
+					}
+				} else if !strings.Contains(taggedOutput, "<think>") || !strings.Contains(taggedOutput, "</think>") {
 					t.Fatal("readable thinking was not emitted as tagged text")
 				}
 				var got []ContentBlock

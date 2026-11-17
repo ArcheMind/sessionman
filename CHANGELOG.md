@@ -4,6 +4,12 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- Write foreign-agent reasoning to Claude Code sessions as a `※` text block
+  instead of `<think>` tags, which triggered `reasoning_extraction` refusals
+  on resume; the importer accepts both forms.
+
 ## [0.15.0] - 2026-11-16
 
 ### Added

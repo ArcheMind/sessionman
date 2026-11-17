@@ -168,7 +168,7 @@ func SerializeClaude(detail Session) []map[string]any {
 				switch b.Type {
 				case "thinking":
 					if b.Text != "" {
-						blocks = append(blocks, map[string]any{"type": "text", "text": thinkTagText(b.Text)})
+						blocks = append(blocks, map[string]any{"type": "text", "text": importedNoteText(b.Text)})
 					}
 				case "text":
 					blocks = append(blocks, map[string]any{"type": "text", "text": b.Text})
@@ -666,6 +666,13 @@ func codexImageURL(source any) string {
 // Agents hide or drop unsigned thinking from the model, so it travels as its own tagged text block that import lifts back.
 func thinkTagText(text string) string {
 	return "<think>\n" + text + "\n</think>"
+}
+
+// Claude Code transcripts wrapped in <think>-style tags trigger Anthropic reasoning_extraction refusals on resume, so that target uses a bare marker prefix.
+const importedNotePrefix = "※\n"
+
+func importedNoteText(text string) string {
+	return importedNotePrefix + text
 }
 
 func codexEvent(ts string, payload map[string]any) map[string]any {

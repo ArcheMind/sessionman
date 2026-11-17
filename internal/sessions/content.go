@@ -44,10 +44,14 @@ func finishDetail(detail Session) (Session, bool) {
 	return detail, true
 }
 
-// Inverse of thinkTagText: only a text block wholly wrapped in one <think> pair becomes thinking again.
+// Inverse of thinkTagText and importedNoteText: only a text block wholly wrapped in one <think> pair, or starting with the imported-note prefix, becomes thinking again.
 func liftThinkTags(blocks []ContentBlock) {
 	for i, b := range blocks {
 		if b.Type != "text" {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(b.Text, importedNotePrefix); ok {
+			blocks[i] = ContentBlock{Type: "thinking", Text: rest}
 			continue
 		}
 		inner, ok := strings.CutPrefix(strings.TrimSpace(b.Text), "<think>")
