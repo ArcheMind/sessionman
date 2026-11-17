@@ -4,6 +4,24 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-16
+
+### Added
+
+- Add `--session-dir` and `--config-dir`, with `SM_SESSION_DIR` and
+  `SM_CONFIG_DIR` equivalents, for native agent directory isolation.
+
+### Changed
+
+- Clarify the interactive session selector hierarchy and show turn counts.
+- Collect session turns and previews in one summary pass, removing duplicate
+  counting reads.
+
+### Fixed
+
+- Omit thinking blocks when replaying unified transcripts into native agent
+  sessions, while preserving them in the unified transcript.
+
 ## [0.14.5] - 2026-11-15
 
 ### Added
