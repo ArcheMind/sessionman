@@ -1,34 +1,34 @@
-// Live regression for the `ax session continue` round-trip contract: a caller
+// Live regression for the `sm session continue` round-trip contract: a caller
 // appends each returned delta to its transcript AS-IS and continues. The
 // second turn must still see the first turn's content (a secret passphrase),
 // which breaks when the native serialization orphans history records (e.g.
 // Claude drops everything off the newest record's parentUuid ancestor chain).
 //
-// Usage: node test/smoke/continue-roundtrip-live.mjs <ax-binary>
-//   AX_CONTINUE_AGENTS=claude[,codex]   agents to run (default: claude)
-//   AX_CONTINUE_CLAUDE_MODEL            default: haiku
-//   AX_CONTINUE_CODEX_MODEL             default: the user's codex default
-//   AX_CONTINUE_PI_MODEL                default: deepseek/deepseek-flash
+// Usage: node test/smoke/continue-roundtrip-live.mjs <sm-binary>
+//   SM_CONTINUE_AGENTS=claude[,codex]   agents to run (default: claude)
+//   SM_CONTINUE_CLAUDE_MODEL            default: haiku
+//   SM_CONTINUE_CODEX_MODEL             default: the user's codex default
+//   SM_CONTINUE_PI_MODEL                default: deepseek/deepseek-flash
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const ax = process.argv[2];
-if (!ax) {
-  console.error("usage: node continue-roundtrip-live.mjs <ax-binary>");
+const sm = process.argv[2];
+if (!sm) {
+  console.error("usage: node continue-roundtrip-live.mjs <sm-binary>");
   process.exit(2);
 }
-const agents = (process.env.AX_CONTINUE_AGENTS ?? "claude").split(",").map((a) => a.trim()).filter(Boolean);
+const agents = (process.env.SM_CONTINUE_AGENTS ?? "claude").split(",").map((a) => a.trim()).filter(Boolean);
 
 function modelArgs(agent) {
-  if (agent === "claude") return ["--model", process.env.AX_CONTINUE_CLAUDE_MODEL ?? "haiku"];
+  if (agent === "claude") return ["--model", process.env.SM_CONTINUE_CLAUDE_MODEL ?? "haiku"];
   if (agent === "codex") {
-    const model = process.env.AX_CONTINUE_CODEX_MODEL ?? "";
+    const model = process.env.SM_CONTINUE_CODEX_MODEL ?? "";
     return model ? ["--model", model] : [];
   }
-  if (agent === "pi") return ["--model", process.env.AX_CONTINUE_PI_MODEL ?? "deepseek/deepseek-flash"];
+  if (agent === "pi") return ["--model", process.env.SM_CONTINUE_PI_MODEL ?? "deepseek/deepseek-flash"];
   throw new Error(`no model policy for agent ${agent}`);
 }
 
@@ -40,7 +40,7 @@ function continueTurn(agent, workspace, messages, extraArgs = []) {
     messageCount: messages.length,
     messages,
   });
-  const stdout = execFileSync(ax, ["session", "continue", agent, ...modelArgs(agent), ...extraArgs], {
+  const stdout = execFileSync(sm, ["session", "continue", agent, ...modelArgs(agent), ...extraArgs], {
     input: transcript,
     encoding: "utf8",
     timeout: 300_000,
@@ -141,7 +141,7 @@ function runSignedThinkingScenario(agent, workspace) {
 
 let failed = false;
 for (const agent of agents) {
-  const workspace = realpathSync(mkdtempSync(join(tmpdir(), "ax-continue-roundtrip-")));
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), "sm-continue-roundtrip-")));
   const passphrase = `PINEAPPLE-${Math.floor(Math.random() * 1e10)}`;
   try {
     const first = [{
