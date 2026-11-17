@@ -246,8 +246,11 @@ func (a App) writeResumeSession(ctx context.Context, detail sessions.Session, ag
 	if agentID == "agy" {
 		return sessions.WriteAgySessionFile(detail, nativedirs.AgyAppDataDir(a.Sessions.HomeDir))
 	}
-	stateDir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "sessionman", "resume")
-	return sessions.WriteSessionFile(detail, agentID, stateDir, a.Sessions.HomeDir)
+	return sessions.WriteSessionFile(detail, agentID, resumeStateDir(a.Sessions.HomeDir), a.Sessions.HomeDir)
+}
+
+func resumeStateDir(home string) string {
+	return filepath.Join(home, ".local", "state", "sessionman", "resume")
 }
 
 func fillTimestamps(messages []sessions.Message) []sessions.Message {

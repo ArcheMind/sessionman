@@ -303,9 +303,12 @@ func CodexHome() string {
 
 // AgentDirs is the resolved directory configuration for one agent.
 type AgentDirs struct {
-	Env          map[string]string
-	Args         []string
-	Symlinks     []Symlink
+	Env      map[string]string
+	Args     []string
+	Symlinks []Symlink
+	// CDirs are directory entries Prepare creates in C so config links never
+	// dangle and the agent's own writes through them (e.g. skill installs) land in C.
+	CDirs        []string
 	PatchFiles   []PatchFile
 	SessionRoots []string
 	ConfigDir    string
@@ -315,6 +318,25 @@ type AgentDirs struct {
 }
 
 type Symlink struct{ Link, Target string }
+
+// configEntry is one user config entry an agent home links to its config
+// source; dir marks entries that are directories.
+type configEntry struct {
+	name string
+	dir  bool
+}
+
+// linkConfig links each entry under home to source. Only C gets missing
+// directories created: C is the user's portable config, native is not sm's.
+func (ad *AgentDirs) linkConfig(home, source string, entries []configEntry, fromC bool) {
+	for _, entry := range entries {
+		ad.Symlinks = append(ad.Symlinks, Symlink{filepath.Join(home, entry.name), filepath.Join(source, entry.name)})
+		if fromC && entry.dir {
+			ad.CDirs = append(ad.CDirs, filepath.Join(source, entry.name))
+		}
+	}
+}
+
 type PatchFile struct {
 	Path    string
 	Content []byte
@@ -443,6 +465,9 @@ func (ad *AgentDirs) dirs() []string {
 	for _, link := range ad.Symlinks {
 		add(filepath.Dir(link.Link))
 	}
+	for _, dir := range ad.CDirs {
+		add(dir)
+	}
 	for _, patch := range ad.PatchFiles {
 		add(filepath.Dir(patch.Path))
 	}
@@ -513,9 +538,9 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
-	piConfigEntries := []string{
-		"settings.json", "models.json", "AGENTS.md",
-		"prompts", "themes", "skills", "extensions",
+	piConfigEntries := []configEntry{
+		{"settings.json", false}, {"models.json", false}, {"AGENTS.md", false},
+		{"prompts", true}, {"themes", true}, {"skills", true}, {"extensions", true},
 	}
 	configSource := native
 	if dirs.ConfigDir != "" {
@@ -530,11 +555,7 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 			Symlink{filepath.Join(piHome, "auth.json"), filepath.Join(native, "auth.json")},
 			Symlink{filepath.Join(piHome, "mcp-auth.json"), filepath.Join(native, "mcp-auth.json")},
 		)
-		for _, entry := range piConfigEntries {
-			ad.Symlinks = append(ad.Symlinks, Symlink{
-				filepath.Join(piHome, entry), filepath.Join(configSource, entry),
-			})
-		}
+		ad.linkConfig(piHome, configSource, piConfigEntries, dirs.ConfigDir != "")
 		ad.SessionRoots = []string{filepath.Join(piHome, "sessions")}
 	} else {
 		// C only: shadow home; sessions stay native
@@ -544,11 +565,7 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 			Symlink{filepath.Join(shadow, "auth.json"), filepath.Join(native, "auth.json")},
 			Symlink{filepath.Join(shadow, "mcp-auth.json"), filepath.Join(native, "mcp-auth.json")},
 		)
-		for _, entry := range piConfigEntries {
-			ad.Symlinks = append(ad.Symlinks, Symlink{
-				filepath.Join(shadow, entry), filepath.Join(configSource, entry),
-			})
-		}
+		ad.linkConfig(shadow, configSource, piConfigEntries, true)
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(shadow, "sessions"), nativeSessions,
 		})
@@ -567,9 +584,9 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
-	configEntries := []string{
-		"config.toml", "AGENTS.md", "AGENTS.override.md",
-		"skills", "hooks.json", "rules", "themes",
+	configEntries := []configEntry{
+		{"config.toml", false}, {"AGENTS.md", false}, {"AGENTS.override.md", false},
+		{"skills", true}, {"hooks.json", false}, {"rules", true}, {"themes", true},
 	}
 	configSource := native
 	if dirs.ConfigDir != "" {
@@ -588,11 +605,7 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		ad.Env["CODEX_SQLITE_HOME"] = codexHome
 		ad.SessionRoots = []string{filepath.Join(codexHome, "sessions")}
 		// config entries symlinked into the session home
-		for _, entry := range configEntries {
-			ad.Symlinks = append(ad.Symlinks, Symlink{
-				filepath.Join(codexHome, entry), filepath.Join(configSource, entry),
-			})
-		}
+		ad.linkConfig(codexHome, configSource, configEntries, dirs.ConfigDir != "")
 		// auth stays native
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(codexHome, "auth.json"), filepath.Join(native, "auth.json"),
@@ -605,11 +618,7 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		ad.SessionRoots = []string{filepath.Join(native, "sessions")}
 		ad.Limitation = "Codex C-only: session_index.jsonl diverges after thread delete"
 		// config entries from C
-		for _, entry := range configEntries {
-			ad.Symlinks = append(ad.Symlinks, Symlink{
-				filepath.Join(shadow, entry), filepath.Join(configSource, entry),
-			})
-		}
+		ad.linkConfig(shadow, configSource, configEntries, true)
 		// session data stays native
 		ad.Symlinks = append(ad.Symlinks,
 			Symlink{filepath.Join(shadow, "sessions"), filepath.Join(native, "sessions")},
@@ -634,9 +643,9 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
-	configEntries := []string{
-		"settings.json", "CLAUDE.md", "agents", "commands",
-		"skills", "hooks", "plugins", "output-styles",
+	configEntries := []configEntry{
+		{"settings.json", false}, {"CLAUDE.md", false}, {"agents", true}, {"commands", true},
+		{"skills", true}, {"hooks", true}, {"plugins", true}, {"output-styles", true},
 	}
 	nativeClaudeJSON := ClaudeJSONPath("")
 
@@ -652,11 +661,7 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		claudeHome := filepath.Join(dirs.SessionDir, "claude")
 		ad.Env["CLAUDE_CONFIG_DIR"] = claudeHome
 		ad.SessionRoots = []string{filepath.Join(claudeHome, "projects")}
-		for _, entry := range configEntries {
-			ad.Symlinks = append(ad.Symlinks, Symlink{
-				filepath.Join(claudeHome, entry), filepath.Join(configSource, entry),
-			})
-		}
+		ad.linkConfig(claudeHome, configSource, configEntries, dirs.ConfigDir != "")
 		// .claude.json holds account/state (credentials); always link to true native
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(claudeHome, ".claude.json"), nativeClaudeJSON,
@@ -666,11 +671,7 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		shadow := shadowDir(dirs.ConfigDir, "claude")
 		ad.Env["CLAUDE_CONFIG_DIR"] = shadow
 		ad.SessionRoots = []string{filepath.Join(native, "projects")}
-		for _, entry := range configEntries {
-			ad.Symlinks = append(ad.Symlinks, Symlink{
-				filepath.Join(shadow, entry), filepath.Join(configSource, entry),
-			})
-		}
+		ad.linkConfig(shadow, configSource, configEntries, true)
 		// .claude.json holds account/state (credentials); always link to true native
 		ad.Symlinks = append(ad.Symlinks,
 			Symlink{filepath.Join(shadow, ".claude.json"), nativeClaudeJSON},
@@ -748,8 +749,9 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
-	// C set: use an sm-owned shadow so we never write into the user's C.
-	// Config entries from C are symlinked into the shadow.
+	// C set: gemini_dir is an sm-owned shadow because it also holds sm's own
+	// agy plugin, an sm artifact rather than user config; user config entries
+	// from C are symlinked into it.
 	geminiDir := native
 	if dirs.ConfigDir != "" {
 		shadow := shadowDir(dirs.ConfigDir, "agy")
@@ -757,8 +759,7 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 		ad.Args = append(ad.Args, "--gemini_dir="+geminiDir)
 		ad.ConfigDir = filepath.Join(geminiDir, "config")
 		configSource := filepath.Join(dirs.ConfigDir, "agy", "config")
-		// Only symlink user-owned config; plugins/ stays in the shadow so sm
-		// can write its own agy plugin without touching C.
+		// plugins/ is not linked: it holds sm's plugin, not user config.
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(geminiDir, "config", "settings.json"),
 			filepath.Join(configSource, "settings.json"),

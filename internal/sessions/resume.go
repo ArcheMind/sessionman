@@ -30,6 +30,51 @@ func piSessionRoot(homeDir string) string {
 	return filepath.Join(homeDir, ".pi", "agent", "sessions")
 }
 
+// PlanSessionFile returns the resume token and the path a write for agentID
+// would create, touching nothing; dry runs report it instead of writing.
+func PlanSessionFile(detail Session, agentID, dir, homeDir string) (token, path string, err error) {
+	switch agentID {
+	case "agy":
+		id, path := agySessionPath(nativedirs.AgyAppDataDir(homeDir))
+		return id, path, nil
+	case "codex":
+		id, path := codexSessionPath(nativedirs.CodexHome(), time.Now())
+		return id, path, nil
+	case "claude":
+		id, path := claudeSessionPath(detail.Workspace, homeDir)
+		return id, path, nil
+	case "pi":
+		_, _, path, err := piSessionPath(detail.Workspace, homeDir)
+		return path, path, err
+	case "opencode":
+		base := filepath.Join(dir, newUUID())
+		return base, base, nil
+	default:
+		return "", "", fmt.Errorf("unsupported resume target %q", agentID)
+	}
+}
+
+func claudeSessionPath(workspace, homeDir string) (id, path string) {
+	id = newUUID()
+	return id, filepath.Join(claudeProjectsRoot(homeDir), strings.ReplaceAll(workspace, "/", "-"), id+".jsonl")
+}
+
+func piSessionPath(workspace, homeDir string) (id, resolvedWorkspace, path string, err error) {
+	if workspace == "" {
+		if workspace, err = os.Getwd(); err != nil {
+			return "", "", "", fmt.Errorf("resolve pi session workspace: %w", err)
+		}
+	}
+	id = newUUID()
+	return id, workspace, filepath.Join(piSessionRoot(homeDir), piSessionDirName(workspace), id+".jsonl"), nil
+}
+
+func codexSessionPath(codexHome string, now time.Time) (id, path string) {
+	id = newUUID()
+	name := fmt.Sprintf("rollout-%s-%s.jsonl", now.Format("2006-01-02T15-04-05"), id)
+	return id, filepath.Join(codexHome, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"), name)
+}
+
 func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("create resume directory: %w", err)
@@ -43,31 +88,20 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 	case "agy":
 		return WriteAgySessionFile(detail, nativedirs.AgyAppDataDir(homeDir))
 	case "claude":
-		newID := newUUID()
-		cwdEncoded := strings.ReplaceAll(detail.Workspace, "/", "-")
-		projectsDir := claudeProjectsRoot(homeDir)
-		claudeDir := filepath.Join(projectsDir, cwdEncoded)
-		if err := os.MkdirAll(claudeDir, 0700); err != nil {
+		newID, path := claudeSessionPath(detail.Workspace, homeDir)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return "", fmt.Errorf("create claude session directory: %w", err)
 		}
-		path := filepath.Join(claudeDir, newID+".jsonl")
 		detail.ID = newID
 		return newID, writeJSONLFile(path, SerializeClaude(detail))
 	case "pi":
-		newID := newUUID()
-		workspace := detail.Workspace
-		if workspace == "" {
-			wd, err := os.Getwd()
-			if err != nil {
-				return "", fmt.Errorf("resolve pi session workspace: %w", err)
-			}
-			workspace = wd
+		newID, workspace, path, err := piSessionPath(detail.Workspace, homeDir)
+		if err != nil {
+			return "", err
 		}
-		piDir := filepath.Join(piSessionRoot(homeDir), piSessionDirName(workspace))
-		if err := os.MkdirAll(piDir, 0700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return "", fmt.Errorf("create pi session directory: %w", err)
 		}
-		path := filepath.Join(piDir, newID+".jsonl")
 		detail.ID = newID
 		detail.Workspace = workspace
 		return path, writeJSONLFile(path, SerializePi(detail))
@@ -108,17 +142,14 @@ func WriteCodexSessionFile(detail Session, codexHome, provider string) (string, 
 	if strings.TrimSpace(provider) == "" {
 		return "", fmt.Errorf("Codex model provider is required")
 	}
-	id := newUUID()
-	now := time.Now()
-	dir := filepath.Join(codexHome, "sessions", now.Format("2006"), now.Format("01"), now.Format("02"))
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	id, path := codexSessionPath(codexHome, time.Now())
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return "", fmt.Errorf("create codex session directory: %w", err)
 	}
-	name := fmt.Sprintf("rollout-%s-%s.jsonl", now.Format("2006-01-02T15-04-05"), id)
 	detail.ID = id
 	records := SerializeCodex(detail)
 	records[0]["payload"].(map[string]any)["model_provider"] = provider
-	return id, writeJSONLFile(filepath.Join(dir, name), records)
+	return id, writeJSONLFile(path, records)
 }
 
 func newUUID() string {

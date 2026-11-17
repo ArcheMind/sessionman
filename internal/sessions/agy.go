@@ -596,16 +596,19 @@ func WriteAgyDatabaseFile(detail Session, path string) error {
 	return nil
 }
 
+func agySessionPath(appDataDir string) (id, path string) {
+	id = newUUID()
+	return id, filepath.Join(appDataDir, "conversations", id+".db")
+}
+
 // WriteAgySessionFile writes a session into the agy app_data_dir (the
 // directory containing conversations/ and conversation_summaries.db).
 func WriteAgySessionFile(detail Session, appDataDir string) (string, error) {
-	id := newUUID()
+	id, path := agySessionPath(appDataDir)
 	detail.ID = id
-	dir := filepath.Join(appDataDir, "conversations")
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, id+".db")
 	if err := WriteAgyDatabaseFile(detail, path); err != nil {
 		return "", err
 	}

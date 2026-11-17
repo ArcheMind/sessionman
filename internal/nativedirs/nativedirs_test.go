@@ -415,11 +415,11 @@ func TestResolveAgyConfigOnly(t *testing.T) {
 	if !hasAppDataDir {
 		t.Error("C-only should set --app_data_dir to pin sessions to native")
 	}
-	// Plugin can be written without touching C
+	// plugins/ holds sm's own agy plugin, an sm artifact, so it stays out of C
 	if len(ad.Symlinks) > 0 {
 		for _, link := range ad.Symlinks {
 			if strings.Contains(link.Link, "plugins") {
-				t.Errorf("plugins/ should not be symlinked (C is read-only); got %s -> %s", link.Link, link.Target)
+				t.Errorf("plugins/ should not be symlinked (sm artifact, not user config); got %s -> %s", link.Link, link.Target)
 			}
 		}
 	}

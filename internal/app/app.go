@@ -968,8 +968,16 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		resumeToken = detail.ID
 	} else {
 		detail.Workspace = workspace
-		resumeToken, err = a.writeResumeSession(ctx, detail, agent.ID, request)
-		if err != nil {
+		if dryRun {
+			// The Codex provider read would launch codex against an unprepared
+			// CODEX_HOME, so a dry run only plans the path.
+			var path string
+			resumeToken, path, err = sessions.PlanSessionFile(detail, agent.ID, resumeStateDir(a.Sessions.HomeDir), a.Sessions.HomeDir)
+			if err != nil {
+				return fmt.Errorf("plan resume session: %w", err)
+			}
+			fmt.Fprintf(a.Stderr, "dry run: would write resume session %s\n", path)
+		} else if resumeToken, err = a.writeResumeSession(ctx, detail, agent.ID, request); err != nil {
 			return fmt.Errorf("prepare resume session: %w", err)
 		}
 	}

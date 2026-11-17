@@ -10,6 +10,7 @@ import (
 
 	"github.com/ArcheMind/agentx/internal/hooks"
 	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
 
@@ -99,5 +100,83 @@ func TestHelpShowsNativeDirLimitations(t *testing.T) {
 				t.Errorf("%v output lacks %q", args, want)
 			}
 		}
+	}
+}
+
+func treeSnapshot(t *testing.T, roots ...string) []string {
+	t.Helper()
+	var out []string
+	for _, root := range roots {
+		filepath.Walk(root, func(path string, _ os.FileInfo, err error) error {
+			if err == nil {
+				out = append(out, path)
+			}
+			return nil
+		})
+	}
+	return out
+}
+
+// dryRunResume resumes a pi transcript into target as a dry run and returns
+// stderr; cross-agent resume is the path that converts and writes a session.
+func dryRunResume(t *testing.T, home, target string) string {
+	t.Helper()
+	project := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &stderr)
+	application.Sessions = sessions.Service{HomeDir: home}
+	application.Hooks = hooks.Service{Home: t.TempDir(), Project: project}
+	application.Output = OutputJSON
+	agent, err := application.Registry.Get(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail := sessions.Session{ID: "src", Provider: "pi", Workspace: project, Messages: []sessions.Message{userMsg("u1", "hello"), assistantMsg("a1", "hi")}}
+	if err := application.resumeSession(context.Background(), agent, detail, runtime.RunRequest{Cwd: project}, false, true); err != nil {
+		t.Fatalf("dry-run resume %s: %v", target, err)
+	}
+	if stdout.Len() == 0 {
+		t.Fatal("dry run printed no plan")
+	}
+	return stderr.String()
+}
+
+// Defect 1: a dry-run cross-agent resume reports the session path and writes
+// nothing (no shadow projects dir that would block the native link).
+func TestResumeDryRunClaudeConfigOnlyWritesNothing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	c := t.TempDir()
+	applyDirs(t, nativedirs.Dirs{ConfigDir: c})
+	before := treeSnapshot(t, home, c)
+	stderr := dryRunResume(t, home, "claude")
+	if after := treeSnapshot(t, home, c); strings.Join(after, "\n") != strings.Join(before, "\n") {
+		t.Fatalf("dry run wrote: before %v after %v", before, after)
+	}
+	shadowProjects := filepath.Join(home, ".local", "state", "sessionman", "shadow")
+	if !strings.Contains(stderr, "would write resume session "+shadowProjects) || !strings.Contains(stderr, filepath.Join("claude", "projects")) {
+		t.Fatalf("stderr = %q, want the planned claude session path", stderr)
+	}
+}
+
+// Defect 1: a dry-run resume into codex on fresh S/C neither reads the Codex
+// provider (which needs a prepared CODEX_HOME) nor creates anything.
+func TestResumeDryRunCodexFreshSessionConfigWritesNothing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	native := t.TempDir()
+	if err := os.WriteFile(filepath.Join(native, "auth.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", native)
+	s, c := t.TempDir(), t.TempDir()
+	applyDirs(t, nativedirs.Dirs{SessionDir: s, ConfigDir: c})
+	before := treeSnapshot(t, home, native, s, c)
+	stderr := dryRunResume(t, home, "codex")
+	if after := treeSnapshot(t, home, native, s, c); strings.Join(after, "\n") != strings.Join(before, "\n") {
+		t.Fatalf("dry run wrote: before %v after %v", before, after)
+	}
+	if !strings.Contains(stderr, "would write resume session "+filepath.Join(s, "codex", "sessions")) {
+		t.Fatalf("stderr = %q, want the planned codex session path under S", stderr)
 	}
 }
