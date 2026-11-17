@@ -28,27 +28,185 @@ func (d Dirs) Empty() bool { return d.SessionDir == "" && d.ConfigDir == "" }
 var (
 	resolved     map[string]*AgentDirs
 	resolvedErrs map[string]error
+	prepared     map[string]error
 	resolvedMu   sync.Mutex
 )
 
 // KnownAgents lists agents the resolver handles.
 var KnownAgents = []string{"pi", "codex", "claude", "opencode", "dsh", "agy"}
 
+type Scope string
+
+const (
+	ScopeSession Scope = "session"
+	ScopeConfig  Scope = "config"
+	ScopeOther   Scope = "other"
+)
+
+// EnvVar is one environment variable sm may set on an agent's behalf.
+type EnvVar struct {
+	Name  string
+	Scope Scope
+}
+
+type agentTable struct {
+	root    string // native root relative to home
+	rootVar string // env var the user may set to relocate the native root
+	env     []EnvVar
+}
+
+// tables is the single source for every agent env var sm sets, restores and unsets.
+var tables = map[string]agentTable{
+	"pi":    {root: filepath.Join(".pi", "agent"), rootVar: "PI_CODING_AGENT_DIR", env: []EnvVar{{"PI_CODING_AGENT_DIR", ScopeSession}}},
+	"codex": {root: ".codex", rootVar: "CODEX_HOME", env: []EnvVar{{"CODEX_HOME", ScopeSession}, {"CODEX_SQLITE_HOME", ScopeSession}}},
+	"claude": {root: ".claude", rootVar: "CLAUDE_CONFIG_DIR", env: []EnvVar{
+		{"CLAUDE_CONFIG_DIR", ScopeSession}, {"CLAUDE_SECURESTORAGE_CONFIG_DIR", ScopeOther},
+	}},
+	"opencode": {root: ".opencode"},
+	"dsh":      {root: ".dsh", rootVar: "DSH_HOME"},
+	"agy":      {root: ".gemini"},
+}
+
+const nativePrefix = "SM_NATIVE_"
+
+// AgentEnv returns the env vars sm may set for agent.
+func AgentEnv(agent string) []EnvVar { return tables[agent].env }
+
+// IsolatedEnvNames lists every env var that changes where sm or an agent
+// reads native directories.
+func IsolatedEnvNames() []string {
+	names := []string{"SM_SESSION_DIR", "SM_CONFIG_DIR"}
+	for _, agent := range KnownAgents {
+		t := tables[agent]
+		if t.rootVar != "" {
+			names = append(names, t.rootVar, nativePrefix+t.rootVar)
+		}
+		for _, v := range t.env {
+			if v.Name != t.rootVar {
+				names = append(names, v.Name, nativePrefix+v.Name)
+			}
+		}
+	}
+	return names
+}
+
+// originalEnv returns the user's own value of name, before any sm (this one
+// or a parent) overrode it.
+func originalEnv(name string) (string, bool) {
+	if marker, ok := os.LookupEnv(nativePrefix + name); ok {
+		return decodeNative(marker)
+	}
+	return os.LookupEnv(name)
+}
+
+func encodeNative(value string, set bool) string {
+	if set {
+		return "set:" + value
+	}
+	return "unset"
+}
+
+func decodeNative(marker string) (string, bool) {
+	if value, set := strings.CutPrefix(marker, "set:"); set {
+		return value, true
+	}
+	return "", false
+}
+
+// NativeRoot is the single native root of agent: the user's own root env var
+// when set, else the default under home (the user home when empty).
+func NativeRoot(agent, home string) string {
+	t := tables[agent]
+	if t.rootVar != "" {
+		if v, _ := originalEnv(t.rootVar); v != "" {
+			return v
+		}
+	}
+	if home == "" {
+		home = userHome()
+	}
+	return filepath.Join(home, t.root)
+}
+
+// ClaudeJSONPath is the native .claude.json: claude keeps it beside home
+// unless the user relocated CLAUDE_CONFIG_DIR.
+func ClaudeJSONPath(home string) string {
+	if v, _ := originalEnv("CLAUDE_CONFIG_DIR"); v != "" {
+		return filepath.Join(v, ".claude.json")
+	}
+	if home == "" {
+		home = userHome()
+	}
+	return filepath.Join(home, ".claude.json")
+}
+
+func nativeSessionRoots(agent, home string) []string {
+	root := NativeRoot(agent, home)
+	switch agent {
+	case "pi", "codex":
+		return []string{filepath.Join(root, "sessions")}
+	case "claude":
+		return []string{filepath.Join(root, "projects")}
+	case "agy":
+		return []string{filepath.Join(root, "antigravity-cli")}
+	case "opencode":
+		if home == "" {
+			home = userHome()
+		}
+		return []string{filepath.Join(home, ".local", "share", "opencode", "project")}
+	}
+	return []string{root}
+}
+
+// SessionRoots returns where agent's sessions live: the S/C resolution when
+// active, else the native roots.
+func SessionRoots(agent, home string) []string {
+	if ad := Cached(agent); ad != nil && len(ad.SessionRoots) > 0 {
+		return ad.SessionRoots
+	}
+	return nativeSessionRoots(agent, home)
+}
+
+// restoreEnv undoes every override a parent sm recorded with SM_NATIVE_*:
+// the user's value comes back when they had one, otherwise the var is unset.
+func restoreEnv() {
+	for _, agent := range KnownAgents {
+		for _, v := range tables[agent].env {
+			marker, ok := os.LookupEnv(nativePrefix + v.Name)
+			if !ok {
+				continue
+			}
+			if value, set := decodeNative(marker); set {
+				os.Setenv(v.Name, value)
+			} else {
+				os.Unsetenv(v.Name)
+			}
+			os.Unsetenv(nativePrefix + v.Name)
+		}
+	}
+}
+
 // ApplyToProcess resolves all agents once and writes the results into sm's own
 // process environment so every code path (session lookup, history import, list)
-// and every child process sees the same directories. Call once from main after
-// parsing --session-dir / --config-dir.
+// and every child process sees the same directories. It writes nothing to disk;
+// PrepareAgent does that for the one agent an invocation targets.
 func ApplyToProcess(dirs Dirs) error {
-	if dirs.Empty() {
-		// Nested sm with S/C unset but inherited SM_NATIVE_*: restore native
-		// env so the child and sm agree on directory locations.
-		restoreNativeEnv()
-		return nil
+	if dirs.SessionDir != "" && !filepath.IsAbs(dirs.SessionDir) {
+		return fmt.Errorf("SM_SESSION_DIR=%q must be absolute", dirs.SessionDir)
 	}
+	if dirs.ConfigDir != "" && !filepath.IsAbs(dirs.ConfigDir) {
+		return fmt.Errorf("SM_CONFIG_DIR=%q must be absolute", dirs.ConfigDir)
+	}
+	restoreEnv()
 	resolvedMu.Lock()
 	defer resolvedMu.Unlock()
+	resolved, resolvedErrs, prepared = nil, nil, nil
+	if dirs.Empty() {
+		return nil
+	}
 	resolved = make(map[string]*AgentDirs, len(KnownAgents))
 	resolvedErrs = make(map[string]error, len(KnownAgents))
+	prepared = make(map[string]error, len(KnownAgents))
 	for _, agent := range KnownAgents {
 		ad, err := Resolve(agent, dirs)
 		if err != nil {
@@ -56,19 +214,8 @@ func ApplyToProcess(dirs Dirs) error {
 			resolved[agent] = &AgentDirs{Env: map[string]string{}, SessionRoots: []string{}}
 			continue
 		}
-		if err := Prepare(ad); err != nil {
-			resolvedErrs[agent] = fmt.Errorf("prepare %s directories: %w", agent, err)
-			resolved[agent] = &AgentDirs{Env: map[string]string{}, SessionRoots: []string{}}
-			continue
-		}
 		resolved[agent] = ad
-		for k, v := range ad.Env {
-			os.Setenv(k, v)
-		}
-		for _, k := range ad.UnsetEnv {
-			os.Unsetenv(k)
-		}
-		for k, v := range NativeEnvExport(ad) {
+		for k, v := range MergeEnv(ad) {
 			os.Setenv(k, v)
 		}
 	}
@@ -85,7 +232,7 @@ func Cached(agent string) *AgentDirs {
 	return resolved[agent]
 }
 
-// CachedError returns any error from ApplyToProcess for this agent.
+// CachedError returns any resolution error from ApplyToProcess for this agent.
 func CachedError(agent string) error {
 	resolvedMu.Lock()
 	defer resolvedMu.Unlock()
@@ -93,6 +240,32 @@ func CachedError(agent string) error {
 		return nil
 	}
 	return resolvedErrs[agent]
+}
+
+// Ready reports whether agent can run under the active S/C. With prepare it
+// also creates agent's directories, symlinks and patches (once per process);
+// callers pass prepare only when they are about to launch or write for agent.
+func Ready(agent string, prepare bool) error {
+	resolvedMu.Lock()
+	defer resolvedMu.Unlock()
+	if resolved == nil {
+		return nil
+	}
+	if err := resolvedErrs[agent]; err != nil {
+		return err
+	}
+	if !prepare {
+		return nil
+	}
+	if err, done := prepared[agent]; done {
+		return err
+	}
+	err := Prepare(resolved[agent])
+	if err != nil {
+		err = fmt.Errorf("prepare %s directories: %w", agent, err)
+	}
+	prepared[agent] = err
+	return err
 }
 
 // ResolvedArgs returns the agent-specific CLI args (--gemini_dir, --patch, etc.)
@@ -105,44 +278,32 @@ func ResolvedArgs(agent string) []string {
 }
 
 // GeminiDir returns the resolved gemini directory (native or overridden by C).
-// When fallbackHome is non-empty, it is used as the base for the native default;
-// otherwise the user home directory is used.
 func GeminiDir(fallbackHome string) string {
 	if ad := Cached("agy"); ad != nil && ad.ConfigDir != "" {
 		return filepath.Dir(ad.ConfigDir)
 	}
-	if fallbackHome == "" {
-		fallbackHome = userHome()
-	}
-	return filepath.Join(fallbackHome, ".gemini")
+	return NativeRoot("agy", fallbackHome)
 }
 
 // AgyAppDataDir returns the resolved agy app_data_dir (the directory
-// containing conversations/). Falls back to the native default.
+// containing conversations/).
 func AgyAppDataDir(fallbackHome string) string {
-	if ad := Cached("agy"); ad != nil && ad.AppDataDir != "" {
-		return ad.AppDataDir
-	}
-	if fallbackHome == "" {
-		fallbackHome = userHome()
-	}
-	return filepath.Join(fallbackHome, ".gemini", "antigravity-cli")
+	return SessionRoots("agy", fallbackHome)[0]
 }
 
-// CodexHome returns the resolved CODEX_HOME. Falls back to the native default.
+// CodexHome returns the resolved CODEX_HOME.
 func CodexHome() string {
 	if ad := Cached("codex"); ad != nil {
 		if v := ad.Env["CODEX_HOME"]; v != "" {
 			return v
 		}
 	}
-	return nativeHome("CODEX_HOME", ".codex")
+	return NativeRoot("codex", "")
 }
 
 // AgentDirs is the resolved directory configuration for one agent.
 type AgentDirs struct {
 	Env          map[string]string
-	UnsetEnv     []string
 	Args         []string
 	Symlinks     []Symlink
 	PatchFiles   []PatchFile
@@ -154,46 +315,14 @@ type AgentDirs struct {
 }
 
 type Symlink struct{ Link, Target string }
-type PatchFile struct{ Path string; Content []byte }
-
-// nativeHome resolves the native location for an agent's home env var,
-// preventing shadow-of-shadow: SM_NATIVE_<VAR> >> <VAR> >> default.
-func nativeHome(envKey, defaultRel string) string {
-	if v := os.Getenv("SM_NATIVE_" + envKey); v != "" {
-		return v
-	}
-	if v := os.Getenv(envKey); v != "" {
-		return v
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, defaultRel)
+type PatchFile struct {
+	Path    string
+	Content []byte
 }
 
 func userHome() string {
 	h, _ := os.UserHomeDir()
 	return h
-}
-
-// restoreNativeEnv undoes a parent sm's env overrides when this sm runs
-// without S/C. For each SM_NATIVE_<key>, if <key> differs from the native
-// value, reset <key> to native and clear the SM_NATIVE_ marker.
-func restoreNativeEnv() {
-	pairs := []struct{ envKey, nativeKey, defaultRel string }{
-		{"CODEX_HOME", "SM_NATIVE_CODEX_HOME", ".codex"},
-		{"CLAUDE_CONFIG_DIR", "SM_NATIVE_CLAUDE_CONFIG_DIR", ".claude"},
-		{"PI_CODING_AGENT_DIR", "SM_NATIVE_PI_CODING_AGENT_DIR", filepath.Join(".pi", "agent")},
-	}
-	for _, p := range pairs {
-		native := os.Getenv(p.nativeKey)
-		if native == "" {
-			continue
-		}
-		current := os.Getenv(p.envKey)
-		if current != native {
-			os.Setenv(p.envKey, native)
-		}
-		os.Unsetenv(p.nativeKey)
-	}
 }
 
 func shadowDir(configDir, agent string) string {
@@ -232,129 +361,151 @@ func Resolve(agent string, dirs Dirs) (*AgentDirs, error) {
 	}
 }
 
-// NativeEnvExport returns the SM_NATIVE_<key> export entries for all env vars
-// this resolution overrides. The caller should set these on the child process
-// so nested SM launches recover the true native location.
+// NativeEnvExport returns an SM_NATIVE_<var> marker for every env var this
+// resolution overrides, recording the user's own value (or its absence) so
+// nested sm launches recover and restore it.
 func NativeEnvExport(ad *AgentDirs) map[string]string {
 	out := map[string]string{}
-	nativeKeys := map[string]string{
-		"CODEX_HOME":           "SM_NATIVE_CODEX_HOME",
-		"CLAUDE_CONFIG_DIR":    "SM_NATIVE_CLAUDE_CONFIG_DIR",
-		"PI_CODING_AGENT_DIR":  "SM_NATIVE_PI_CODING_AGENT_DIR",
+	for key := range ad.Env {
+		value, set := originalEnv(key)
+		out[nativePrefix+key] = encodeNative(value, set)
 	}
-	for key, nativeKey := range nativeKeys {
-		if _, overridden := ad.Env[key]; overridden {
-			if os.Getenv(nativeKey) == "" {
-				out[nativeKey] = ad.NativeHome
+	return out
+}
+
+// MergeEnv returns the agent env overlay including SM_NATIVE_* recovery markers.
+func MergeEnv(ad *AgentDirs) map[string]string {
+	env := NativeEnvExport(ad)
+	for k, v := range ad.Env {
+		env[k] = v
+	}
+	return env
+}
+
+func symlinkCollision(link, existing, target string) error {
+	return fmt.Errorf("symlink collision: %s already points to %s, refusing to re-point to %s; use a different --session-dir or --config-dir", link, existing, target)
+}
+
+// dirConflict reports a path that must be a directory but is something else.
+func dirConflict(dir string) error {
+	for path := dir; ; path = filepath.Dir(path) {
+		info, err := os.Stat(path)
+		if err == nil {
+			if !info.IsDir() {
+				return fmt.Errorf("%s is not a directory", path)
 			}
+			return nil
+		}
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("check directory %s: %w", path, err)
+		}
+		if parent := filepath.Dir(path); parent == path {
+			return nil
+		}
+	}
+}
+
+// symlinkNeeded reports whether link must be created; an existing link to a
+// different target is a conflict, a real file is kept as is.
+func symlinkNeeded(link Symlink) (bool, error) {
+	info, err := os.Lstat(link.Link)
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check symlink %s: %w", link.Link, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return false, nil
+	}
+	existing, err := os.Readlink(link.Link)
+	if err != nil {
+		return false, fmt.Errorf("check symlink %s: %w", link.Link, err)
+	}
+	if existing != link.Target {
+		return false, symlinkCollision(link.Link, existing, link.Target)
+	}
+	return false, nil
+}
+
+func (ad *AgentDirs) dirs() []string {
+	set := map[string]bool{}
+	var out []string
+	add := func(dir string) {
+		if dir != "" && !set[dir] {
+			set[dir] = true
+			out = append(out, dir)
+		}
+	}
+	for _, root := range ad.SessionRoots {
+		add(root)
+	}
+	for _, link := range ad.Symlinks {
+		add(filepath.Dir(link.Link))
+	}
+	for _, patch := range ad.PatchFiles {
+		add(filepath.Dir(patch.Path))
+	}
+	for key, value := range ad.Env {
+		if strings.HasSuffix(key, "_DIR") || strings.HasSuffix(key, "_HOME") {
+			add(value)
 		}
 	}
 	return out
 }
 
-// EnsureSymlinks creates all symlinks idempotently. When a symlink already
-// points to a different target, it fails with a collision error (D9a) instead
-// of silently re-pointing, unless allowRepoint is true.
-func EnsureSymlinks(links []Symlink) error {
-	for _, link := range links {
-		if err := os.MkdirAll(filepath.Dir(link.Link), 0700); err != nil {
-			return fmt.Errorf("create parent for symlink %s: %w", link.Link, err)
-		}
-		existing, err := os.Readlink(link.Link)
-		if err == nil {
-			if existing == link.Target {
-				continue
-			}
-			return fmt.Errorf("symlink collision: %s already points to %s, refusing to re-point to %s; use a different --session-dir or --config-dir", link.Link, existing, link.Target)
-		} else if !os.IsNotExist(err) {
-			info, statErr := os.Lstat(link.Link)
-			if statErr != nil {
-				return fmt.Errorf("check symlink target %s: %w", link.Link, statErr)
-			}
-			if info.Mode()&os.ModeSymlink == 0 {
-				continue // real file already exists; do not replace
-			}
-		}
-		if err := os.Symlink(link.Target, link.Link); err != nil {
-			if !os.IsExist(err) {
-				return fmt.Errorf("create symlink %s -> %s: %w", link.Link, link.Target, err)
-			}
-			actual, readErr := os.Readlink(link.Link)
-			if readErr != nil {
-				return fmt.Errorf("check existing symlink %s: %w", link.Link, readErr)
-			}
-			if actual != link.Target {
-				return fmt.Errorf("symlink collision: %s already points to %s, refusing to re-point to %s; use a different --session-dir or --config-dir", link.Link, actual, link.Target)
-			}
+// Prepare validates the full plan (directories, symlinks, patch files) and
+// only then creates it, so a conflict leaves the filesystem untouched.
+func Prepare(ad *AgentDirs) error {
+	dirs := ad.dirs()
+	for _, dir := range dirs {
+		if err := dirConflict(dir); err != nil {
+			return err
 		}
 	}
-	return nil
-}
-
-// EnsurePatchFiles writes all patch files idempotently.
-func EnsurePatchFiles(patches []PatchFile) error {
-	for _, p := range patches {
-		if err := os.MkdirAll(filepath.Dir(p.Path), 0700); err != nil {
-			return fmt.Errorf("create parent for patch %s: %w", p.Path, err)
-		}
-		if err := os.WriteFile(p.Path, p.Content, 0600); err != nil {
-			return fmt.Errorf("write patch %s: %w", p.Path, err)
-		}
-	}
-	return nil
-}
-
-// EnsureDirs creates the directories needed by symlink targets and env-pointed dirs.
-func EnsureDirs(ad *AgentDirs) error {
-	dirs := map[string]bool{}
-	for _, root := range ad.SessionRoots {
-		dirs[root] = true
-	}
+	var links []Symlink
 	for _, link := range ad.Symlinks {
-		dirs[filepath.Dir(link.Link)] = true
-	}
-	for key, value := range ad.Env {
-		if strings.HasSuffix(key, "_DIR") || strings.HasSuffix(key, "_HOME") || key == "CLAUDE_CONFIG_DIR" {
-			dirs[value] = true
+		needed, err := symlinkNeeded(link)
+		if err != nil {
+			return err
+		}
+		if needed {
+			links = append(links, link)
 		}
 	}
-	for dir := range dirs {
-		if dir == "" {
-			continue
+	for _, patch := range ad.PatchFiles {
+		if info, err := os.Lstat(patch.Path); err == nil && !info.Mode().IsRegular() {
+			return fmt.Errorf("patch %s exists and is not a regular file", patch.Path)
+		} else if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("check patch %s: %w", patch.Path, err)
 		}
+	}
+	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return fmt.Errorf("create directory %s: %w", dir, err)
 		}
 	}
+	for _, link := range links {
+		if err := os.Symlink(link.Target, link.Link); err != nil {
+			if !os.IsExist(err) {
+				return fmt.Errorf("create symlink %s -> %s: %w", link.Link, link.Target, err)
+			}
+			if _, err := symlinkNeeded(link); err != nil {
+				return err
+			}
+		}
+	}
+	for _, patch := range ad.PatchFiles {
+		if err := os.WriteFile(patch.Path, patch.Content, 0600); err != nil {
+			return fmt.Errorf("write patch %s: %w", patch.Path, err)
+		}
+	}
 	return nil
 }
 
-// Prepare creates all directories, symlinks, and patch files for the resolution.
-func Prepare(ad *AgentDirs) error {
-	if err := EnsureDirs(ad); err != nil {
-		return err
-	}
-	if err := EnsureSymlinks(ad.Symlinks); err != nil {
-		return err
-	}
-	return EnsurePatchFiles(ad.PatchFiles)
-}
-
-// MergeEnv returns the agent env overlay including SM_NATIVE_* recovery vars.
-func MergeEnv(ad *AgentDirs) (map[string]string, []string) {
-	env := map[string]string{}
-	for k, v := range ad.Env {
-		env[k] = v
-	}
-	for k, v := range NativeEnvExport(ad) {
-		env[k] = v
-	}
-	return env, ad.UnsetEnv
-}
-
 func resolvePi(dirs Dirs) (*AgentDirs, error) {
-	native := nativeHome("PI_CODING_AGENT_DIR", filepath.Join(".pi", "agent"))
-	nativeSessions := filepath.Join(native, "sessions")
+	native := NativeRoot("pi", "")
+	nativeSessions := nativeSessionRoots("pi", "")[0]
 	ad := &AgentDirs{Env: map[string]string{}, NativeHome: native, ConfigDir: native}
 
 	if dirs.Empty() {
@@ -408,11 +559,11 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 }
 
 func resolveCodex(dirs Dirs) (*AgentDirs, error) {
-	native := nativeHome("CODEX_HOME", ".codex")
+	native := NativeRoot("codex", "")
 	ad := &AgentDirs{Env: map[string]string{}, NativeHome: native, ConfigDir: native}
 
 	if dirs.Empty() {
-		ad.SessionRoots = []string{filepath.Join(native, "sessions")}
+		ad.SessionRoots = nativeSessionRoots("codex", "")
 		return ad, nil
 	}
 
@@ -475,11 +626,11 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 }
 
 func resolveClaude(dirs Dirs) (*AgentDirs, error) {
-	native := nativeHome("CLAUDE_CONFIG_DIR", ".claude")
+	native := NativeRoot("claude", "")
 	ad := &AgentDirs{Env: map[string]string{}, NativeHome: native, ConfigDir: native}
 
 	if dirs.Empty() {
-		ad.SessionRoots = []string{filepath.Join(native, "projects")}
+		ad.SessionRoots = nativeSessionRoots("claude", "")
 		return ad, nil
 	}
 
@@ -487,13 +638,7 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		"settings.json", "CLAUDE.md", "agents", "commands",
 		"skills", "hooks", "plugins", "output-styles",
 	}
-	// Recover native .claude.json via SM_NATIVE_* >> user's own CLAUDE_CONFIG_DIR
-	// (when not an sm shadow) >> default ~/.claude.
-	trueNativeDir := nativeHome("CLAUDE_CONFIG_DIR", ".claude")
-	nativeClaudeJSON := filepath.Join(trueNativeDir, ".claude.json")
-	if trueNativeDir == filepath.Join(userHome(), ".claude") {
-		nativeClaudeJSON = filepath.Join(userHome(), ".claude.json")
-	}
+	nativeClaudeJSON := ClaudeJSONPath("")
 
 	configSource := native
 	if dirs.ConfigDir != "" {
@@ -537,11 +682,10 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 }
 
 func resolveOpenCode(dirs Dirs) (*AgentDirs, error) {
-	home := userHome()
-	native := filepath.Join(home, ".opencode")
+	native := NativeRoot("opencode", "")
 	ad := &AgentDirs{
 		Env: map[string]string{}, NativeHome: native, ConfigDir: native,
-		SessionRoots: []string{filepath.Join(home, ".local", "share", "opencode", "project")},
+		SessionRoots: nativeSessionRoots("opencode", ""),
 	}
 
 	if !dirs.Empty() {
@@ -552,13 +696,10 @@ func resolveOpenCode(dirs Dirs) (*AgentDirs, error) {
 }
 
 func resolveDSH(dirs Dirs) (*AgentDirs, error) {
-	dshHome := os.Getenv("DSH_HOME")
-	if dshHome == "" {
-		dshHome = filepath.Join(userHome(), ".dsh")
-	}
+	dshHome := NativeRoot("dsh", "")
 	ad := &AgentDirs{
 		Env: map[string]string{}, NativeHome: dshHome, ConfigDir: dshHome,
-		SessionRoots: []string{dshHome},
+		SessionRoots: nativeSessionRoots("dsh", ""),
 	}
 	ad.Limitation = "DSH: AGENTS.md, skills, presets not movable"
 
@@ -595,8 +736,8 @@ func resolveDSH(dirs Dirs) (*AgentDirs, error) {
 }
 
 func resolveAgy(dirs Dirs) (*AgentDirs, error) {
-	native := filepath.Join(userHome(), ".gemini")
-	nativeAppData := filepath.Join(native, "antigravity-cli")
+	native := NativeRoot("agy", "")
+	nativeAppData := nativeSessionRoots("agy", "")[0]
 	ad := &AgentDirs{
 		Env: map[string]string{}, NativeHome: native, ConfigDir: filepath.Join(native, "config"),
 		AppDataDir:   nativeAppData,
@@ -647,17 +788,26 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 
 // HelpText returns the per-agent limitation documentation.
 func HelpText() string {
+	var env strings.Builder
+	for _, agent := range KnownAgents {
+		for _, v := range tables[agent].env {
+			fmt.Fprintf(&env, "\n  %-9s %s (%s)", agent, v.Name, v.Scope)
+		}
+	}
 	return `Native directory parameters:
   --session-dir <path>   Override session storage for all agents (absolute path)
   --config-dir <path>    Override user config for all agents (absolute path)
 
 Both set SM_SESSION_DIR / SM_CONFIG_DIR and are inherited by nested sm launches.
 Neither set: pure native behaviour; each agent uses its own default directories.
+Credentials always stay in the native directories.
 
 Per-agent limitations:
   codex     C-only: session_index.jsonl diverges after thread delete;
             keychain-based auth not supported (file auth required)
   opencode  does not support --session-dir or --config-dir
   dsh       AGENTS.md, skills, presets not movable
-  agy       CLI settings.json travels with the session dir`
+  agy       CLI settings.json travels with the session dir
+
+Agent env vars sm sets (a nested sm without S/C restores the user's value or unsets it):` + env.String()
 }

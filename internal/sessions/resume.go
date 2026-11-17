@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 )
 
 // claudeProjectsRoot returns the claude projects directory, following
@@ -39,7 +41,7 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 
 	switch agentID {
 	case "agy":
-		return WriteAgySessionFile(detail, agyRoot(homeDir))
+		return WriteAgySessionFile(detail, nativedirs.AgyAppDataDir(homeDir))
 	case "claude":
 		newID := newUUID()
 		cwdEncoded := strings.ReplaceAll(detail.Workspace, "/", "-")

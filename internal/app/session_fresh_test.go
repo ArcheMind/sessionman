@@ -281,7 +281,7 @@ func TestFreshKeyResumesAsNewNativeSessionSameAgent(t *testing.T) {
 	t.Setenv("CODEX_HOME", codexHome)
 	application.Sessions = sessions.Service{HomeDir: home}
 	workspace := t.TempDir()
-	path := filepath.Join(home, ".codex", "sessions", "2026", "11", "01", "orig.jsonl")
+	path := filepath.Join(codexHome, "sessions", "2026", "11", "01", "orig.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}

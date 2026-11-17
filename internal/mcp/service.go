@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/ArcheMind/agentx/internal/inventory"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/tailscale/hujson"
 )
@@ -62,10 +63,7 @@ func (s Service) List() inventory.Result {
 				candidate := &candidates[index]
 				switch candidate.agent {
 				case "claude":
-					candidate.path = filepath.Join(base, ".claude.json")
-					if value := os.Getenv("CLAUDE_CONFIG_DIR"); value != "" {
-						candidate.path = filepath.Join(value, ".claude.json")
-					}
+					candidate.path = nativedirs.ClaudeJSONPath(base)
 				case "codex":
 					candidate.path = filepath.Join(inventory.UserDirectory(base, "codex"), "config.toml")
 				case "opencode":

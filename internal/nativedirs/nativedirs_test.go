@@ -328,11 +328,14 @@ func TestResolveAgySessionOnly(t *testing.T) {
 }
 
 func TestNestedNativeRecovery(t *testing.T) {
-	t.Setenv("SM_NATIVE_CODEX_HOME", "/original/codex")
+	t.Setenv("SM_NATIVE_CODEX_HOME", "set:/original/codex")
 	t.Setenv("CODEX_HOME", "/overridden/codex")
-	native := nativeHome("CODEX_HOME", ".codex")
-	if native != "/original/codex" {
-		t.Errorf("nativeHome should prefer SM_NATIVE_CODEX_HOME, got %q", native)
+	if native := NativeRoot("codex", ""); native != "/original/codex" {
+		t.Errorf("NativeRoot should prefer SM_NATIVE_CODEX_HOME, got %q", native)
+	}
+	t.Setenv("SM_NATIVE_CODEX_HOME", "unset")
+	if native := NativeRoot("codex", "/home"); native != "/home/.codex" {
+		t.Errorf("NativeRoot with an originally unset CODEX_HOME = %q, want default", native)
 	}
 }
 
@@ -344,13 +347,18 @@ func TestRelativeDirError(t *testing.T) {
 }
 
 func TestNativeEnvExport(t *testing.T) {
+	t.Setenv("CODEX_HOME", "/user/codex")
+	os.Unsetenv("CODEX_SQLITE_HOME")
 	ad := &AgentDirs{
-		Env:        map[string]string{"CODEX_HOME": "/new/codex"},
+		Env:        map[string]string{"CODEX_HOME": "/new/codex", "CODEX_SQLITE_HOME": "/new/codex"},
 		NativeHome: "/native/codex",
 	}
 	exports := NativeEnvExport(ad)
-	if exports["SM_NATIVE_CODEX_HOME"] != "/native/codex" {
+	if exports["SM_NATIVE_CODEX_HOME"] != "set:/user/codex" {
 		t.Errorf("SM_NATIVE_CODEX_HOME = %q", exports["SM_NATIVE_CODEX_HOME"])
+	}
+	if exports["SM_NATIVE_CODEX_SQLITE_HOME"] != "unset" {
+		t.Errorf("SM_NATIVE_CODEX_SQLITE_HOME = %q, want unset", exports["SM_NATIVE_CODEX_SQLITE_HOME"])
 	}
 }
 
@@ -434,7 +442,7 @@ func TestSymlinkCollision(t *testing.T) {
 	if err := os.Symlink("/original/target", link); err != nil {
 		t.Fatal(err)
 	}
-	err := EnsureSymlinks([]Symlink{{link, "/different/target"}})
+	err := Prepare(&AgentDirs{Symlinks: []Symlink{{link, "/different/target"}}})
 	if err == nil {
 		t.Error("expected collision error when re-pointing symlink")
 	}
@@ -446,7 +454,7 @@ func TestSymlinkSameTarget(t *testing.T) {
 	if err := os.Symlink("/same/target", link); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureSymlinks([]Symlink{{link, "/same/target"}}); err != nil {
+	if err := Prepare(&AgentDirs{Symlinks: []Symlink{{link, "/same/target"}}}); err != nil {
 		t.Errorf("same-target symlink should not error: %v", err)
 	}
 }
@@ -457,6 +465,7 @@ func TestApplyToProcess(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmp, "auth.json"), []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	resetCache(t)
 	t.Setenv("CODEX_HOME", tmp)
 	t.Setenv("HOME", t.TempDir())
 
@@ -526,9 +535,10 @@ func TestGeminiDirFallback(t *testing.T) {
 }
 
 func TestRestoreNativeEnvOnEmptyDirs(t *testing.T) {
-	t.Setenv("SM_NATIVE_CODEX_HOME", "/original/codex")
+	resetCache(t)
+	t.Setenv("SM_NATIVE_CODEX_HOME", "set:/original/codex")
 	t.Setenv("CODEX_HOME", "/shadow/codex")
-	t.Setenv("SM_NATIVE_CLAUDE_CONFIG_DIR", "/original/claude")
+	t.Setenv("SM_NATIVE_CLAUDE_CONFIG_DIR", "set:/original/claude")
 	t.Setenv("CLAUDE_CONFIG_DIR", "/shadow/claude")
 	t.Setenv("SM_SESSION_DIR", "")
 	t.Setenv("SM_CONFIG_DIR", "")

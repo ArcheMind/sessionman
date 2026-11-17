@@ -133,7 +133,6 @@ func agyTime(data []byte) (string, error) {
 	}
 	return time.Unix(int64(p.integer(1)), int64(p.integer(2))).UTC().Format(time.RFC3339Nano), nil
 }
-func agyRoot(home string) string { return filepath.Join(home, ".gemini", "antigravity-cli") }
 func agyFileURL(path string) url.URL {
 	path = filepath.ToSlash(path)
 	if len(path) > 2 && path[1] == ':' && (path[2] == '/' || path[2] == '\\') {

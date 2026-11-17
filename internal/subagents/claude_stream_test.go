@@ -12,6 +12,7 @@ import (
 
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/agentx/internal/testenv"
 )
 
 // TestMain doubles as a fake streaming claude: PATH stubs re-exec the test binary with
@@ -32,7 +33,7 @@ func TestMain(m *testing.M) {
 		fakeClaudeMain(scenario)
 		return
 	}
-	os.Exit(m.Run())
+	os.Exit(testenv.Run(m))
 }
 
 const fakeClaudeSession = "cccccccc-cccc-cccc-cccc-cccccccccccc"

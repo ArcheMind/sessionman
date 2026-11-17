@@ -136,12 +136,6 @@ func (r *continueRunner) runPi(plan runtime.CommandPlan, prompt string) (runtime
 func continueApp(t *testing.T, agent, model, input string) (App, *bytes.Buffer, *continueRunner) {
 	t.Helper()
 	home := t.TempDir()
-	// Ensure tests are hermetic even when run inside an sm session
-	t.Setenv("SM_NATIVE_CODEX_HOME", "")
-	t.Setenv("SM_NATIVE_CLAUDE_CONFIG_DIR", "")
-	t.Setenv("SM_NATIVE_PI_CODING_AGENT_DIR", "")
-	t.Setenv("SM_SESSION_DIR", "")
-	t.Setenv("SM_CONFIG_DIR", "")
 	codexHome := filepath.Join(home, ".codex")
 	if err := os.MkdirAll(codexHome, 0700); err != nil {
 		t.Fatal(err)

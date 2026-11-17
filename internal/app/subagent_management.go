@@ -173,10 +173,12 @@ func (a App) injectClaudeAgentX(request *runtime.RunRequest) error {
 	return nil
 }
 
-func injectPiAgentX(home string, request *runtime.RunRequest) error {
-	path, err := subagents.WritePiBridge(home)
-	if err != nil {
-		return err
+func injectPiAgentX(home string, request *runtime.RunRequest, write bool) error {
+	path := subagents.PiBridgePath(home)
+	if write {
+		if err := subagents.WritePiBridge(path); err != nil {
+			return err
+		}
 	}
 	request.Flags = append(request.Flags, "--extension", path)
 	return nil

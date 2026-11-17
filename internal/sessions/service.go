@@ -88,32 +88,20 @@ type ListOptions struct {
 }
 
 type Service struct {
-	HomeDir      string
-	LookPath     func(string) (string, error)
-	// SessionRoots overrides the default session root per agent, populated from
-	// SM_SESSION_DIR / SM_CONFIG_DIR via nativedirs.Resolve.
-	SessionRoots map[string][]string
+	HomeDir  string
+	LookPath func(string) (string, error)
 }
 
 func New() Service {
 	home, _ := os.UserHomeDir()
-	svc := Service{HomeDir: home, LookPath: exec.LookPath, SessionRoots: map[string][]string{}}
-	for _, id := range []string{"agy", "claude", "codex", "opencode", "pi", "dsh"} {
-		if ad := nativedirs.Cached(id); ad != nil && len(ad.SessionRoots) > 0 {
-			svc.SessionRoots[id] = ad.SessionRoots
-		}
-	}
-	return svc
+	return Service{HomeDir: home, LookPath: exec.LookPath}
 }
 
 func (s Service) Agents() []Agent {
 	agents := make([]Agent, 0, len(agentSpecs))
 	for _, spec := range agentSpecs {
 		_, err := s.lookPath(spec.binary)
-		root := spec.root(s.HomeDir)
-		if overrides, ok := s.SessionRoots[spec.id]; ok && len(overrides) > 0 {
-			root = overrides[0]
-		}
+		root := nativedirs.SessionRoots(spec.id, s.HomeDir)[0]
 		agents = append(agents, Agent{
 			ID: spec.id, Name: spec.name, Installed: err == nil, Root: root,
 		})

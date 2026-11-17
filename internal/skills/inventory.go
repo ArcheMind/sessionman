@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/inventory"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 )
 
 type skillRoot struct {
@@ -44,9 +45,7 @@ func (s Service) Inventory() inventory.Result {
 		}
 		dshBase := filepath.Join(base, ".dsh")
 		if scope == "user" {
-			if value := os.Getenv("DSH_HOME"); value != "" {
-				dshBase = value
-			}
+			dshBase = nativedirs.NativeRoot("dsh", base)
 		}
 		roots = append(roots, skillRoot{filepath.Join(dshBase, "skills"), []string{"dsh"}, false})
 		openBase := filepath.Join(base, ".opencode")
@@ -63,10 +62,7 @@ func (s Service) Inventory() inventory.Result {
 		}
 
 		if scope == "user" {
-			codexBase := filepath.Join(base, ".codex")
-			if value := os.Getenv("CODEX_HOME"); value != "" {
-				codexBase = value
-			}
+			codexBase := inventory.UserDirectory(base, "codex")
 			roots[2].path = filepath.Join(codexBase, "skills")
 			roots = append(roots, skillRoot{filepath.Join(codexBase, "skills", ".system"), []string{"codex"}, false})
 			if value := os.Getenv("DSH_AGENTS_HOME"); value != "" {
@@ -104,9 +100,9 @@ func (s Service) Inventory() inventory.Result {
 				root := &roots[index]
 				switch root.path {
 				case filepath.Join(base, ".claude", "skills"):
-					if os.Getenv("CLAUDE_CONFIG_DIR") != "" {
+					if claudeDir := inventory.UserDirectory(base, "claude"); claudeDir != filepath.Join(base, ".claude") {
 						root.agents = []string{"opencode"}
-						roots = append(roots, skillRoot{filepath.Join(inventory.UserDirectory(base, "claude"), "skills"), []string{"claude"}, false})
+						roots = append(roots, skillRoot{filepath.Join(claudeDir, "skills"), []string{"claude"}, false})
 					}
 				case filepath.Join(base, ".pi", "agent", "skills"):
 					root.path = filepath.Join(inventory.UserDirectory(base, "pi"), "skills")

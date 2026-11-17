@@ -247,18 +247,9 @@ func UserDirectory(home, agent string) string {
 			return ad.ConfigDir
 		}
 	}
-	variable, fallback := "", ""
 	switch agent {
-	case "claude":
-		variable, fallback = "CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude")
-	case "codex":
-		variable, fallback = "CODEX_HOME", filepath.Join(home, ".codex")
-	case "dsh":
-		variable, fallback = "DSH_HOME", filepath.Join(home, ".dsh")
-	case "pi":
-		variable, fallback = "PI_CODING_AGENT_DIR", filepath.Join(home, ".pi", "agent")
 	case "agy":
-		return filepath.Join(home, ".gemini", "config")
+		return filepath.Join(nativedirs.NativeRoot("agy", home), "config")
 	case "opencode":
 		base := os.Getenv("XDG_CONFIG_HOME")
 		if base == "" {
@@ -266,10 +257,7 @@ func UserDirectory(home, agent string) string {
 		}
 		return filepath.Join(base, "opencode")
 	}
-	if value := os.Getenv(variable); value != "" {
-		return value
-	}
-	return fallback
+	return nativedirs.NativeRoot(agent, home)
 }
 
 func mergeProjections(prior, extra []Projection) []Projection {

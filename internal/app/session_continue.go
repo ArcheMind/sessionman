@@ -92,7 +92,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	detail.Workspace = workspace
 
-	if err := nativedirs.CachedError(agent.ID); err != nil {
+	if err := nativedirs.Ready(agent.ID, true); err != nil {
 		return fmt.Errorf("%s blocked: %w", agent.ID, err)
 	}
 
@@ -234,11 +234,10 @@ func (a App) writeResumeSession(ctx context.Context, detail sessions.Session, ag
 	if agentID == "codex" {
 		codexHome := nativedirs.CodexHome()
 		var env map[string]string
-		var unset []string
 		if ad := nativedirs.Cached("codex"); ad != nil {
-			env, unset = nativedirs.MergeEnv(ad)
+			env = nativedirs.MergeEnv(ad)
 		}
-		provider, err := drivers.CodexProvider(ctx, a.Runner, runtime.CommandPlan{Cwd: detail.Workspace, Env: env, UnsetEnv: unset}, request)
+		provider, err := drivers.CodexProvider(ctx, a.Runner, runtime.CommandPlan{Cwd: detail.Workspace, Env: env}, request)
 		if err != nil {
 			return "", err
 		}

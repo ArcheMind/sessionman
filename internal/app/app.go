@@ -100,6 +100,10 @@ func (a App) Run(ctx context.Context, args []string) error {
 		if err := a.rejectStructured("help"); err != nil {
 			return err
 		}
+		if len(args) > 1 && args[1] == "session" {
+			a.printSessionHelp()
+			return nil
+		}
 		a.printHelp()
 		return nil
 	case "version", "-v", "--version":
@@ -386,7 +390,7 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", request.Cwd)
 	}
-	if err := nativedirs.CachedError(agent.ID); err != nil {
+	if err := nativedirs.Ready(agent.ID, !dryRun); err != nil {
 		return fmt.Errorf("%s blocked: %w", agent.ID, err)
 	}
 	if agent.ID == "codex" {
@@ -398,7 +402,7 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 		}
 	}
 	if agent.ID == "pi" {
-		if err := injectPiAgentX(a.Sessions.HomeDir, &request); err != nil {
+		if err := injectPiAgentX(a.Sessions.HomeDir, &request, !dryRun); err != nil {
 			return err
 		}
 	}
@@ -613,6 +617,12 @@ func (a App) sessions(ctx context.Context, args []string) error {
 		return sessionUsageError()
 	}
 	switch args[0] {
+	case "help", "-h", "--help":
+		if err := a.rejectStructured("help"); err != nil {
+			return err
+		}
+		a.printSessionHelp()
+		return nil
 	case "list":
 		return a.sessionList(args[1:])
 	case "show", "info":
@@ -672,6 +682,11 @@ func (a App) sessionList(args []string) error {
 	}
 	if options.All && options.Workspace != "" {
 		return fmt.Errorf("--all and --workspace are mutually exclusive")
+	}
+	if options.Agent != "" {
+		if err := nativedirs.Ready(options.Agent, false); err != nil {
+			return fmt.Errorf("%s blocked: %w", options.Agent, err)
+		}
 	}
 	items, err := a.Sessions.List(options)
 	if err != nil {
@@ -829,7 +844,7 @@ func (a App) sessionImport(ctx context.Context, args []string) error {
 	if len(args) == 2 {
 		path = args[1]
 	}
-	if err := nativedirs.CachedError(agent.ID); err != nil {
+	if err := nativedirs.Ready(agent.ID, true); err != nil {
 		return fmt.Errorf("%s blocked: %w", agent.ID, err)
 	}
 	detail, err := a.readTranscript(path)
@@ -935,7 +950,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	if _, err := agentparams.Build(agent.ID, agentparams.Interactive, request); err != nil {
 		return err
 	}
-	if err := nativedirs.CachedError(agent.ID); err != nil {
+	if err := nativedirs.Ready(agent.ID, !dryRun); err != nil {
 		return fmt.Errorf("%s blocked: %w", agent.ID, err)
 	}
 	if agent.ID == "opencode" && (detail.Provider != agent.ID || fresh) {
@@ -967,7 +982,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	case "codex":
 		injectCodexAgentX(&request)
 	case "pi":
-		if err := injectPiAgentX(a.Sessions.HomeDir, &request); err != nil {
+		if err := injectPiAgentX(a.Sessions.HomeDir, &request, !dryRun); err != nil {
 			return err
 		}
 	}
@@ -1105,10 +1120,6 @@ AGENT OPTIONS
   --dry-run                  Show the invocation without launching
   -- <native args...>        Pass arguments to the native agent
 
-DIRECTORY ISOLATION
-  --session-dir <path>       Override session storage for all agents (absolute)
-  --config-dir <path>        Override user config for all agents (absolute)
-
 OUTPUT & DIAGNOSTICS
   --json | --yaml            Structured command output
   --verbose                  Log raw external I/O and errors as JSON on stderr
@@ -1116,7 +1127,13 @@ OUTPUT & DIAGNOSTICS
 
 SUPPORTED AGENTS
   agy · claude · codex · dsh · opencode · pi
-`)
+
+DIRECTORY ISOLATION
+`+nativedirs.HelpText()+"\n")
+}
+
+func (a App) printSessionHelp() {
+	fmt.Fprintf(a.Stdout, "%s\n\nDIRECTORY ISOLATION\n%s\n", sessionUsageError(), nativedirs.HelpText())
 }
 
 var convertProviders = []string{"agy", "claude", "codex", "opencode", "pi"}

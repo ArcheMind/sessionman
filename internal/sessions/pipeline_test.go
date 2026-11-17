@@ -15,7 +15,7 @@ func TestSessionQueriesLoadOnlyRequiredSummaries(t *testing.T) {
 	var failID string
 	agentSpecs = []agentSpec{{
 		id: "fixture",
-		discover: func(string, bool) ([]Summary, error) {
+		discoverIn: func(string, bool) ([]Summary, error) {
 			return []Summary{
 				{ID: "old", Agent: "fixture", Workspace: "/work", UpdatedAt: "2026-11-01"},
 				{ID: "new", Agent: "fixture", Workspace: "/work", UpdatedAt: "2026-11-02"},

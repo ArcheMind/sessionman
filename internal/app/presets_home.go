@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -338,8 +339,11 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}
 	}
+	if err := nativedirs.Ready(agent.ID, true); err != nil {
+		return a.startFailure(ctx, reader, home, p, fmt.Sprintf("%s blocked: %s", agent.ID, err), false)
+	}
 	if agent.ID == "pi" {
-		if err := injectPiAgentX(a.Sessions.HomeDir, &request); err != nil {
+		if err := injectPiAgentX(a.Sessions.HomeDir, &request, true); err != nil {
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}
 	}

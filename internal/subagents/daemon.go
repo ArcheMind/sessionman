@@ -335,7 +335,7 @@ func (d *Daemon) deliverQueue() {
 // the role instructions.
 func (d *Daemon) preStartLocked() (string, error) {
 	a := d.agent
-	if err := nativedirs.CachedError(a.Option.Agent); err != nil {
+	if err := nativedirs.Ready(a.Option.Agent, true); err != nil {
 		return "", fmt.Errorf("%s blocked: %w", a.Option.Agent, err)
 	}
 	if current, err := presets.Read(d.Home, a.Option.Name); err != nil || !current.Equal(a.Option) {
@@ -419,8 +419,8 @@ func (d *Daemon) injectPiDelegation(plan *runtime.CommandPlan) error {
 	if d.meta.AxBinary == "" || d.meta.DelegationDepth >= MaxDelegationDepth {
 		return nil
 	}
-	path, err := WritePiBridge(d.Home)
-	if err != nil {
+	path := PiBridgePath(d.Home)
+	if err := WritePiBridge(path); err != nil {
 		return err
 	}
 	plan.Args = append(plan.Args, "--extension", path)

@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-func discoverCodex(home string, _ bool) ([]Summary, error) {
-	return discoverCodexIn(filepath.Join(home, ".codex", "sessions"), false)
-}
-
 func discoverCodexIn(root string, _ bool) ([]Summary, error) {
 	return discoverCodexRollouts(root)
 }

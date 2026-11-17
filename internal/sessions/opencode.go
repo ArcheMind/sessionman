@@ -16,14 +16,6 @@ type openCodeMessage struct {
 	timestamp string
 }
 
-func openCodeRoot(home string) string {
-	return filepath.Join(home, ".local", "share", "opencode", "project")
-}
-
-func discoverOpenCode(home string, includeSubagents bool) ([]Summary, error) {
-	return discoverOpenCodeIn(openCodeRoot(home), includeSubagents)
-}
-
 func discoverOpenCodeIn(root string, includeSubagents bool) ([]Summary, error) {
 	paths, err := filepath.Glob(filepath.Join(root, "*", "storage", "session", "info", "*.json"))
 	if err != nil {

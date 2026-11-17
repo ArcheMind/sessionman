@@ -8,10 +8,6 @@ import (
 	"path/filepath"
 )
 
-func discoverAgy(home string, includeSubagents bool) ([]Summary, error) {
-	return discoverAgyIn(agyRoot(home), includeSubagents)
-}
-
 func discoverAgyIn(root string, includeSubagents bool) ([]Summary, error) {
 	paths, err := filepath.Glob(filepath.Join(root, "conversations", "*.db"))
 	if err != nil {

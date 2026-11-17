@@ -158,7 +158,7 @@ func TestNativeSummariesPreserveMessageCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items, err := discoverOpenCode(home, true)
+	items, err := discoverOpenCodeIn(openCodeRoot(home), true)
 	if err != nil || len(items) != 1 {
 		t.Fatalf("discover = %+v %v", items, err)
 	}
