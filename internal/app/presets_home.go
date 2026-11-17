@@ -1018,7 +1018,7 @@ func (a App) printAvailability(p presets.Preset) {
 	execution := "Execution not verified (login and model access are checked only when a session starts)"
 	if agent, err := a.Registry.Get(p.Agent); err == nil {
 		if _, err := exec.LookPath(agent.Binary); err != nil {
-			execution = fmt.Sprintf("Execution not verified; %s is not installed (ax agent install %s)", agent.Name, agent.ID)
+			execution = fmt.Sprintf("Execution not verified; %s is not installed (sm agent install %s)", agent.Name, agent.ID)
 		}
 	}
 	fmt.Fprintf(a.Stdout, "%s %s\n", label("Availability"), execution)

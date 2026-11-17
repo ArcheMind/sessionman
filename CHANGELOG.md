@@ -4,6 +4,15 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-11-17
+
+### Fixed
+
+- Replace all user-facing `ax` references with `sm` in help, usage, and error
+  strings; fix `sm status --help` printing `sm [--json|--yaml] list` instead of
+  `sm [--json|--yaml] status`; rewrite `--session-dir`/`--config-dir` help text
+  for clarity.
+
 ## [0.15.1] - 2026-11-17
 
 ### Changed

@@ -795,13 +795,13 @@ func HelpText() string {
 			fmt.Fprintf(&env, "\n  %-9s %s (%s)", agent, v.Name, v.Scope)
 		}
 	}
-	return `Native directory parameters:
-  --session-dir <path>   Override session storage for all agents (absolute path)
-  --config-dir <path>    Override user config for all agents (absolute path)
-
-Both set SM_SESSION_DIR / SM_CONFIG_DIR and are inherited by nested sm launches.
-Neither set: pure native behaviour; each agent uses its own default directories.
-Credentials always stay in the native directories.
+	return `Native directory isolation (global flags, must precede the subcommand):
+  --session-dir <abs>   S: sessions go to <S>/<agent>   (env: SM_SESSION_DIR)
+  --config-dir  <abs>   C: config is linked from <C>/<agent> (env: SM_CONFIG_DIR)
+  Setting the env var is equivalent to passing the flag; nested sm inherits it.
+  Credentials stay native and are linked: pi auth.json, mcp-auth.json;
+  codex auth.json (file auth required); claude .claude.json.
+  S layout: pi <S>/pi, codex <S>/codex, claude <S>/claude, agy <S>/agy, dsh <S>/dsh
 
 Per-agent limitations:
   codex     C-only: session_index.jsonl diverges after thread delete;

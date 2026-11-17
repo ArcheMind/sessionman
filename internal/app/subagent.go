@@ -18,7 +18,7 @@ import (
 
 func (a App) execAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax agent exec <agy|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
+		return fmt.Errorf("usage: sm agent exec <agy|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
 	}
 	if _, err := a.Registry.Get(args[0]); err != nil {
 		return err

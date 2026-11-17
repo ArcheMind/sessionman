@@ -25,7 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.15.1"
+var Version = "0.15.2"
 
 type App struct {
 	Registry   drivers.Registry
@@ -88,7 +88,7 @@ func (a App) Run(ctx context.Context, args []string) error {
 	}
 	if args[0] == "--resume" {
 		if len(args) != 2 || args[1] == "-" {
-			return fmt.Errorf("usage: ax --resume <transcript-file>")
+			return fmt.Errorf("usage: sm --resume <transcript-file>")
 		}
 		if err := a.rejectStructured("resume from transcript file"); err != nil {
 			return err
@@ -138,7 +138,7 @@ func (a App) Run(ctx context.Context, args []string) error {
 		if _, err := a.Registry.Get(args[0]); err == nil {
 			return a.runAgent(ctx, args)
 		}
-		return fmt.Errorf("unknown command %q; run ax help", args[0])
+		return fmt.Errorf("unknown command %q; run sm help", args[0])
 	}
 }
 
@@ -163,12 +163,12 @@ func (a App) agent(ctx context.Context, args []string) error {
 }
 
 func agentUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] agent <list|show|install|run|exec> [args...]")
+	return fmt.Errorf("usage: sm [--json|--yaml] agent <list|show|install|run|exec> [args...]")
 }
 
 func (a App) list(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] agent list")
+		return fmt.Errorf("usage: sm [--json|--yaml] agent list")
 	}
 	detections := make([]runtime.Detection, 0)
 	for _, agent := range a.Registry.All() {
@@ -201,7 +201,7 @@ type agentShowResult struct {
 
 func (a App) agentShow(ctx context.Context, verb string, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: ax [--json|--yaml] agent show <agent>")
+		return fmt.Errorf("usage: sm [--json|--yaml] agent show <agent>")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -226,7 +226,7 @@ func (a App) agentShow(ctx context.Context, verb string, args []string) error {
 			return err
 		}
 		if pathErr != nil {
-			return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
+			return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 		}
 		fmt.Fprintln(a.Stdout, path)
 		return nil
@@ -276,7 +276,7 @@ func (a App) agentShow(ctx context.Context, verb string, args []string) error {
 
 func (a App) install(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] agent install <agent> [--version <version>] [--dry-run]")
+		return fmt.Errorf("usage: sm [--json|--yaml] agent install <agent> [--version <version>] [--dry-run]")
 	}
 	item, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -314,7 +314,7 @@ func (a App) install(ctx context.Context, args []string) error {
 
 func (a App) models(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: ax [--json|--yaml] agent models <agent>")
+		return fmt.Errorf("usage: sm [--json|--yaml] agent models <agent>")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -342,7 +342,7 @@ func (a App) models(ctx context.Context, args []string) error {
 
 func (a App) runAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] agent run <agent> [--model <model>] [--effort <level>] [--mode <normal|yolo>] [--user-config <true|false>] [--cwd <path>] [--dry-run] [-- <native args...>]")
+		return fmt.Errorf("usage: sm [--json|--yaml] agent run <agent> [--model <model>] [--effort <level>] [--mode <normal|yolo>] [--user-config <true|false>] [--cwd <path>] [--dry-run] [-- <native args...>]")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -423,7 +423,7 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 		return err
 	}
 	if _, err := exec.LookPath(agent.Binary); err != nil {
-		return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
+		return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 	}
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	if err != nil {
@@ -452,13 +452,13 @@ func (a App) auth(ctx context.Context, args []string) error {
 	}
 	if args[0] == "show" || args[0] == "status" {
 		if len(args) != 2 {
-			return fmt.Errorf("usage: ax [--json|--yaml] auth show <agent>")
+			return fmt.Errorf("usage: sm [--json|--yaml] auth show <agent>")
 		}
 		if !agent.Auth.SupportsStatus() {
 			return a.writeAuthStatus(runtime.AuthStatus{Agent: agent.ID, Supported: false, Providers: []runtime.AuthProvider{}})
 		}
 		if _, err := exec.LookPath(agent.Binary); err != nil {
-			return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
+			return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 		}
 		status, err := agent.Auth.Status(ctx, a.Runner)
 		if err != nil {
@@ -493,7 +493,7 @@ func (a App) auth(ctx context.Context, args []string) error {
 		return err
 	}
 	if _, err := exec.LookPath(agent.Binary); err != nil {
-		return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
+		return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 	}
 	if plan.Instruction != "" {
 		fmt.Fprintln(a.Stderr, plan.Instruction)
@@ -517,7 +517,7 @@ func (a App) auth(ctx context.Context, args []string) error {
 
 func (a App) authList(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] auth list")
+		return fmt.Errorf("usage: sm [--json|--yaml] auth list")
 	}
 	type authListEntry struct {
 		Agent     string                 `json:"agent" yaml:"agent"`
@@ -580,7 +580,7 @@ func (a App) authList(ctx context.Context, args []string) error {
 }
 
 func authUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] auth <list|show|login|logout> [args...]")
+	return fmt.Errorf("usage: sm [--json|--yaml] auth <list|show|login|logout> [args...]")
 }
 
 func (a App) writeAuthStatus(status runtime.AuthStatus) error {
@@ -706,7 +706,7 @@ func (a App) sessionList(args []string) error {
 
 func (a App) sessionInfo(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] session show <session-id> [--source <agent>] [--peek] [--peek-lines <n>]")
+		return fmt.Errorf("usage: sm [--json|--yaml] session show <session-id> [--source <agent>] [--peek] [--peek-lines <n>]")
 	}
 	id := args[0]
 	var source string
@@ -764,7 +764,7 @@ func (a App) sessionInfo(args []string) error {
 
 func (a App) sessionResume(ctx context.Context, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: ax [--json|--yaml] session resume <target-agent> <session-id> [--source <agent>] [--model <model>] [--effort <level>] [--mode <normal|yolo>] [--workspace <path>] [--dry-run]")
+		return fmt.Errorf("usage: sm [--json|--yaml] session resume <target-agent> <session-id> [--source <agent>] [--model <model>] [--effort <level>] [--mode <normal|yolo>] [--workspace <path>] [--dry-run]")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -809,7 +809,7 @@ func (a App) sessionResume(ctx context.Context, args []string) error {
 
 func (a App) sessionExport(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] session export <session-id> [--source <agent>]")
+		return fmt.Errorf("usage: sm [--json|--yaml] session export <session-id> [--source <agent>]")
 	}
 	id := args[0]
 	var source string
@@ -834,7 +834,7 @@ func (a App) sessionExport(args []string) error {
 
 func (a App) sessionImport(ctx context.Context, args []string) error {
 	if len(args) == 0 || len(args) > 2 {
-		return fmt.Errorf("usage: ax [--json|--yaml] session import <target-agent> [file]")
+		return fmt.Errorf("usage: sm [--json|--yaml] session import <target-agent> [file]")
 	}
 	agent, err := a.Registry.Get(args[0])
 	if err != nil {
@@ -860,7 +860,7 @@ func (a App) sessionImport(ctx context.Context, args []string) error {
 	}
 	fmt.Fprintf(a.Stdout, "Imported transcript into %s: %s\n", agent.ID, token)
 	if agent.ID == "agy" || agent.ID == "claude" || agent.ID == "codex" {
-		fmt.Fprintf(a.Stdout, "Resume: ax session resume %s %s\n", agent.ID, token)
+		fmt.Fprintf(a.Stdout, "Resume: sm session resume %s %s\n", agent.ID, token)
 	}
 	return nil
 }
@@ -1011,7 +1011,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		return err
 	}
 	if _, err := exec.LookPath(agent.Binary); err != nil {
-		return fmt.Errorf("%s is not installed; run ax agent install %s", agent.Name, agent.ID)
+		return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 	}
 	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
 	if err != nil {
@@ -1067,7 +1067,7 @@ func (a App) prompt(reader *bufio.Reader, label string, allowBlank bool) (string
 }
 
 func sessionUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] session <list|show|resume|export|import|continue> [args...]")
+	return fmt.Errorf("usage: sm [--json|--yaml] session <list|show|resume|export|import|continue> [args...]")
 }
 
 func singleLine(value string, max int) string {
@@ -1157,7 +1157,7 @@ func isConvertProvider(id string) bool {
 
 func (a App) convert(args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: ax [--json|--yaml] convert <to|from> <provider>")
+		return fmt.Errorf("usage: sm [--json|--yaml] convert <to|from> <provider>")
 	}
 	switch args[0] {
 	case "to":
@@ -1165,7 +1165,7 @@ func (a App) convert(args []string) error {
 	case "from":
 		return a.convertFrom(args[1])
 	default:
-		return fmt.Errorf("usage: ax [--json|--yaml] convert <to|from> <provider>")
+		return fmt.Errorf("usage: sm [--json|--yaml] convert <to|from> <provider>")
 	}
 }
 

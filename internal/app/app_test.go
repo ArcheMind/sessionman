@@ -821,7 +821,7 @@ func TestSessionImportWritesNativeStore(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"session", "import", "claude"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"Imported transcript into claude: ", "Resume: ax session resume claude "} {
+	for _, expected := range []string{"Imported transcript into claude: ", "Resume: sm session resume claude "} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("import output %q does not contain %q", stdout.String(), expected)
 		}
@@ -875,14 +875,14 @@ func TestSessionImportCodexWritesToConfiguredHome(t *testing.T) {
 func TestSessionImportUsage(t *testing.T) {
 	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	err := application.Run(context.Background(), []string{"session", "import"})
-	if err == nil || !strings.Contains(err.Error(), "usage: ax [--json|--yaml] session import") {
+	if err == nil || !strings.Contains(err.Error(), "usage: sm [--json|--yaml] session import") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestResumeFlagValidation(t *testing.T) {
 	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
-	if err := application.Run(context.Background(), []string{"--resume"}); err == nil || !strings.Contains(err.Error(), "usage: ax --resume") {
+	if err := application.Run(context.Background(), []string{"--resume"}); err == nil || !strings.Contains(err.Error(), "usage: sm --resume") {
 		t.Fatalf("missing file error = %v", err)
 	}
 	if err := application.Run(context.Background(), []string{"--json", "--resume", "x.json"}); err == nil || !strings.Contains(err.Error(), "not supported") {

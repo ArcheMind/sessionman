@@ -23,7 +23,7 @@ func (a App) hook(ctx context.Context, args []string) error {
 		return a.dispatchHook(ctx, args[1:])
 	}
 	if len(args) != 1 || args[0] != "list" {
-		return fmt.Errorf("usage: ax [--json|--yaml] hook list")
+		return fmt.Errorf("usage: sm [--json|--yaml] hook list")
 	}
 	result, err := a.Hooks.List()
 	if err != nil {

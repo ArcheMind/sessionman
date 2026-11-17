@@ -51,7 +51,7 @@ type overviewModel struct {
 
 func (a App) overview(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] list")
+		return fmt.Errorf("usage: sm [--json|--yaml] status")
 	}
 	agents := a.Registry.All()
 	result := overviewResult{Agents: make([]agentOverview, 0, len(agents))}

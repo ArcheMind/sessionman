@@ -16,7 +16,7 @@ func (a App) skill(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
-			return fmt.Errorf("usage: ax skill list")
+			return fmt.Errorf("usage: sm skill list")
 		}
 		result, err := a.Skills.List()
 		if err != nil {
@@ -34,7 +34,7 @@ func (a App) skill(ctx context.Context, args []string) error {
 
 func (a App) installSkill(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: ax [--json|--yaml] skill install <source> [--path <subdir>] [--scope user|project] [--dry-run]")
+		return fmt.Errorf("usage: sm [--json|--yaml] skill install <source> [--path <subdir>] [--scope user|project] [--dry-run]")
 	}
 	options := skills.InstallOptions{Source: args[0], Scope: skills.ScopeProject}
 	for index := 1; index < len(args); index++ {
@@ -89,5 +89,5 @@ func (a App) writeSkill(item skills.Skill) error {
 }
 
 func skillUsageError() error {
-	return fmt.Errorf("usage: ax [--json|--yaml] skill <list|show|install> [args...]")
+	return fmt.Errorf("usage: sm [--json|--yaml] skill <list|show|install> [args...]")
 }
