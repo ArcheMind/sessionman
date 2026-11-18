@@ -242,19 +242,20 @@ sm session continue claude --stream < transcript.json
 ```
 
 `session continue --stream` writes NDJSON: completed canonical transcript records
-as `{"type":"message","message":...}` during execution, then exactly one
+as `{"type":"message","message":...}`, then exactly one
 `{"type":"result","session":...}` after success. The result is the authoritative
 delta; message events form an identical ordered prefix, with the same IDs,
 parents, tool IDs, content, and timestamps. Imported history and the echoed prompt
 are excluded. Errors and cancellation produce no successful result. Without
 `--stream`, the existing final structured output is unchanged.
 
-Streaming supports Claude, Codex, and Pi. Codex's trailing assistant record is
+Claude, Codex, and Pi emit messages during execution. Codex's trailing assistant record is
 held until a following message closes it (its parser merges consecutive reasoning
 and tool calls); the final record is flushed after execution. Output is based on
 completed native store records, so visibility depends on the agent flushing its
-store. Agy rejects `--stream` before launching because its store parser does not
-identify immutable completed steps; use its default final transcript output.
+store. Agy accepts `--stream` with deferred delivery: after execution succeeds,
+it emits the final transcript's messages followed by the result. No messages
+are emitted while Agy is running.
 
 ## Boundaries
 

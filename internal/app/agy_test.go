@@ -99,9 +99,11 @@ func TestAgyCatalogPartialWarningKeepsUsableList(t *testing.T) {
 }
 
 type agyContinueRunner struct {
-	home   string
-	prompt string
-	plan   runtime.CommandPlan
+	home         string
+	prompt       string
+	plan         runtime.CommandPlan
+	beforeReturn func()
+	failure      error
 }
 
 func (r *agyContinueRunner) Execute(_ context.Context, plan runtime.CommandPlan, opts runtime.ExecuteOptions) (runtime.CommandResult, error) {
@@ -136,7 +138,10 @@ func (r *agyContinueRunner) Execute(_ context.Context, plan runtime.CommandPlan,
 	if err := sessions.WriteAgyDatabaseFile(detail, path); err != nil {
 		return runtime.CommandResult{}, err
 	}
-	return runtime.CommandResult{Stdout: fmt.Sprintf("{\"event\":\"init\",\"conversation_id\":%q}\n{\"event\":\"result\",\"result\":{\"conversation_id\":%q,\"status\":\"SUCCESS\"}}\n", token, token)}, nil
+	if r.beforeReturn != nil {
+		r.beforeReturn()
+	}
+	return runtime.CommandResult{Stdout: fmt.Sprintf("{\"event\":\"init\",\"conversation_id\":%q}\n{\"event\":\"result\",\"result\":{\"conversation_id\":%q,\"status\":\"SUCCESS\"}}\n", token, token)}, r.failure
 }
 
 func TestAgyContinueReparsesProjectedHistoryPrefix(t *testing.T) {

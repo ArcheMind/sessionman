@@ -218,11 +218,45 @@ func TestContinueStreamFailuresHaveNoResult(t *testing.T) {
 	}
 }
 
-func TestContinueStreamAgyRejectedBeforeLaunch(t *testing.T) {
-	application, stdout, runner := continueApp(t, "agy", "", "")
-	err := application.Run(context.Background(), []string{"session", "continue", "agy", "--stream"})
-	if err == nil || !strings.Contains(err.Error(), "does not support --stream") || len(runner.plans) != 0 || stdout.Len() != 0 {
-		t.Fatalf("err=%v plans=%v output=%s", err, runner.plans, stdout)
+func TestContinueStreamAgyDeferredUntilSuccess(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprintf("failure=%t", fail), func(t *testing.T) {
+			home, workspace := t.TempDir(), testWorkspace(t)
+			input, err := json.Marshal(sessions.Session{ID: "source", Provider: "claude", Workspace: workspace, Messages: []sessions.Message{
+				{ID: "history", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "old answer"}}},
+				{ID: "prompt", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: "new prompt"}}},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			application := New(false, bytes.NewReader(input), &stdout, &stderr)
+			application.Sessions = sessions.Service{HomeDir: home}
+			application.Hooks.Home = home
+			runner := &agyContinueRunner{home: home, beforeReturn: func() {
+				if stdout.Len() != 0 {
+					t.Errorf("output before execution completed: %s", &stdout)
+				}
+			}}
+			if fail {
+				runner.failure = errors.New("native execution failed")
+			}
+			application.Runner = runner
+			err = application.Run(context.Background(), []string{"session", "continue", "agy", "--stream", "--model", "native-model"})
+			if fail {
+				if err == nil || stdout.Len() != 0 {
+					t.Fatalf("err=%v output=%s", err, &stdout)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			messages, final := decodeContinueEvents(t, stdout.String())
+			if final == nil || !reflect.DeepEqual(messages, final.Messages) || len(messages) != 1 || sessions.MessageText(messages[0]) != "new answer" {
+				t.Fatalf("invalid deferred transcript: %s", &stdout)
+			}
+		})
 	}
 }
 

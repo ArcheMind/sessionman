@@ -65,9 +65,6 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if agent.ID != "agy" && agent.ID != "claude" && agent.ID != "codex" && agent.ID != "pi" {
 		return fmt.Errorf("%s has no headless continue adapter", agent.ID)
 	}
-	if stream && agent.ID == "agy" {
-		return fmt.Errorf("agy does not support --stream: its native store parser cannot identify completed immutable steps; omit --stream for a final transcript")
-	}
 	if _, err := agentparams.Build(agent.ID, agentparams.OneShot, request); err != nil {
 		return err
 	}
@@ -140,7 +137,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	defer cancelExecution()
 	options := runtime.ExecuteOptions{Stdin: input, CancelProcessGroup: true}
 	var transcriptStream *continueTranscriptStream
-	if stream {
+	if stream && agent.ID != "agy" {
 		transcriptStream = newContinueTranscriptStream(a, agent.ID, model, workspace, token, prefix, cancelExecution)
 		options.Stdout = transcriptStream
 	}
@@ -204,7 +201,11 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if out.ID == "" {
 		out.ID = full.ID
 	}
-	if transcriptStream != nil {
+	if stream {
+		if transcriptStream == nil {
+			// AGY messages are emitted only after the final native transcript is available.
+			transcriptStream = &continueTranscriptStream{app: a, agent: agent.ID}
+		}
 		return transcriptStream.finish(out)
 	}
 	return writeStructured(a.Stdout, out, a.structuredDefault())
