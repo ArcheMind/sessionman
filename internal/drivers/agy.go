@@ -15,9 +15,9 @@ func agyAgent() runtime.Agent {
 		Launch: NativeLaunch{Binary: "agy"},
 		Models: AGYModels{},
 		Auth: AGYAuth{NativeAuth: NativeAuth{
-			Command:           runtime.CommandPlan{Executable: "agy", Args: []string{"acp", "--login"}},
+			Command:           runtime.CommandPlan{Executable: "agy", Args: []string{"acp", "--login"}, Agent: "agy"},
 			Instruction:       "Sign in using Antigravity CLI's native login. Authentication is shared through the OS keyring.",
-			LogoutCommand:     runtime.CommandPlan{Executable: "agy"},
+			LogoutCommand:     runtime.CommandPlan{Executable: "agy", Agent: "agy"},
 			LogoutInstruction: "Run /logout in Antigravity CLI. This affects its shared native authentication.",
 		}},
 		Install:      AGYInstaller{},
@@ -45,7 +45,7 @@ func (AGYAuth) Status(ctx context.Context, runner runtime.Runner) (runtime.AuthS
 type AGYModels struct{}
 
 func (AGYModels) ListModels(ctx context.Context, runner runtime.Runner) ([]runtime.Model, error) {
-	result, err := runner.Execute(ctx, runtime.CommandPlan{Executable: "agy", Args: []string{"models"}}, runtime.ExecuteOptions{})
+	result, err := runner.Execute(ctx, runtime.CommandPlan{Executable: "agy", Args: []string{"models"}, Agent: "agy"}, runtime.ExecuteOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("read Antigravity account models: %w", err)
 	}

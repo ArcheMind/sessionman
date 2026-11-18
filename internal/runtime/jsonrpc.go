@@ -47,6 +47,9 @@ func (r ExecRunner) ExecuteClaudeControl(ctx context.Context, plan CommandPlan, 
 }
 
 func (r ExecRunner) executeJSONL(ctx context.Context, plan CommandPlan, input string, matches func([]byte) bool, responseDescription string) (json.RawMessage, error) {
+	if err := prepareAgent(&plan); err != nil {
+		return nil, err
+	}
 	commandCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(commandCtx, plan.Executable, plan.Args...)

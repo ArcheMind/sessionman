@@ -19,6 +19,5 @@ func Plan(agent string, transport agentparams.Transport, request agentparams.Req
 	if len(plan.Params) > 0 || len(plan.Settings) > 0 {
 		return runtime.CommandPlan{}, fmt.Errorf("%s %s requires a native protocol session", agent, transport)
 	}
-	args := append(nativedirs.ResolvedArgs(agent), plan.Args...)
-	return runtime.CommandPlan{Executable: agent, Args: args, Cwd: request.Cwd}, nil
+	return runtime.CommandPlan{Executable: agent, Args: plan.Args, Cwd: request.Cwd, Agent: agent}, nil
 }

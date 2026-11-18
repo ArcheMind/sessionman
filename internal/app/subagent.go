@@ -12,7 +12,6 @@ import (
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/drivers"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -74,9 +73,6 @@ func (a App) execAgent(ctx context.Context, args []string) error {
 	plan, err := drivers.Plan(args[0], agentparams.Exec, request)
 	if err != nil {
 		return err
-	}
-	if err := nativedirs.Ready(args[0], !dryRun); err != nil {
-		return fmt.Errorf("%s blocked: %w", args[0], err)
 	}
 	if args[0] == "agy" {
 		if err := a.prepareHooks(&runtime.RunRequest{Cwd: cwd}, "agy", !dryRun); err != nil {

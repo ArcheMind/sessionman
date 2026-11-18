@@ -28,11 +28,11 @@ func TestRegistryContainsSupportedAgents(t *testing.T) {
 
 func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
-		"agy":      {Executable: "agy", Args: []string{"acp", "--login"}},
-		"claude":   {Executable: "claude", Args: []string{"auth", "login", "--claudeai"}},
-		"codex":    {Executable: "codex", Args: []string{"login"}},
-		"dsh":      {Executable: "dsh", Args: []string{"web"}},
-		"opencode": {Executable: "opencode", Args: []string{"auth", "login"}},
+		"agy":      {Executable: "agy", Args: []string{"acp", "--login"}, Agent: "agy"},
+		"claude":   {Executable: "claude", Args: []string{"auth", "login", "--claudeai"}, Agent: "claude"},
+		"codex":    {Executable: "codex", Args: []string{"login"}, Agent: "codex"},
+		"dsh":      {Executable: "dsh", Args: []string{"web"}, Agent: "dsh"},
+		"opencode": {Executable: "opencode", Args: []string{"auth", "login"}, Agent: "opencode"},
 		"pi":       {Executable: "node", Args: []string{"<Pi SDK login adapter>"}},
 	}
 	registry := NewRegistry()
@@ -52,11 +52,11 @@ func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 
 func TestNativeAuthLogoutPlans(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
-		"agy":      {Executable: "agy"},
-		"claude":   {Executable: "claude", Args: []string{"auth", "logout"}},
-		"codex":    {Executable: "codex", Args: []string{"logout"}},
-		"opencode": {Executable: "opencode", Args: []string{"auth", "logout"}},
-		"pi":       {Executable: "pi"},
+		"agy":      {Executable: "agy", Agent: "agy"},
+		"claude":   {Executable: "claude", Args: []string{"auth", "logout"}, Agent: "claude"},
+		"codex":    {Executable: "codex", Args: []string{"logout"}, Agent: "codex"},
+		"opencode": {Executable: "opencode", Args: []string{"auth", "logout"}, Agent: "opencode"},
+		"pi":       {Executable: "pi", Agent: "pi"},
 	}
 	registry := NewRegistry()
 	for id, expected := range want {
@@ -72,9 +72,9 @@ func TestNativeAuthLogoutPlans(t *testing.T) {
 
 func TestNativeAuthStatusCommands(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
-		"claude":   {Executable: "claude", Args: []string{"auth", "status", "--json"}},
-		"codex":    {Executable: "codex", Args: []string{"login", "status"}},
-		"opencode": {Executable: "opencode", Args: []string{"auth", "list"}},
+		"claude":   {Executable: "claude", Args: []string{"auth", "status", "--json"}, Agent: "claude"},
+		"codex":    {Executable: "codex", Args: []string{"login", "status"}, Agent: "codex"},
+		"opencode": {Executable: "opencode", Args: []string{"auth", "list"}, Agent: "opencode"},
 	}
 	registry := NewRegistry()
 	for id, expected := range want {

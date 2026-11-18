@@ -144,7 +144,7 @@ func (d *Daemon) startCodexLocked() error {
 	if err != nil {
 		return err
 	}
-	plan := runtime.CommandPlan{Executable: "codex", Args: mapped.Args, Cwd: req.Cwd, Env: map[string]string{}}
+	plan := runtime.CommandPlan{Executable: "codex", Args: mapped.Args, Cwd: req.Cwd, Env: map[string]string{}, Agent: "codex"}
 	plan.Env["RUST_LOG"] = codexTelemetryFilter
 	stream, err := d.startStream(plan)
 	if err != nil {

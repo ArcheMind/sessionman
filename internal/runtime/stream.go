@@ -33,6 +33,9 @@ type StreamStarter interface {
 }
 
 func (r ExecRunner) StartStream(plan CommandPlan) (*Stream, error) {
+	if err := prepareAgent(&plan); err != nil {
+		return nil, err
+	}
 	cmd := exec.Command(plan.Executable, plan.Args...)
 	cmd.Dir = plan.Cwd
 	cmd.Env = mergeEnvironment(os.Environ(), plan.Env, plan.UnsetEnv)

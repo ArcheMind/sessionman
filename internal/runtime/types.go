@@ -25,6 +25,8 @@ type CommandPlan struct {
 	Cwd        string            `json:"cwd,omitempty" yaml:"cwd,omitempty"`
 	Env        map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
 	UnsetEnv   []string          `json:"unset_env,omitempty" yaml:"unset_env,omitempty"`
+	// Agent triggers nativedirs.Ready + ResolvedArgs before process start.
+	Agent string `json:"-" yaml:"-"`
 }
 
 type Detection struct {

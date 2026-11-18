@@ -92,10 +92,6 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	detail.Workspace = workspace
 
-	if err := nativedirs.Ready(agent.ID, true); err != nil {
-		return fmt.Errorf("%s blocked: %w", agent.ID, err)
-	}
-
 	token := ""
 	prefix := 0
 	// Pi always gets a session file (even an empty one): --session is how pi
@@ -233,11 +229,7 @@ func continueDelta(messages []sessions.Message, prefix int) []sessions.Message {
 func (a App) writeResumeSession(ctx context.Context, detail sessions.Session, agentID string, request runtime.RunRequest) (string, error) {
 	if agentID == "codex" {
 		codexHome := nativedirs.CodexHome()
-		var env map[string]string
-		if ad := nativedirs.Cached("codex"); ad != nil {
-			env = nativedirs.MergeEnv(ad)
-		}
-		provider, err := drivers.CodexProvider(ctx, a.Runner, runtime.CommandPlan{Cwd: detail.Workspace, Env: env}, request)
+		provider, err := drivers.CodexProvider(ctx, a.Runner, runtime.CommandPlan{Cwd: detail.Workspace, Agent: "codex"}, request)
 		if err != nil {
 			return "", err
 		}

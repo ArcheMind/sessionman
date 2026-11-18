@@ -59,7 +59,7 @@ func (d *Daemon) startClaudeLocked() error {
 	if err != nil {
 		return err
 	}
-	plan := runtime.CommandPlan{Executable: "claude", Args: mapped.Args, Cwd: req.Cwd}
+	plan := runtime.CommandPlan{Executable: "claude", Args: mapped.Args, Cwd: req.Cwd, Agent: "claude"}
 	if len(req.MCP.Servers) > 0 {
 		plan.Args = append(plan.Args, "--allowedTools", "mcp__sessionman__StartExternalSubagent", "mcp__sessionman__SendExternalSubagentMessage", "mcp__sessionman__StopExternalSubagent", "mcp__sessionman__ListExternalSubagentSessions", "mcp__sessionman__MessageHost")
 	}

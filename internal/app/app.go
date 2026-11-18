@@ -25,7 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.15.2"
+var Version = "0.15.3"
 
 type App struct {
 	Registry   drivers.Registry
@@ -389,9 +389,6 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("working directory %s is not a directory", request.Cwd)
-	}
-	if err := nativedirs.Ready(agent.ID, !dryRun); err != nil {
-		return fmt.Errorf("%s blocked: %w", agent.ID, err)
 	}
 	if agent.ID == "codex" {
 		injectCodexAgentX(&request)
@@ -949,9 +946,6 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	}
 	if _, err := agentparams.Build(agent.ID, agentparams.Interactive, request); err != nil {
 		return err
-	}
-	if err := nativedirs.Ready(agent.ID, !dryRun); err != nil {
-		return fmt.Errorf("%s blocked: %w", agent.ID, err)
 	}
 	if agent.ID == "opencode" && (detail.Provider != agent.ID || fresh) {
 		return fmt.Errorf("OpenCode transcript import has no verified native resume mechanism; a native OpenCode session ID is required")

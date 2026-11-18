@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+
+	"github.com/ArcheMind/agentx/internal/nativedirs"
 )
 
 type ExecRunner struct {
@@ -28,7 +30,21 @@ type externalCallLog struct {
 	ExitCode int         `json:"exit_code"`
 }
 
+func prepareAgent(plan *CommandPlan) error {
+	if plan.Agent == "" {
+		return nil
+	}
+	if err := nativedirs.Ready(plan.Agent, true); err != nil {
+		return err
+	}
+	plan.Args = append(nativedirs.ResolvedArgs(plan.Agent), plan.Args...)
+	return nil
+}
+
 func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options ExecuteOptions) (CommandResult, error) {
+	if err := prepareAgent(&plan); err != nil {
+		return CommandResult{ExitCode: -1}, err
+	}
 	cmd := exec.CommandContext(ctx, plan.Executable, plan.Args...)
 	cmd.Dir = plan.Cwd
 	cmd.Env = mergeEnvironment(os.Environ(), plan.Env, plan.UnsetEnv)

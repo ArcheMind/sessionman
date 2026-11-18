@@ -4,6 +4,15 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-11-17
+
+### Fixed
+
+- Agent processes always get prepared native directories; centralize
+  `nativedirs.Ready` into `ExecRunner` entry points so commands like
+  `agent models` and `auth show` no longer create real dirs that shadow
+  config symlinks.
+
 ## [0.15.2] - 2026-11-17
 
 ### Fixed

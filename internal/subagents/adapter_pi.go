@@ -117,7 +117,7 @@ func (d *Daemon) startPiLocked() error {
 	if err != nil {
 		return err
 	}
-	plan := runtime.CommandPlan{Executable: "pi", Args: mapped.Args, Cwd: req.Cwd, Env: map[string]string{}}
+	plan := runtime.CommandPlan{Executable: "pi", Args: mapped.Args, Cwd: req.Cwd, Env: map[string]string{}, Agent: "pi"}
 	if err := d.injectPiDelegation(&plan); err != nil {
 		return err
 	}

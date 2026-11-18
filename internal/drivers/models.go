@@ -48,7 +48,7 @@ func (CodexAppServerModels) ListModels(ctx context.Context, runner runtime.Runne
 		json.RawMessage(`{"method":"initialized"}`),
 		json.RawMessage(`{"id":2,"method":"model/list","params":{"includeHidden":false}}`),
 	}
-	raw, err := rpc.ExecuteJSONRPC(ctx, runtime.CommandPlan{Executable: "codex", Args: []string{"app-server", "--stdio"}}, requests, json.RawMessage(`2`))
+	raw, err := rpc.ExecuteJSONRPC(ctx, runtime.CommandPlan{Executable: "codex", Args: []string{"app-server", "--stdio"}, Agent: "codex"}, requests, json.RawMessage(`2`))
 	if err != nil {
 		return nil, fmt.Errorf("read Codex account models: %w", err)
 	}
@@ -116,7 +116,7 @@ func (ClaudeModels) ListModels(ctx context.Context, runner runtime.Runner) ([]ru
 	commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	args := []string{"--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--settings", `{"disableAllHooks":true}`}
-	raw, err := control.ExecuteClaudeControl(commandCtx, runtime.CommandPlan{Executable: "claude", Args: args, UnsetEnv: []string{"CLAUDECODE"}}, request, requestID)
+	raw, err := control.ExecuteClaudeControl(commandCtx, runtime.CommandPlan{Executable: "claude", Args: args, UnsetEnv: []string{"CLAUDECODE"}, Agent: "claude"}, request, requestID)
 	if err != nil {
 		return nil, fmt.Errorf("read Claude account models: %w", err)
 	}

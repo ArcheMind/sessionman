@@ -202,6 +202,55 @@ function testNestedSm(agent, s, c) {
   return r;
 }
 
+// 6. Models-then-continue: codex S+C only. Verify `agent models` does not
+//    create a real skills/ dir that shadows the C symlink.
+function testModelsThenContinue(agent, s, c) {
+  if (agent !== "codex" || !c) return null;
+  const codexSkills = join(s, "codex", "skills");
+  // Remove skills if it exists so we start clean
+  rmSync(codexSkills, { recursive: true, force: true });
+
+  // Run agent models (the former bug: this would create a real dir)
+  const mr = smRun(["--session-dir", s, "--config-dir", c, "--json", "agent", "models", "codex"]);
+  assert(mr.status === 0, `codex models failed (exit ${mr.status}): ${mr.stderr}`);
+
+  // Verify skills is a symlink into C, not a real dir
+  if (existsSync(codexSkills)) {
+    const info = lstatSync(codexSkills);
+    assert(
+      info.isSymbolicLink(),
+      `codex skills at ${codexSkills} is a real directory, not a symlink into C`
+    );
+  }
+
+  // Now run a cheap continue to verify the agent still works
+  const workspace = tmpBase("models-continue-codex");
+  const transcript = JSON.stringify({
+    id: `e2e-${randomUUID()}`,
+    provider: "codex",
+    workspace,
+    messageCount: 1,
+    messages: [{ role: "user", content: [{ type: "text", text: "Say OK" }] }],
+  });
+  const cr = smRun(
+    ["--session-dir", s, "--config-dir", c, "--json", "session", "continue", "codex",
+     "--model", models.codex, "--effort", efforts.codex ?? "low"],
+    { input: transcript, timeout: 120_000 }
+  );
+  assert(cr.status === 0, `codex continue after models failed (exit ${cr.status}): ${cr.stderr}`);
+
+  // After continue, skills must still be a symlink
+  if (existsSync(codexSkills)) {
+    const info = lstatSync(codexSkills);
+    assert(
+      info.isSymbolicLink(),
+      `codex skills became a real directory after continue`
+    );
+  }
+  rmSync(workspace, { recursive: true, force: true });
+  return cr;
+}
+
 // --- main matrix ---
 const agents = ["pi", "codex", "claude", "agy", "dsh"];
 const modes = ["S", "S+C"];
@@ -219,6 +268,7 @@ async function runAgent(agent) {
       ["import", () => testSessionImport(agent, s, c)],
       ["skill-persist", () => testSkillPersistence(agent, s, c)],
       ["nested-sm", () => testNestedSm(agent, s, c)],
+      ["models-then-continue", () => testModelsThenContinue(agent, s, c)],
     ];
     for (const [name, fn] of tests) {
       const id = `${label}/${name}`;
