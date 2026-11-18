@@ -925,6 +925,10 @@ func transcriptFileName(detail sessions.Session) string {
 }
 
 func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, request runtime.RunRequest, fresh, dryRun bool) error {
+	return a.resumePreparedSession(ctx, agent, detail, request, fresh, dryRun, false)
+}
+
+func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, request runtime.RunRequest, fresh, dryRun, forceImport bool) error {
 	var err error
 	workspace := request.Cwd
 	if workspace == "" {
@@ -947,7 +951,7 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 	if _, err := agentparams.Build(agent.ID, agentparams.Interactive, request); err != nil {
 		return err
 	}
-	if agent.ID == "opencode" && (detail.Provider != agent.ID || fresh) {
+	if agent.ID == "opencode" && (detail.Provider != agent.ID || fresh || forceImport) {
 		return fmt.Errorf("OpenCode transcript import has no verified native resume mechanism; a native OpenCode session ID is required")
 	}
 	if fresh {
@@ -956,9 +960,8 @@ func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sess
 		}
 	}
 	var resumeToken string
-	// Fresh sessions never take the native-id shortcut: the trimmed transcript
-	// must be written as a new native session even for the same agent.
-	if detail.Provider == agent.ID && !fresh {
+	// Edited transcripts must be imported even when resuming with the same agent.
+	if detail.Provider == agent.ID && !fresh && !forceImport {
 		resumeToken = detail.ID
 	} else {
 		detail.Workspace = workspace

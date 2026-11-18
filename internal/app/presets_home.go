@@ -28,7 +28,7 @@ const (
 	presetLineWidth  = 96
 	presetMinDesc    = 20
 	presetModelWidth = 24
-	homeHelp         = "↑/↓ or j/k select · Enter open · t trim & resume · e export session · m manage presets · / search prompts · q/Esc cancel"
+	homeHelp         = "↑/↓ or j/k select · Enter open · t auto offload · e export session · m manual session / manage preset · / search prompts · q/Esc cancel"
 	emptyPresetsHint = "Save an agent, model and effort for reuse."
 )
 
@@ -169,6 +169,12 @@ func (a App) interactiveResume(ctx context.Context, includeSubagents bool) error
 			if item.kind == homeSession {
 				return a.resumeChosenSession(ctx, reader, item.session, true)
 			}
+		case action == selectionManage && item.kind == homeSession:
+			detail, err := a.pickedSession(item.session)
+			if err != nil {
+				return err
+			}
+			return a.resumeSessionInteractiveMode(ctx, reader, detail, false, true)
 		case action == selectionManage && item.kind == homePreset:
 			launched, err = a.managePreset(ctx, reader, home, item.preset)
 		case action == selectionManage && item.kind == homeProblem:
@@ -231,7 +237,11 @@ type resumeChoice struct {
 }
 
 func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader, detail sessions.Session, fresh bool) error {
-	if !fresh {
+	return a.resumeSessionInteractiveMode(ctx, reader, detail, fresh, false)
+}
+
+func (a App) resumeSessionInteractiveMode(ctx context.Context, reader *bufio.Reader, detail sessions.Session, fresh, manual bool) error {
+	if !fresh && !manual {
 		if turns, large := exceedsFreshThreshold(detail.Messages); large {
 			key, err := a.confirmLargeContext(reader, turns)
 			if err != nil {
@@ -242,9 +252,22 @@ func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader,
 				return errors.New("interactive session resume cancelled")
 			case selectionFresh:
 				fresh = true
+			case selectionManage:
+				manual = true
 			}
 		}
 	}
+	if manual {
+		states, err := a.chooseSessionTurns(reader, detail)
+		if err != nil {
+			return err
+		}
+		detail, err = a.applySessionTurns(detail, states)
+		if err != nil {
+			return err
+		}
+	}
+
 	home := a.presetHome()
 	presetList, _, _ := presets.Load(home)
 	agents := make([]runtime.Agent, 0)
@@ -292,7 +315,7 @@ func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader,
 		if err != nil {
 			return err
 		}
-		return a.resumeSession(ctx, agent, detail, chosen.preset.Request(), fresh, false)
+		return a.resumePreparedSession(ctx, agent, detail, chosen.preset.Request(), fresh, false, manual)
 	}
 
 	model, err := a.chooseModel(ctx, reader, chosen.agent)
@@ -303,7 +326,7 @@ func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader,
 	if err := a.askMode(reader, &draft); err != nil {
 		return err
 	}
-	return a.resumeSession(ctx, chosen.agent, detail, runtime.RunRequest{Model: model, Mode: draft.preset.EffectiveMode()}, fresh, false)
+	return a.resumePreparedSession(ctx, chosen.agent, detail, runtime.RunRequest{Model: model, Mode: draft.preset.EffectiveMode()}, fresh, false, manual)
 }
 
 // startPreset reports launched=true once the native agent ran; pre-launch failures return to the home screen.

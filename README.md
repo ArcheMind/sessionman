@@ -11,9 +11,11 @@
 
 ![Select a Claude Code session and choose Codex in the interactive home](docs/assets/readme/load.gif)
 
-### **Trim** a bloated session and continue seamlessly.
+### **Offload** session history and continue seamlessly.
 
-![Confirm trimming a long session and choose an agent interactively](docs/assets/readme/trim.gif)
+![Choose automatic offload and an agent interactively](docs/assets/readme/trim.gif)
+
+Select a session and press `m` for manual loading, or choose `m` at the load prompt. Each user prompt represents a full turn and starts as Keep. Use `r` / `o` / `d` to set Keep / Offload / Delete, `V` with `j` / `k` to select a range, and Enter to load. Only offloaded turns are written to the referenced history file.
 
 ### **Find** an old session across all your agents and get back to work.
 

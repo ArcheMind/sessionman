@@ -333,7 +333,7 @@ func TestBareAXStartsInteractiveHome(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "no session started") {
 		t.Fatalf("error = %v", err)
 	}
-	for _, want := range []string{"New session · Presets", emptyPresetsHint, "+ Create preset…", "Recent sessions · Current workspace", "Recent sessions · Global", "No recent sessions", "m manage presets"} {
+	for _, want := range []string{"New session · Presets", emptyPresetsHint, "+ Create preset…", "Recent sessions · Current workspace", "Recent sessions · Global", "No recent sessions", "m manual session / manage preset"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("interactive output lacks %q: %q", want, stdout.String())
 		}

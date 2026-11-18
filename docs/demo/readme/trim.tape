@@ -40,9 +40,9 @@ Sleep 1s
 Down
 Sleep 1s
 Enter
-Wait+Screen /Trim to 6 turns/
+Wait+Screen /Auto offload/
 Sleep 2s
-Type "y"
+Type "a"
 Wait+Screen /Resume session as:/
 Sleep 1s
 Down
