@@ -34,6 +34,8 @@ $ sm codex          # start a new Codex session
 
 `sm` with no arguments opens one screen with your presets and the recent sessions of every agent, grouped by project.
 
+Press `/` to filter the displayed sessions by their full user prompts, including earlier messages. Space-separated terms must all match; matching ignores case and supports Chinese substrings. Use arrow keys to select, Enter to open, and Esc to clear the search. Backspace edits the query. Search runs in memory without a persistent index.
+
 Start from a preset or resume recent work:
 
 ```text

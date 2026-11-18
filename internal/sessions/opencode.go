@@ -52,6 +52,7 @@ func summarizeOpenCode(item Summary, includeCount bool) (Summary, error) {
 	}
 	item.TurnCount = 0
 	item.FirstUserMessage, item.LatestUserMessage = "", ""
+	item.UserPrompts = nil
 	if includeCount {
 		item.MessageCount = 0
 	}

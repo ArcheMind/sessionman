@@ -33,6 +33,12 @@ func (s Service) RecentGroups(workspace string, limit int, includeSubagents bool
 			result.Global = append(result.Global, item)
 		}
 	}
+	for i := range result.Current {
+		result.Current[i].collectUserPrompts = true
+	}
+	for i := range result.Global {
+		result.Global[i].collectUserPrompts = true
+	}
 	result.Current = summarizeSessions(result.Current, false, limit, failures)
 	result.Global = summarizeSessions(result.Global, false, limit, failures)
 	return result, failures.err()

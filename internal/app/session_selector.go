@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -38,16 +40,17 @@ func (a App) recentSessionGroups(includeSubagents bool) ([]sessionGroup, error) 
 }
 
 type contentRow struct {
-	text       string
-	itemIndex  int // selectable item index; -1 for structural rows
-	kind       contentRowKind
-	agent      string
-	updated    string
-	workspace  string
-	title      string
-	firstUser  string
-	latestUser string
-	turnCount  int
+	text        string
+	itemIndex   int // selectable item index; -1 for structural rows
+	kind        contentRowKind
+	agent       string
+	updated     string
+	workspace   string
+	title       string
+	firstUser   string
+	latestUser  string
+	turnCount   int
+	userPrompts []string
 }
 
 type contentRowKind int
@@ -89,13 +92,13 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 				text := fmt.Sprintf("%-10s  %-8s  %-20s  [%dt] %s", updated, item.Agent, displayWorkspace(item.Workspace, 20), item.TurnCount, title)
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount,
+					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount, userPrompts: item.UserPrompts,
 				})
 			} else {
 				text := fmt.Sprintf("%-10s  %-8s  [%dt] %s", updated, item.Agent, item.TurnCount, title)
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount,
+					agent: item.Agent, updated: updated, title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount, userPrompts: item.UserPrompts,
 				})
 			}
 			itemIndex++
@@ -265,6 +268,7 @@ type selector struct {
 	marker   string
 	manage   bool
 	selected int
+	search   bool
 }
 
 func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []contentRow, itemCount int, emptyErr error) (int, error) {
@@ -278,6 +282,22 @@ func (a App) chooseInteractive(reader *bufio.Reader, title string, rows []conten
 // runSelector reports the key that ended the loop: selectionConfirm, or selectionManage/selectionExport/selectionFresh when enabled.
 func (a App) runSelector(reader *bufio.Reader, options selector, allRows []contentRow, itemCount int, emptyErr error) (int, selectionKey, error) {
 	selected := options.selected
+	sourceRows := allRows
+	visibleItems := selectorItemIndices(allRows)
+	query := ""
+	searching, pending := false, false
+	searchVersion := 0
+	var cancelSearch context.CancelFunc
+	defer func() {
+		if cancelSearch != nil {
+			cancelSearch()
+		}
+	}()
+	type searchResult struct {
+		version int
+		rows    []contentRow
+	}
+	matches := make(chan searchResult, 1)
 	viewStart := 0
 	lineCount := 0
 	termW, termH := a.selectorSize()
@@ -310,6 +330,19 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 			header = append(header, colorize(a.Color, ansiBold, options.title))
 		}
 		help := options.help
+		if searching {
+			if termH == 0 || termH > 2+len(header) {
+				header = append(header, "Search prompts: "+query+"▏")
+			}
+			status := fmt.Sprintf("%d matches", len(visibleItems))
+			if len(strings.Fields(query)) == 0 {
+				status = "Type to search user prompts"
+			}
+			if pending {
+				status = "Searching…"
+			}
+			help = status + " · ↑/↓ select · Enter open · Esc clear"
+		}
 		if termW > 0 {
 			help = runewidth.Wrap(help, termW)
 		}
@@ -379,6 +412,40 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 			writeLine(line)
 		}
 	}
+	applyRows := func(rows []contentRow) {
+		allRows = rows
+		visibleItems = selectorItemIndices(rows)
+		selected = -1
+		if len(visibleItems) > 0 {
+			selected = visibleItems[0]
+		}
+		viewStart = 0
+	}
+	updateSearch := func() {
+		searchVersion++
+		if cancelSearch != nil {
+			cancelSearch()
+		}
+		if len(strings.Fields(query)) == 0 {
+			pending = false
+			applyRows(sourceRows)
+			render(true)
+			return
+		}
+		pending = true
+		ctx, cancel := context.WithCancel(context.Background())
+		cancelSearch = cancel
+		value := query
+		version := searchVersion
+		go func() {
+			rows := filterSessionPrompts(ctx, sourceRows, value)
+			select {
+			case matches <- searchResult{version: version, rows: rows}:
+			case <-ctx.Done():
+			}
+		}()
+		render(true)
+	}
 
 	render(false)
 	if itemCount == 0 {
@@ -392,16 +459,17 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 	defer restore()
 
 	type keyResult struct {
-		key selectionKey
-		err error
+		key   selectionKey
+		value rune
+		err   error
 	}
 	requests := make(chan struct{})
 	results := make(chan keyResult)
 	defer close(requests)
 	go func() {
 		for range requests {
-			key, err := readSelectionKey(reader)
-			results <- keyResult{key, err}
+			key, value, err := readSelectionInput(reader)
+			results <- keyResult{key: key, value: value, err: err}
 		}
 	}()
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -414,6 +482,12 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 			select {
 			case result = <-results:
 				break waitForKey
+			case match := <-matches:
+				if searching && pending && match.version == searchVersion {
+					pending = false
+					applyRows(match.rows)
+					render(true)
+				}
 			case <-ticker.C:
 				width, height := a.selectorSize()
 				if width != termW || height != termH {
@@ -425,18 +499,61 @@ func (a App) runSelector(reader *bufio.Reader, options selector, allRows []conte
 			return 0, selectionConfirm, result.err
 		}
 		key := result.key
+		if searching {
+			switch {
+			case result.value == 27 && key == selectionCancel:
+				query, searching = "", false
+				updateSearch()
+				continue
+			case result.value == 8 || result.value == 127:
+				runes := []rune(query)
+				if len(runes) > 0 {
+					query = string(runes[:len(runes)-1])
+					updateSearch()
+				}
+				continue
+			case unicode.IsPrint(result.value):
+				query += string(result.value)
+				updateSearch()
+				continue
+			}
+		} else if options.search && result.value == '/' {
+			searching = true
+			render(true)
+			continue
+		}
+		if key == selectionUp || key == selectionDown || key == selectionConfirm {
+			for pending {
+				match := <-matches
+				if match.version == searchVersion {
+					pending = false
+					applyRows(match.rows)
+					render(true)
+				}
+			}
+		}
+		position := -1
+		for i, index := range visibleItems {
+			if index == selected {
+				position = i
+				break
+			}
+		}
 		switch key {
 		case selectionUp:
-			if selected > 0 {
-				selected--
+			if position > 0 {
+				selected = visibleItems[position-1]
 				render(true)
 			}
 		case selectionDown:
-			if selected < itemCount-1 {
-				selected++
+			if position >= 0 && position < len(visibleItems)-1 {
+				selected = visibleItems[position+1]
 				render(true)
 			}
 		case selectionConfirm:
+			if selected < 0 {
+				continue
+			}
 			fmt.Fprint(a.Stdout, "\r\n")
 			return selected, selectionConfirm, nil
 		case selectionManage:
@@ -550,48 +667,57 @@ const (
 )
 
 func readSelectionKey(reader *bufio.Reader) (selectionKey, error) {
-	value, err := reader.ReadByte()
+	key, _, err := readSelectionInput(reader)
+	return key, err
+}
+
+func readSelectionInput(reader *bufio.Reader) (selectionKey, rune, error) {
+	value, _, err := reader.ReadRune()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			return selectionIgnore, errors.New("interactive input closed")
+			return selectionIgnore, 0, errors.New("interactive input closed")
 		}
-		return selectionIgnore, fmt.Errorf("read interactive input: %w", err)
+		return selectionIgnore, 0, fmt.Errorf("read interactive input: %w", err)
 	}
 	switch value {
 	case '\r', '\n':
-		return selectionConfirm, nil
+		return selectionConfirm, value, nil
 	case 'k', 'K':
-		return selectionUp, nil
+		return selectionUp, value, nil
 	case 'j', 'J':
-		return selectionDown, nil
+		return selectionDown, value, nil
 	case 'q', 'Q', 3:
-		return selectionCancel, nil
+		return selectionCancel, value, nil
 	case 'm', 'M':
-		return selectionManage, nil
+		return selectionManage, value, nil
 	case 'e', 'E':
-		return selectionExport, nil
+		return selectionExport, value, nil
 	case 't', 'T':
-		return selectionFresh, nil
+		return selectionFresh, value, nil
 	case 27:
 		if reader.Buffered() < 2 {
-			return selectionCancel, nil
+			return selectionCancel, value, nil
+		}
+		prefix, _ := reader.Peek(1)
+		if prefix[0] != '[' {
+			return selectionCancel, value, nil
 		}
 		first, err := reader.ReadByte()
 		if err != nil || first != '[' {
-			return selectionCancel, nil
+			return selectionCancel, value, nil
 		}
 		second, err := reader.ReadByte()
 		if err != nil {
-			return selectionCancel, nil
+			return selectionCancel, value, nil
 		}
 		if second == 'A' {
-			return selectionUp, nil
+			return selectionUp, value, nil
 		}
 		if second == 'B' {
-			return selectionDown, nil
+			return selectionDown, value, nil
 		}
 	}
-	return selectionIgnore, nil
+	return selectionIgnore, value, nil
 }
 
 func makeRaw(input io.Reader) (func(), error) {

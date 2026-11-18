@@ -141,6 +141,7 @@ func summarizeJSONL(item Summary, includeCount bool) (Summary, error) {
 		item.MessageCount = 0
 		item.TurnCount = 0
 		item.FirstUserMessage, item.LatestUserMessage = "", ""
+		item.UserPrompts = nil
 		lastRole := ""
 		err := scanJSONL(item.Source, func(record map[string]any) bool {
 			detail := decode(record)
@@ -165,6 +166,7 @@ func summarizeJSONL(item Summary, includeCount bool) (Summary, error) {
 	}
 	item.FirstUserMessage, item.LatestUserMessage = "", ""
 	item.TurnCount = 0
+	item.UserPrompts = nil
 	err := scanJSONLLines(item.Source, func(line []byte) bool {
 		user := false
 		switch item.Agent {
@@ -193,7 +195,7 @@ func summarizeJSONL(item Summary, includeCount bool) (Summary, error) {
 		}
 		for _, message := range decode(record).Messages {
 			text := TextContent(message.Content)
-			if message.Role == "user" && isSessionTitle(text) {
+			if message.Role == "user" {
 				item.addUserMessage(text)
 			}
 		}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -67,6 +68,9 @@ func TestAgyRecentDoesNotReadExternalTranscriptResources(t *testing.T) {
 			if item.TurnCount != 1 || item.ID != id || item.FirstUserMessage != "retain marker" || item.LatestUserMessage != "retain marker" || item.StartedAt != before.StartedAt || item.UpdatedAt != before.UpdatedAt {
 				t.Fatalf("summary changed: %+v", item)
 			}
+			if !reflect.DeepEqual(item.UserPrompts, []string{"retain marker"}) {
+				t.Fatalf("recent prompts = %#v, want the user prompt only", item.UserPrompts)
+			}
 			list, err := service.List(ListOptions{Agent: "agy", All: true})
 			if err != nil || len(list) != 1 || list[0].MessageCount != before.MessageCount {
 				t.Fatalf("count reads external resource: %+v %v", list, err)
@@ -101,6 +105,9 @@ func TestOpenCodeRecentDoesNotReadUnrelatedMessageParts(t *testing.T) {
 	item := groups.Current[0]
 	if item.TurnCount != 2 || item.FirstUserMessage != "request 0" || item.LatestUserMessage != "request 2" {
 		t.Fatalf("incorrect preview: %+v", item)
+	}
+	if !reflect.DeepEqual(item.UserPrompts, []string{"request 0", "request 2"}) {
+		t.Fatalf("recent prompts = %#v, want both user prompts", item.UserPrompts)
 	}
 	if _, err := service.Info("session", "opencode"); err == nil {
 		t.Fatal("detail ignored the unreadable message part")

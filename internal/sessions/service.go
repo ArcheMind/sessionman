@@ -34,18 +34,20 @@ func hasSubagentMarker(text string) bool {
 }
 
 type Summary struct {
-	TurnCount         int    `json:"-" yaml:"-"`
-	ID                string `json:"id" yaml:"id"`
-	Agent             string `json:"agent" yaml:"agent"`
-	IsSubagent        bool   `json:"isSubagent,omitempty" yaml:"isSubagent,omitempty"`
-	Workspace         string `json:"workspace,omitempty" yaml:"workspace,omitempty"`
-	Title             string `json:"title,omitempty" yaml:"title,omitempty"`
-	FirstUserMessage  string `json:"firstUserMessage,omitempty" yaml:"firstUserMessage,omitempty"`
-	LatestUserMessage string `json:"latestUserMessage,omitempty" yaml:"latestUserMessage,omitempty"`
-	StartedAt         string `json:"startedAt,omitempty" yaml:"startedAt,omitempty"`
-	UpdatedAt         string `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty"`
-	MessageCount      int    `json:"messageCount" yaml:"messageCount"`
-	Source            string `json:"source" yaml:"source"`
+	TurnCount          int      `json:"-" yaml:"-"`
+	ID                 string   `json:"id" yaml:"id"`
+	Agent              string   `json:"agent" yaml:"agent"`
+	IsSubagent         bool     `json:"isSubagent,omitempty" yaml:"isSubagent,omitempty"`
+	Workspace          string   `json:"workspace,omitempty" yaml:"workspace,omitempty"`
+	Title              string   `json:"title,omitempty" yaml:"title,omitempty"`
+	FirstUserMessage   string   `json:"firstUserMessage,omitempty" yaml:"firstUserMessage,omitempty"`
+	LatestUserMessage  string   `json:"latestUserMessage,omitempty" yaml:"latestUserMessage,omitempty"`
+	UserPrompts        []string `json:"-" yaml:"-"`
+	StartedAt          string   `json:"startedAt,omitempty" yaml:"startedAt,omitempty"`
+	UpdatedAt          string   `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty"`
+	MessageCount       int      `json:"messageCount" yaml:"messageCount"`
+	Source             string   `json:"source" yaml:"source"`
+	collectUserPrompts bool
 }
 
 func SummaryOf(detail Session) Summary {
@@ -64,6 +66,9 @@ func SummaryOf(detail Session) Summary {
 }
 
 func (s *Summary) addUserMessage(text string) {
+	if s.collectUserPrompts && text != "" {
+		s.UserPrompts = append(s.UserPrompts, strings.ToLower(text))
+	}
 	if !isSessionTitle(text) {
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func discoverAgyIn(root string, includeSubagents bool) ([]Summary, error) {
@@ -84,7 +85,42 @@ func agyTitles(path, id string) (map[string]string, error) {
 }
 
 func summarizeAgy(item Summary, _ bool) (Summary, error) {
-	return item, nil
+	item.UserPrompts = nil
+	if !item.collectUserPrompts {
+		return item, nil
+	}
+	db, err := agyOpen(item.Source, true)
+	if err != nil {
+		return item, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`SELECT step_payload,step_format FROM steps WHERE step_type=14 ORDER BY idx`)
+	if err != nil {
+		return item, fmt.Errorf("read agy user prompts %s: %w", item.Source, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw []byte
+		var format int
+		if err := rows.Scan(&raw, &format); err != nil {
+			return item, err
+		}
+		if format != 0 {
+			return item, fmt.Errorf("unsupported agy step format %d", format)
+		}
+		step, err := agyDecode(raw)
+		if err != nil {
+			return item, fmt.Errorf("decode agy user prompt: %w", err)
+		}
+		user, err := agyDecode(step.bytes(19))
+		if err != nil {
+			return item, fmt.Errorf("decode agy user prompt payload: %w", err)
+		}
+		if text := user.text(2); text != "" {
+			item.UserPrompts = append(item.UserPrompts, strings.ToLower(text))
+		}
+	}
+	return item, rows.Err()
 }
 
 func agySummaryFile(path string) (Summary, error) {
@@ -144,6 +180,7 @@ func agyTimeline(db *sql.DB, item *Summary) error {
 	defer rows.Close()
 	item.MessageCount, item.TurnCount = 0, 0
 	item.FirstUserMessage, item.LatestUserMessage = "", ""
+	item.UserPrompts = nil
 	for rows.Next() {
 		var idx, format int
 		var raw []byte

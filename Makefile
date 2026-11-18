@@ -17,6 +17,10 @@ check:
 test:
 	go test ./...
 
+.PHONY: benchmark-search
+benchmark-search:
+	go test ./internal/app -run '^$$' -bench '^BenchmarkSessionPromptSearch$$' -benchmem -v
+
 check-update-platforms:
 	@task_dir=$$(mktemp -d); trap 'rm -rf "$$task_dir"' EXIT; \
 	for task_os in darwin linux windows; do \

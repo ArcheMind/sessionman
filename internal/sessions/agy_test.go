@@ -18,6 +18,32 @@ func agyTestSession() Session {
 		{ID: "t", Role: "tool", ToolUseID: "call-1", ToolName: "research_tool", Result: "tool marker", Timestamp: "2026-11-13T12:00:02Z"},
 	}}
 }
+
+func TestAgyRecentSummaryCollectsUserPrompts(t *testing.T) {
+	home := t.TempDir()
+	source := agyTestSession()
+	source.Messages = append(source.Messages,
+		Message{ID: "second", Role: "user", Timestamp: "2026-11-13T12:00:03Z", Content: []ContentBlock{{Type: "text", Text: "SECOND PROMPT"}}},
+		Message{ID: "answer", Role: "assistant", Timestamp: "2026-11-13T12:00:04Z", Content: []ContentBlock{{Type: "text", Text: "assistant-only marker"}}},
+	)
+	if _, err := WriteAgySessionFile(source, agyRoot(home)); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := (Service{HomeDir: home}).RecentGroups(source.Workspace, 10, false)
+	if err != nil || len(groups.Current) != 1 {
+		t.Fatalf("recent groups = %+v, error = %v", groups, err)
+	}
+	item := groups.Current[0]
+	want := []string{"retain marker", "second prompt"}
+	if !reflect.DeepEqual(item.UserPrompts, want) {
+		t.Fatalf("user prompts = %#v, want %#v", item.UserPrompts, want)
+	}
+	again, err := summarizeAgy(item, false)
+	if err != nil || !reflect.DeepEqual(again.UserPrompts, want) {
+		t.Fatalf("repeated summary prompts = %#v, error = %v; want %#v", again.UserPrompts, err, want)
+	}
+}
+
 func TestAgySourceFreeBootstrap(t *testing.T) {
 	home := t.TempDir()
 	source := agyTestSession()

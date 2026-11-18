@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -43,5 +44,34 @@ func TestTurnCountExcludesToolsAndAssistantMessages(t *testing.T) {
 				t.Fatalf("repeated summary accumulated counts or changed previews: %+v, %v", again, err)
 			}
 		})
+	}
+}
+
+func TestRecentJSONLSummaryCollectsFullUserPrompts(t *testing.T) {
+	longPrompt := "Needles " + strings.Repeat("LongPrompt ", 20)
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	writeFixture(t, path, strings.Join([]string{
+		`{"type":"session_meta","payload":{"id":"session","cwd":"/work"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":"FIRST prompt"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":"assistant-only marker"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","call_id":"tool","output":"tool-only marker"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":"# AGENTS.md instructions should still be searchable"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":"` + longPrompt + `"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":"Last PROMPT"}}`,
+	}, "\n"))
+	item, err := summarizeJSONL(Summary{Agent: "codex", Source: path, collectUserPrompts: true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"first prompt", "# agents.md instructions should still be searchable", strings.ToLower(longPrompt), "last prompt"}
+	if !reflect.DeepEqual(item.UserPrompts, want) {
+		t.Fatalf("user prompts = %#v, want %#v", item.UserPrompts, want)
+	}
+	if item.FirstUserMessage != "FIRST prompt" || item.LatestUserMessage != "Last PROMPT" {
+		t.Fatalf("existing previews changed: first=%q latest=%q", item.FirstUserMessage, item.LatestUserMessage)
+	}
+	again, err := summarizeJSONL(item, false)
+	if err != nil || !reflect.DeepEqual(again.UserPrompts, want) {
+		t.Fatalf("repeated summary prompts = %#v, error = %v; want %#v", again.UserPrompts, err, want)
 	}
 }

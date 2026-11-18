@@ -28,7 +28,7 @@ const (
 	presetLineWidth  = 96
 	presetMinDesc    = 20
 	presetModelWidth = 24
-	homeHelp         = "↑/↓ or j/k select · Enter open · t trim & resume · e export session · m manage presets · q/Esc cancel"
+	homeHelp         = "↑/↓ or j/k select · Enter open · t trim & resume · e export session · m manage presets · / search prompts · q/Esc cancel"
 	emptyPresetsHint = "Save an agent, model and effort for reuse."
 )
 
@@ -133,7 +133,7 @@ func (a App) chooseHome(reader *bufio.Reader, home string, groups []sessionGroup
 	if selected >= len(items) {
 		selected = 0
 	}
-	index, action, err := a.runSelector(reader, selector{help: homeHelp, footer: true, marker: "› ", manage: true, selected: selected}, rows, len(items), nil)
+	index, action, err := a.runSelector(reader, selector{help: homeHelp, footer: true, marker: "› ", manage: true, selected: selected, search: true}, rows, len(items), nil)
 	if errors.Is(err, errSelectionCancelled) {
 		return homeItem{}, selectionConfirm, 0, errHomeCancelled
 	}
