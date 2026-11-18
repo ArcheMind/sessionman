@@ -25,7 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.15.4"
+var Version = "0.15.5"
 
 type App struct {
 	Registry   drivers.Registry
@@ -1114,7 +1114,8 @@ COMMANDS
 
   Non-interactive execution:
     sm agent exec <agy|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
-    sm --json session continue <agy|claude|codex|pi> [--stream (claude|codex|pi)] [--model <model>] [--mcp-config <file>] [--mode yolo] < transcript.json
+    sm --json session continue <agy|claude|codex|pi> [--stream] [--model <model>] [--append-system-prompt <text>] [--mcp-config <file>] [--mode yolo] < transcript.json
+    agy emits stream events after the turn and wraps the appended system prompt in <system-prompt> tags in the user message.
 
 AGENT OPTIONS
   --model <model>             Select a model

@@ -4,6 +4,13 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-11-18
+
+### Added
+
+- `sm session continue agy` accepts `--append-system-prompt` and inserts it as
+  a tagged text block before the original text in the user message.
+
 ## [0.15.3] - 2026-11-17
 
 ### Fixed
@@ -546,7 +553,8 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 - Structured errors and opt-in raw external-call debug logging.
 - Consistency audit covering CLI grammar, documentation, capabilities, and drivers.
 
-[Unreleased]: https://github.com/ArcheMind/agentx/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ArcheMind/sessionman/compare/v0.15.5...HEAD
+[0.15.5]: https://github.com/ArcheMind/sessionman/compare/v0.15.4...v0.15.5
 [0.5.0]: https://github.com/ArcheMind/agentx/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/ArcheMind/agentx/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ArcheMind/agentx/compare/v0.4.0...v0.4.1

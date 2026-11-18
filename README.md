@@ -199,7 +199,7 @@ Run `sm update` to immediately check for and install the latest stable release, 
 | OpenCode | yes | native sessions only | yes | — |
 | Pi | yes | yes | yes | yes |
 
-Antigravity CLI 1.5.8 supports native SQLite sessions, model discovery, presets and ACP ExternalSubagents. Its ordinary exec/continue path rejects temporary `--mcp-config` and `--append-system-prompt`; ACP supports session-scoped MCP. Provider effort is unverified. Its owned plugin is also discovered by plain `agy`, whose MCP bridge requires launching through `sm` to bind the workspace. See [agy acceptance and boundaries](docs/agy-acceptance.md).
+Antigravity CLI 1.5.8 supports native SQLite sessions, model discovery, presets and ACP ExternalSubagents. `sm session continue agy` places `--append-system-prompt` in a `<system-prompt>` text block before the original user text in the same message. `sm agent exec agy` rejects `--append-system-prompt`. Both commands reject temporary `--mcp-config`. ACP supports session-scoped MCP. Provider effort is unverified. Its owned plugin is also discovered by plain `agy`, whose MCP bridge requires launching through `sm` to bind the workspace. See [agy acceptance and boundaries](docs/agy-acceptance.md).
 
 DeepSeek Harness has no verified session source, so it is not a session or resume target. SessionMan can still install, authenticate, and launch it. OpenCode and DeepSeek Harness are not part of the actively developed skill and hook integrations. OpenCode resumes native session IDs through `--session`; converted transcript
 directories are not native session IDs and cannot be resumed through this path.

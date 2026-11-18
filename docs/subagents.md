@@ -408,11 +408,12 @@ receives the same delegation tools through its extension bridge.
 ### agy ordinary CLI and ACP
 
 `sm agent exec agy` wraps stdin in native stream-json input; `session continue`
-imports a fresh native SQLite session and resumes its UUID using the same
-stream-json path. `normal` adds no native mode or permission override. `yolo`
-uses `--dangerously-skip-permissions`. Ordinary exec/continue does not support
-temporary `--mcp-config` or `--append-system-prompt`; these requests fail
-explicitly. ACP ExternalSubagents inject session-scoped `mcpServers` instead.
+uses the same stream-json path and imports history into a fresh native SQLite
+session when present. It puts `--append-system-prompt` in a `<system-prompt>`
+text block before the original user text in the same message. `agent exec`
+rejects `--append-system-prompt`. `normal` uses native permissions. `yolo` uses
+`--dangerously-skip-permissions`. Both commands reject temporary `--mcp-config`.
+ACP ExternalSubagents support session-scoped `mcpServers`.
 
 Top-level launch/exec/continue prepares the owned global plugin. Plain `agy`
 also discovers it, but its MCP bridge requires the workspace supplied by `sm`.

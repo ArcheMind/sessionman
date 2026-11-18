@@ -126,8 +126,15 @@ func (r *agyContinueRunner) Execute(_ context.Context, plan runtime.CommandPlan,
 	}
 	r.prompt = event.Message.Content
 	token := flagValue(plan.Args, "--conversation")
+	detail := sessions.Session{Provider: "agy", Workspace: plan.Cwd}
+	if token == "" {
+		token, err = sessions.WriteAgySessionFile(detail, filepath.Join(r.home, ".gemini", "antigravity-cli"))
+		if err != nil {
+			return runtime.CommandResult{}, err
+		}
+	}
 	path := filepath.Join(r.home, ".gemini", "antigravity-cli", "conversations", token+".db")
-	detail, err := sessions.ParseAgySessionFile(path)
+	detail, err = sessions.ParseAgySessionFile(path)
 	if err != nil {
 		return runtime.CommandResult{}, err
 	}

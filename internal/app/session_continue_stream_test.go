@@ -219,13 +219,25 @@ func TestContinueStreamFailuresHaveNoResult(t *testing.T) {
 }
 
 func TestContinueStreamAgyDeferredUntilSuccess(t *testing.T) {
-	for _, fail := range []bool{false, true} {
-		t.Run(fmt.Sprintf("failure=%t", fail), func(t *testing.T) {
+	const systemPrompt = "Role instructions\n  Use the schema with \"quotes\".\n"
+	const prompt = "  new prompt\nUser details\n"
+	for _, tc := range []struct {
+		name        string
+		withHistory bool
+		fail        bool
+	}{
+		{name: "fresh"},
+		{name: "continued", withHistory: true},
+		{name: "failed", withHistory: true, fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			home, workspace := t.TempDir(), testWorkspace(t)
-			input, err := json.Marshal(sessions.Session{ID: "source", Provider: "claude", Workspace: workspace, Messages: []sessions.Message{
-				{ID: "history", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "old answer"}}},
-				{ID: "prompt", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: "new prompt"}}},
-			}})
+			var messages []sessions.Message
+			if tc.withHistory {
+				messages = append(messages, sessions.Message{ID: "history", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "old answer"}}})
+			}
+			messages = append(messages, sessions.Message{ID: "prompt", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: prompt}}})
+			input, err := json.Marshal(sessions.Session{ID: "source", Provider: "claude", Workspace: workspace, Messages: messages})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -238,12 +250,15 @@ func TestContinueStreamAgyDeferredUntilSuccess(t *testing.T) {
 					t.Errorf("output before execution completed: %s", &stdout)
 				}
 			}}
-			if fail {
+			if tc.fail {
 				runner.failure = errors.New("native execution failed")
 			}
 			application.Runner = runner
-			err = application.Run(context.Background(), []string{"session", "continue", "agy", "--stream", "--model", "native-model"})
-			if fail {
+			err = application.Run(context.Background(), []string{"session", "continue", "agy", "--stream", "--model", "native-model", "--append-system-prompt", systemPrompt})
+			if runner.prompt != "<system-prompt>\n"+systemPrompt+"\n</system-prompt>\n\n"+prompt {
+				t.Fatalf("native user message = %q, error = %v", runner.prompt, err)
+			}
+			if tc.fail {
 				if err == nil || stdout.Len() != 0 {
 					t.Fatalf("err=%v output=%s", err, &stdout)
 				}

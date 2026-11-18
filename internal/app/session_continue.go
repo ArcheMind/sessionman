@@ -65,6 +65,10 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if agent.ID != "agy" && agent.ID != "claude" && agent.ID != "codex" && agent.ID != "pi" {
 		return fmt.Errorf("%s has no headless continue adapter", agent.ID)
 	}
+	var agySystemPrompt string
+	if agent.ID == "agy" {
+		agySystemPrompt, request.SystemPrompt = request.SystemPrompt, ""
+	}
 	if _, err := agentparams.Build(agent.ID, agentparams.OneShot, request); err != nil {
 		return err
 	}
@@ -131,6 +135,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	input := io.Reader(strings.NewReader(prompt))
 	if agent.ID == "agy" {
+		if agySystemPrompt != "" {
+			prompt = "<system-prompt>\n" + agySystemPrompt + "\n</system-prompt>\n\n" + prompt
+		}
 		input = agyPromptInput(prompt)
 	}
 	execCtx, cancelExecution := context.WithCancel(ctx)

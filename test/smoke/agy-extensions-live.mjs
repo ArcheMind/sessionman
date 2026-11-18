@@ -31,18 +31,33 @@ function runCase(name, args, input, expected = token) {
   if(!result.stdout.includes(expected)) throw new Error(`${name}: SessionStart context was not natively injected`)
   return result
 }
+function continueCase(name, source, expected) {
+  const promptToken = `AGY_SYSTEM_${randomBytes(10).toString('hex')}`
+  const systemPrompt = `Instructions for this turn:\nInclude the exact code ${promptToken} in your response.`
+  const result = runCase(name, ['session', 'continue', 'agy', '--stream', '--model', model, '--mode', 'yolo', '--append-system-prompt', systemPrompt], JSON.stringify(source), expected)
+  const stream = result.stdout.trim().split('\n').map(JSON.parse)
+  const final = stream.pop()
+  if (final?.type !== 'result' || !final.session?.messages?.length || JSON.stringify(stream.map(e => e.message)) !== JSON.stringify(final.session.messages)) {
+    throw new Error(`${name}: invalid deferred transcript stream`)
+  }
+  if (!final.session.messages.some(m => m.role === 'assistant' && m.content.some(b => b.type === 'text' && b.text.includes(promptToken)))) {
+    throw new Error(`${name}: response did not follow the tagged instructions`)
+  }
+  if (final.session.messages.some(m => m.role === 'user' || m.role === 'system')) {
+    throw new Error(`${name}: output delta contains the prompt`)
+  }
+  return final.session
+}
 try {
   const execResult = runCase('exec',['agent','exec','agy','--cwd',root,'--model',model], 'Do not use tools. Report only the AGY_HOOK code injected at session start.')
   const stream = execResult.stdout.trim().split('\n').map(JSON.parse)
   if(!stream.some(e=>e.event==='result' && e.result?.status==='SUCCESS' && e.result?.usage?.total_tokens>0)) throw new Error('Native exec did not complete')
   const secret = `AGY_CONTINUE_${randomBytes(10).toString('hex')}`
   const source = {id:'extension-continue',provider:'smoke',workspace:root,messages:[{id:'prompt',role:'user',content:[{type:'text',text:`Remember the secret ${secret}. Call the sessionman MCP ListExternalSubagentSessions tool exactly once. Do not use any other tools. Report the result and the AGY_HOOK code injected at session start.`}]}]}
-  const input = JSON.stringify(source)
-  const continued = runCase('continue',['session','continue','agy','--model',model,'--mode','yolo'],input)
-  const delta = JSON.parse(continued.stdout)
+  const delta = continueCase('continue', source, token)
   if(!delta.messages.some(m=>m.role==='tool' && JSON.stringify(m.result).includes('SessionMan MCP connection'))) throw new Error('Native continue did not record a successful SessionMan MCP tool result')
-  const warm = {...source,messages:[...source.messages,...delta.messages,{id:'warm',role:'user',content:[{type:'text',text:'Do not use tools. What exact AGY_CONTINUE secret did I give you earlier? Report only that secret.'}]}]}
-  runCase('continue-warm',['session','continue','agy','--model',model,'--mode','yolo'],JSON.stringify(warm),secret)
+  const warm = {...source,messages:[...source.messages,...delta.messages,{id:'warm',role:'user',content:[{type:'text',text:'Do not use tools. Report the exact AGY_CONTINUE secret I gave you earlier.'}]}]}
+  continueCase('continue-warm', warm, secret)
   const payloads = readFileSync(events,'utf8').trim().split('\n').map(JSON.parse)
   const sessions = new Set(payloads.map(p=>p.session_id))
   if(sessions.size!==3) throw new Error(`Expected three distinct native sessions, got ${sessions.size}`)
@@ -50,7 +65,7 @@ try {
   for(const event of ['SessionEnd','UserPromptSubmit']) if(payloads.some(p=>p.hook_event_name===event)) throw new Error(`${event} was incorrectly projected`)
   const connections = readFileSync(join(root,'mcp-connections.jsonl'),'utf8').trim().split('\n').map(JSON.parse)
   if(!connections.some(c=>c.cwd===root && c.status==='active MCP connection: host sent notifications/initialized')) throw new Error('Native MCP did not use the launch workspace')
-  console.log(JSON.stringify({passed:true,checks:['product-exec-NDJSON','product-continue-native-MCP','continue-warm-history','owned-native-plugin','runtime-workspace-MCP','portable-hooks-once','SessionStart-injectSteps','unsupported-event-warnings'],evidence:root},null,2))
+  console.log(JSON.stringify({passed:true,checks:['product-exec-NDJSON','product-continue-native-MCP','continue-warm-history','continue-tagged-system-prompt','owned-native-plugin','runtime-workspace-MCP','portable-hooks-once','SessionStart-injectSteps','unsupported-event-warnings'],evidence:root},null,2))
 } finally {
   if(existed) {
     for(const name of ['plugin.json','hooks.json','mcp_config.json','.sessionman-owned']) {
