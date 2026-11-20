@@ -162,7 +162,11 @@ func isClaudeLocalCommand(message Message) bool {
 			return false
 		}
 	}
-	text := strings.TrimSpace(TextContent(message.Content))
+	return isClaudeLocalCommandText(TextContent(message.Content))
+}
+
+func isClaudeLocalCommandText(text string) bool {
+	text = strings.TrimSpace(text)
 	for _, tag := range []string{"local-command-caveat", "local-command-stdout", "local-command-stderr"} {
 		if strings.HasPrefix(text, "<"+tag+">") && strings.HasSuffix(text, "</"+tag+">") {
 			return true

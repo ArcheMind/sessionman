@@ -124,7 +124,7 @@ func readJSONLMetadata(agent, path string) (Summary, bool, error) {
 				if message.Role == "user" {
 					text := TextContent(message.Content)
 					item.addUserMessage(text)
-					if item.Title == "" && isSessionTitle(text) {
+					if item.Title == "" && isSessionPreview(text) {
 						item.Title = oneLine(text, 96)
 					}
 				}

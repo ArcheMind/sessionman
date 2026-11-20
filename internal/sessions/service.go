@@ -73,6 +73,9 @@ func (s *Summary) addUserMessage(text string) {
 		return
 	}
 	s.TurnCount++
+	if !isSessionPreview(text) {
+		return
+	}
 	if s.FirstUserMessage == "" && hasSubagentMarker(text) {
 		s.IsSubagent = true
 	}

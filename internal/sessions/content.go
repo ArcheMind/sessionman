@@ -33,7 +33,7 @@ func finishDetail(detail Session) (Session, bool) {
 	detail.MessageCount = len(detail.Messages)
 	for _, message := range detail.Messages {
 		text := textContent(message.Content)
-		if message.Role == "user" && isSessionTitle(text) {
+		if message.Role == "user" && isSessionPreview(text) {
 			detail.IsSubagent = detail.IsSubagent || hasSubagentMarker(text)
 			if detail.Title == "" {
 				detail.Title = oneLine(text, 96)
@@ -215,6 +215,19 @@ func oneLine(value string, max int) string {
 func isSessionTitle(value string) bool {
 	value = strings.TrimSpace(value)
 	return value != "" && !strings.HasPrefix(value, "# AGENTS.md instructions") && !strings.HasPrefix(value, "<environment_context>")
+}
+
+func isSessionPreview(value string) bool {
+	if !isSessionTitle(value) || isClaudeLocalCommandText(value) {
+		return false
+	}
+	value = strings.TrimSpace(value)
+	for _, tag := range []string{"task-notification", "subagent_notification"} {
+		if strings.HasPrefix(value, "<"+tag+">") && strings.HasSuffix(value, "</"+tag+">") {
+			return false
+		}
+	}
+	return true
 }
 
 func firstNonEmpty(values ...string) string {

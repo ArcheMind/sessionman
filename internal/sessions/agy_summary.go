@@ -221,7 +221,7 @@ func agyTimeline(db *sql.DB, item *Summary) error {
 			}
 			text := user.text(2)
 			item.addUserMessage(text)
-			if item.Title == "" && isSessionTitle(text) {
+			if item.Title == "" && isSessionPreview(text) {
 				item.Title = oneLine(text, 96)
 			}
 		}

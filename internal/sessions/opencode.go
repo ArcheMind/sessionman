@@ -216,7 +216,7 @@ func openCodeUserPreview(item *Summary, messages []openCodeMessage, latest bool)
 		if err != nil {
 			return err
 		}
-		if !isSessionTitle(text) {
+		if !isSessionPreview(text) {
 			continue
 		}
 		if latest {
