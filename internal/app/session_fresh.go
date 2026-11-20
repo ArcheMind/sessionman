@@ -24,7 +24,7 @@ func exceedsFreshThreshold(messages []sessions.Message) (int, bool) {
 	return turns, turns > freshTurnThreshold
 }
 
-func freshHistoryMessage(historyPath string) sessions.Message {
+func freshHistoryMessage(historyPath string, lines, turns int) sessions.Message {
 	var buf [8]byte
 	if _, err := rand.Read(buf[:]); err != nil {
 		panic(err)
@@ -34,7 +34,7 @@ func freshHistoryMessage(historyPath string) sessions.Message {
 		Role: "user",
 		Content: []sessions.ContentBlock{{
 			Type: "text",
-			Text: fmt.Sprintf("Offloaded conversation history: %s — read it when earlier context is needed.", historyPath),
+			Text: fmt.Sprintf("%s%s — %d lines, %d turns%s", offloadHistoryPrefix, historyPath, lines, turns, offloadHistorySuffix),
 		}},
 	}
 }

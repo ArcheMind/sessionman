@@ -241,6 +241,10 @@ func (a App) resumeSessionInteractive(ctx context.Context, reader *bufio.Reader,
 }
 
 func (a App) resumeSessionInteractiveMode(ctx context.Context, reader *bufio.Reader, detail sessions.Session, fresh, manual bool) error {
+	detail, restored, err := loadSessionHistory(detail)
+	if err != nil {
+		return err
+	}
 	if !fresh && !manual {
 		if turns, large := exceedsFreshThreshold(detail.Messages); large {
 			key, err := a.confirmLargeContext(reader, turns)
@@ -315,7 +319,7 @@ func (a App) resumeSessionInteractiveMode(ctx context.Context, reader *bufio.Rea
 		if err != nil {
 			return err
 		}
-		return a.resumePreparedSession(ctx, agent, detail, chosen.preset.Request(), fresh, false, manual)
+		return a.resumePreparedSession(ctx, agent, detail, chosen.preset.Request(), fresh, false, manual || restored)
 	}
 
 	model, err := a.chooseModel(ctx, reader, chosen.agent)
@@ -326,7 +330,7 @@ func (a App) resumeSessionInteractiveMode(ctx context.Context, reader *bufio.Rea
 	if err := a.askMode(reader, &draft); err != nil {
 		return err
 	}
-	return a.resumePreparedSession(ctx, chosen.agent, detail, runtime.RunRequest{Model: model, Mode: draft.preset.EffectiveMode()}, fresh, false, manual)
+	return a.resumePreparedSession(ctx, chosen.agent, detail, runtime.RunRequest{Model: model, Mode: draft.preset.EffectiveMode()}, fresh, false, manual || restored)
 }
 
 // startPreset reports launched=true once the native agent ran; pre-launch failures return to the home screen.

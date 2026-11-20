@@ -3,8 +3,6 @@ package app
 import (
 	"bufio"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -41,56 +39,40 @@ func (a App) applySessionTurns(detail sessions.Session, states []turnDisposition
 	if len(states) != len(turns) {
 		return sessions.Session{}, fmt.Errorf("turn selection count does not match session")
 	}
-	var offloaded []sessions.Message
-	for i, turn := range turns {
-		if states[i] == turnOffload {
-			offloaded = append(offloaded, detail.Messages[turn.start:turn.end]...)
+	for _, state := range states {
+		if state < turnKeep || state > turnDelete {
+			return sessions.Session{}, fmt.Errorf("invalid turn selection")
 		}
-	}
-	var pointer *sessions.Message
-	if len(offloaded) > 0 {
-		dir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "sessionman", "history")
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return sessions.Session{}, fmt.Errorf("create offload directory: %w", err)
-		}
-		// Each load owns its file so a later selection cannot change an earlier session's history.
-		file, err := os.CreateTemp(dir, "offload-*.json")
-		if err != nil {
-			return sessions.Session{}, fmt.Errorf("create offload file: %w", err)
-		}
-		history := detail
-		history.Messages = sessions.RechainMessages(offloaded)
-		history.MessageCount = len(history.Messages)
-		err = writeStructured(file, history, OutputJSON)
-		if closeErr := file.Close(); err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			os.Remove(file.Name())
-			return sessions.Session{}, fmt.Errorf("write offload file: %w", err)
-		}
-		message := freshHistoryMessage(file.Name())
-		pointer = &message
 	}
 	prefixEnd := len(detail.Messages)
 	if len(turns) > 0 {
 		prefixEnd = turns[0].start
 	}
 	messages := append([]sessions.Message(nil), detail.Messages[:prefixEnd]...)
-	for i, turn := range turns {
+	for i := 0; i < len(turns); {
+		turn := turns[i]
 		switch states[i] {
 		case turnKeep:
 			messages = append(messages, detail.Messages[turn.start:turn.end]...)
 		case turnOffload:
-			if pointer != nil {
-				messages = append(messages, *pointer)
-				pointer = nil
+			end := i + 1
+			for end < len(turns) && states[end] == turnOffload {
+				end++
 			}
+			history := detail
+			history.Messages = detail.Messages[turn.start:turns[end-1].end]
+			pointer, err := a.offloadSessionHistory(history)
+			if err != nil {
+				return sessions.Session{}, err
+			}
+			messages = append(messages, pointer)
+			i = end
+			continue
 		case turnDelete:
-		default:
-			return sessions.Session{}, fmt.Errorf("invalid turn selection")
 		}
+		i++
 	}
+
 	detail.Messages = sessions.SanitizeMessageIDs(sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(messages))))
 	detail.MessageCount = len(detail.Messages)
 	return detail, nil

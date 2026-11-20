@@ -925,7 +925,11 @@ func transcriptFileName(detail sessions.Session) string {
 }
 
 func (a App) resumeSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, request runtime.RunRequest, fresh, dryRun bool) error {
-	return a.resumePreparedSession(ctx, agent, detail, request, fresh, dryRun, false)
+	detail, restored, err := loadSessionHistory(detail)
+	if err != nil {
+		return err
+	}
+	return a.resumePreparedSession(ctx, agent, detail, request, fresh, dryRun, restored)
 }
 
 func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, detail sessions.Session, request runtime.RunRequest, fresh, dryRun, forceImport bool) error {

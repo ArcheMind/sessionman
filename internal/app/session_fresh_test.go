@@ -85,7 +85,7 @@ func TestFreshSessionDetailOffloadsAndRechains(t *testing.T) {
 		t.Fatalf("messages = %d count = %d, want 11", len(out.Messages), out.MessageCount)
 	}
 	header := out.Messages[4]
-	want := fmt.Sprintf("Offloaded conversation history: %s — read it when earlier context is needed.", historyPath)
+	want := fmt.Sprintf("Offloaded conversation history: %s — %d lines, %d turns — read it when earlier context is needed.", historyPath, bytes.Count(data, []byte("\n")), len(sessionTurns(history.Messages)))
 	if header.Role != "user" || len(header.Content) != 1 || header.Content[0].Text != want {
 		t.Fatalf("header = %#v", header)
 	}
@@ -145,7 +145,7 @@ func TestApplySessionTurnsKeepsOffloadsAndDeletesWholeTurns(t *testing.T) {
 	if out.Messages[0].Content[0].Text != "question 1" || out.Messages[1].Result != "complete output 1" || out.Messages[3].Content[0].Text != "question 4" || out.Messages[4].Result != "complete output 4" {
 		t.Fatalf("retained turns lost content: %#v", out.Messages)
 	}
-	want := fmt.Sprintf("Offloaded conversation history: %s — read it when earlier context is needed.", historyPath)
+	want := fmt.Sprintf("Offloaded conversation history: %s — %d lines, %d turns — read it when earlier context is needed.", historyPath, bytes.Count(data, []byte("\n")), len(sessionTurns(history.Messages)))
 	if out.Messages[2].Role != "user" || out.Messages[2].Content[0].Text != want {
 		t.Fatalf("history pointer = %#v", out.Messages[2])
 	}
