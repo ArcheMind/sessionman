@@ -92,6 +92,11 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		return err
 	}
 	detail.Workspace = workspace
+	if agent.ID == "pi" {
+		var imported sessions.Session
+		imported, request.SystemPrompt = sessions.PreparePiTranscript(sessions.Session{Messages: history}, request.SystemPrompt)
+		history = imported.Messages
+	}
 
 	token := ""
 	prefix := 0

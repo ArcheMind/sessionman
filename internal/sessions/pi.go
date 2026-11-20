@@ -11,8 +11,14 @@ func discoverPiIn(root string, _ bool) ([]Summary, error) {
 }
 
 func parsePi(path string, records []map[string]any) (Session, bool) {
+	var addendum string
+	return parsePiWithAddendum(path, records, &addendum)
+}
+
+func parsePiWithAddendum(path string, records []map[string]any, addendum *string) (Session, bool) {
 	detail := newDetail("pi", path)
 	var lastID string
+	parents := map[string]string{}
 	for _, record := range records {
 		kind := stringValue(record["type"])
 		if kind == "session" {
@@ -36,6 +42,13 @@ func parsePi(path string, records []map[string]any) (Session, bool) {
 			recordedAt = recordTS
 		}
 		parentID := stringValue(record["parentId"])
+		for {
+			parent, skipped := parents[parentID]
+			if !skipped {
+				break
+			}
+			parentID = parent
+		}
 		if parentID == "" {
 			parentID = lastID
 		}
@@ -78,10 +91,20 @@ func parsePi(path string, records []map[string]any) (Session, bool) {
 
 		if role == "system" {
 			text := extractText(message["content"])
-			if text == "" {
-				text = piSystemSections(message["sections"])
+			if sections, structured := message["sections"].(map[string]any); structured {
+				text = ""
+				if value, changed := sections["addendum"]; changed {
+					next := piAddendum(stringValue(value))
+					if next != *addendum {
+						text = next
+					}
+					*addendum = next
+				}
 			}
 			if text == "" {
+				if recordID != "" {
+					parents[recordID] = parentID
+				}
 				continue
 			}
 			msgID := firstNonEmpty(recordID, fmt.Sprintf("pi-%d", len(detail.Messages)))
@@ -111,18 +134,32 @@ func parsePi(path string, records []map[string]any) (Session, bool) {
 	return finishDetail(detail)
 }
 
-func piSystemSections(value any) string {
-	sections, ok := value.(map[string]any)
-	if !ok {
-		return ""
+func piAddendum(text string) string {
+	if strings.HasPrefix(text, "<addendum>\n") && strings.HasSuffix(text, "\n</addendum>") {
+		return strings.TrimSuffix(strings.TrimPrefix(text, "<addendum>\n"), "\n</addendum>")
 	}
-	var parts []string
-	for _, key := range []string{"preamble", "tools", "rules", "context"} {
-		if text := stringValue(sections[key]); text != "" {
-			parts = append(parts, text)
+	return text
+}
+
+// PreparePiTranscript keeps imported instructions out of Pi's native tool-loadout records.
+func PreparePiTranscript(detail Session, appended string) (Session, string) {
+	var messages []Message
+	var instructions []string
+	for _, message := range detail.Messages {
+		if message.Role == "system" {
+			if text := TextContent(message.Content); text != "" {
+				instructions = append(instructions, text)
+			}
+		} else {
+			messages = append(messages, message)
 		}
 	}
-	return strings.Join(parts, "\n\n")
+	if appended != "" {
+		instructions = append(instructions, appended)
+	}
+	detail.Messages = RechainMessages(messages)
+	detail.MessageCount = len(messages)
+	return detail, strings.Join(instructions, "\n\n")
 }
 
 func piAssistantBlocks(value any) []ContentBlock {

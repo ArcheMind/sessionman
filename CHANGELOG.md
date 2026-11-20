@@ -4,6 +4,15 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.15.7] - 2026-11-20
+
+### Fixed
+
+- Resume imported Pi sessions with historical system instructions appended to
+  the native prompt, preserving Pi's default tools. Export only Pi's appended
+  instructions from structured system messages instead of its generated prompt
+  and tool configuration.
+
 ## [0.15.6] - 2026-11-20
 
 ### Fixed

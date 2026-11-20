@@ -232,7 +232,10 @@ func jsonlRecordDecoder(agent string) func(map[string]any) Session {
 		parse = parseCodex
 	case "pi":
 		meta = map[string]any{"type": "session", "id": "summary"}
-		parse = parsePi
+		var addendum string
+		parse = func(path string, records []map[string]any) (Session, bool) {
+			return parsePiWithAddendum(path, records, &addendum)
+		}
 	}
 	return func(record map[string]any) Session {
 		detail, _ := parse("summary", []map[string]any{meta, record})

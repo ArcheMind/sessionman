@@ -25,7 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.15.6"
+var Version = "0.15.7"
 
 type App struct {
 	Registry   drivers.Registry
@@ -969,6 +969,9 @@ func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, det
 		resumeToken = detail.ID
 	} else {
 		detail.Workspace = workspace
+		if agent.ID == "pi" {
+			detail, request.SystemPrompt = sessions.PreparePiTranscript(detail, request.SystemPrompt)
+		}
 		if dryRun {
 			// The Codex provider read would launch codex against an unprepared
 			// CODEX_HOME, so a dry run only plans the path.
