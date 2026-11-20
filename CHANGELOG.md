@@ -4,6 +4,19 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.15.6] - 2026-11-20
+
+### Fixed
+
+- Restore offloaded turns before session loading, turn counting, and manual
+  selection. Keep discontinuous offload sections in separate files at their
+  original positions, and show each file's line and turn counts in its reference.
+- Move the Claude Code imported-thinking marker to the end of each text block
+  and recognize the suffix when reading it back, preserving the original text.
+- Drop Claude local command wrappers during session conversion.
+- Exclude runtime notifications and exact interruption markers from session
+  previews without changing transcript bodies, search, or turn counts.
+
 ## [0.15.5] - 2026-11-18
 
 ### Added
@@ -553,7 +566,8 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 - Structured errors and opt-in raw external-call debug logging.
 - Consistency audit covering CLI grammar, documentation, capabilities, and drivers.
 
-[Unreleased]: https://github.com/ArcheMind/sessionman/compare/v0.15.5...HEAD
+[Unreleased]: https://github.com/ArcheMind/sessionman/compare/v0.15.6...HEAD
+[0.15.6]: https://github.com/ArcheMind/sessionman/compare/v0.15.5...v0.15.6
 [0.15.5]: https://github.com/ArcheMind/sessionman/compare/v0.15.4...v0.15.5
 [0.5.0]: https://github.com/ArcheMind/agentx/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/ArcheMind/agentx/compare/v0.4.1...v0.4.2
