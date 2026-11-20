@@ -115,7 +115,7 @@ type FileEntry struct {
 func replayMessages(detail Session) []Message {
 	messages := make([]Message, 0, len(detail.Messages))
 	dropped := false
-	for _, message := range detail.Messages {
+	for _, message := range withoutClaudeLocalCommands(detail.Messages) {
 		content := make([]ContentBlock, 0, len(message.Content))
 		for _, block := range message.Content {
 			if block.Type == "thinking" {
@@ -138,6 +138,48 @@ func replayMessages(detail Session) []Message {
 		return RechainMessages(messages)
 	}
 	return messages
+}
+
+func withoutClaudeLocalCommands(messages []Message) []Message {
+	kept := make([]Message, 0, len(messages))
+	for _, message := range messages {
+		if !isClaudeLocalCommand(message) {
+			kept = append(kept, message)
+		}
+	}
+	if len(kept) == len(messages) {
+		return messages
+	}
+	return RechainMessages(kept)
+}
+
+func isClaudeLocalCommand(message Message) bool {
+	if message.Role != "user" || len(message.Content) == 0 {
+		return false
+	}
+	for _, block := range message.Content {
+		if block.Type != "text" {
+			return false
+		}
+	}
+	text := strings.TrimSpace(TextContent(message.Content))
+	for _, tag := range []string{"local-command-caveat", "local-command-stdout", "local-command-stderr"} {
+		if strings.HasPrefix(text, "<"+tag+">") && strings.HasSuffix(text, "</"+tag+">") {
+			return true
+		}
+	}
+	for _, tag := range []string{"command-name", "command-message", "command-args"} {
+		rest, ok := strings.CutPrefix(text, "<"+tag+">")
+		if !ok {
+			return false
+		}
+		_, rest, ok = strings.Cut(rest, "</"+tag+">")
+		if !ok {
+			return false
+		}
+		text = strings.TrimSpace(rest)
+	}
+	return text == ""
 }
 
 // SerializeClaude converts a unified Session back to Claude Code's native JSONL records.
@@ -524,6 +566,7 @@ func SerializePi(detail Session) []map[string]any {
 // Returns the session info object and a flat list of file entries to write.
 // basePath is the session storage root (e.g. .../storage/session/).
 func SerializeOpenCode(detail Session, basePath string) (map[string]any, []FileEntry) {
+	detail.Messages = withoutClaudeLocalCommands(detail.Messages)
 	info := map[string]any{
 		"id":    detail.ID,
 		"title": detail.Title,
