@@ -47,8 +47,8 @@ back to the source agent:
 
 - Never restore thinking signatures or encrypted thinking payloads.
 - Emit readable thinking as ordinary text. The Claude Code target writes a text
-  block `※\n<text>` (U+203B, a newline, then the raw text, with no closing
-  marker), because `<think>`-style wrappers in Claude transcripts trigger
+  block `<text>\n※` (the raw text, a newline, then U+203B), because leading
+  markers and `<think>`-style wrappers in Claude transcripts have triggered
   Anthropic `reasoning_extraction` refusals on resume. Other targets wrap the
   text in `<think>` and `</think>`. The importer accepts both forms.
 - Drop thoughts containing only ciphertext; do not emit empty thinking blocks

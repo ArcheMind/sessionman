@@ -574,8 +574,8 @@ func TestSerializeThinkingAsThinkTagText(t *testing.T) {
 			map[string]any{"type": "text", "text": "after"},
 		}
 		if name == "claude" {
-			want[0] = map[string]any{"type": "text", "text": "※\nunsigned plan"}
-			want[1] = map[string]any{"type": "text", "text": "※\nsigned plan"}
+			want[0] = map[string]any{"type": "text", "text": "unsigned plan\n※"}
+			want[1] = map[string]any{"type": "text", "text": "signed plan\n※"}
 		}
 		if !reflect.DeepEqual(content, want) {
 			t.Fatalf("%s assistant content = %#v", name, content)
@@ -627,14 +627,39 @@ func TestThinkingRoundTripsThroughThinkTag(t *testing.T) {
 	}
 }
 
-func TestLiftImportedNotePrefix(t *testing.T) {
+func TestClaudeImportedNoteSuffixTwoRoundTrips(t *testing.T) {
+	want := []ContentBlock{
+		{Type: "text", Text: "before"},
+		{Type: "thinking", Text: "\n scratch note \n"},
+		{Type: "thinking", Text: "<think>literal text</think>"},
+		{Type: "text", Text: "answer"},
+	}
+	detail := Session{ID: "suffix-roundtrip", Provider: "claude", Messages: []Message{
+		{ID: "u", Role: "user", Content: []ContentBlock{{Type: "text", Text: "question"}}},
+		{ID: "a", ParentID: "u", Role: "assistant", Content: want},
+	}}
+	for round := 1; round <= 2; round++ {
+		encoded := marshalJSONL(t, SerializeClaude(detail))
+		if !strings.Contains(encoded, `scratch note \n\n※"`) || strings.Contains(encoded, `"text":"※\n`) {
+			t.Fatalf("round %d emitted an incorrect marker: %s", round, encoded)
+		}
+		detail = parseNativeContract(t, "claude", encoded)
+		if len(detail.Messages) != 2 || !reflect.DeepEqual(detail.Messages[1].Content, want) {
+			t.Fatalf("round %d changed content: %#v", round, detail.Messages)
+		}
+	}
+}
+
+func TestLiftImportedNoteSuffix(t *testing.T) {
 	for text, want := range map[string]ContentBlock{
-		"※\nstep one":                 {Type: "thinking", Text: "step one"},
-		"※\n\n step one \n":           {Type: "thinking", Text: "\n step one \n"},
-		"※\n<think>step one</think>":  {Type: "thinking", Text: "<think>step one</think>"},
+		"step one\n※":                 {Type: "thinking", Text: "step one"},
+		"\n step one \n\n※":           {Type: "thinking", Text: "\n step one \n"},
+		"<think>step one</think>\n※":  {Type: "thinking", Text: "<think>step one</think>"},
 		"<think>\nstep one\n</think>": {Type: "thinking", Text: "step one"},
-		"※ step one":                  {Type: "text", Text: "※ step one"},
-		"note ※\nstep one":            {Type: "text", Text: "note ※\nstep one"},
+		"step one ※":                  {Type: "text", Text: "step one ※"},
+		"step one\n※ then answer":     {Type: "text", Text: "step one\n※ then answer"},
+		"step one\n※\n":               {Type: "text", Text: "step one\n※\n"},
+		"※\nstep one":                 {Type: "text", Text: "※\nstep one"},
 	} {
 		blocks := []ContentBlock{{Type: "text", Text: text}}
 		liftThinkTags(blocks)

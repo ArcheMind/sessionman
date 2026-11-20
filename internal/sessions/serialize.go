@@ -715,11 +715,11 @@ func thinkTagText(text string) string {
 	return "<think>\n" + text + "\n</think>"
 }
 
-// Claude Code transcripts wrapped in <think>-style tags trigger Anthropic reasoning_extraction refusals on resume, so that target uses a bare marker prefix.
-const importedNotePrefix = "※\n"
+// Leading markers trigger Claude resume refusals, so its marker follows the raw text.
+const importedNoteSuffix = "\n※"
 
 func importedNoteText(text string) string {
-	return importedNotePrefix + text
+	return text + importedNoteSuffix
 }
 
 func codexEvent(ts string, payload map[string]any) map[string]any {
