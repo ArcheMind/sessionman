@@ -4,6 +4,14 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.15.8] - 2026-11-20
+
+### Fixed
+
+- Export Pi's effective appended instructions after section replacement or
+  clearing, so superseded instructions do not return on the next resume.
+- Keep streamed transcript messages stable while Pi updates prompt sections.
+
 ## [0.15.7] - 2026-11-20
 
 ### Fixed

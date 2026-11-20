@@ -190,6 +190,38 @@ func (s *continueTranscriptStream) readStore() error {
 		return fmt.Errorf("%s streaming store identity %s differs from %s", s.agent, full.ID, s.sessionID)
 	}
 	delta := continueDelta(full.Messages, s.prefix)
+	if s.agent == "pi" {
+		delta = sessions.RechainMessages(delta)
+	}
+	if s.agent == "pi" && len(delta) > 0 {
+		// Section replacements can remove an earlier system projection. Hold that tail
+		// until the final canonical transcript fixes both its content and parent chain.
+		stable := map[string]bool{}
+		started := false
+		for _, record := range s.records {
+			if record["type"] != "message" {
+				continue
+			}
+			id, _ := record["id"].(string)
+			if id == delta[0].ID {
+				started = true
+			}
+			if !started {
+				continue
+			}
+			message, _ := record["message"].(map[string]any)
+			if message["role"] == "system" {
+				break
+			}
+			stable[id] = true
+		}
+		for i, message := range delta {
+			if !stable[message.ID] {
+				delta = delta[:i]
+				break
+			}
+		}
+	}
 	// The Codex converter can still append reasoning/tool blocks to the
 	// trailing assistant. A following message closes that canonical record.
 	if s.agent == "codex" && len(delta) > 0 && delta[len(delta)-1].Role == "assistant" {

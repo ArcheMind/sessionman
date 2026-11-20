@@ -11,15 +11,21 @@ func discoverPiIn(root string, _ bool) ([]Summary, error) {
 }
 
 func parsePi(path string, records []map[string]any) (Session, bool) {
-	var addendum string
-	return parsePiWithAddendum(path, records, &addendum)
-}
-
-func parsePiWithAddendum(path string, records []map[string]any, addendum *string) (Session, bool) {
 	detail := newDetail("pi", path)
 	var lastID string
 	parents := map[string]string{}
-	for _, record := range records {
+	lastAddendum := -1
+	for i, record := range records {
+		message, _ := record["message"].(map[string]any)
+		if record["type"] == "message" && message["role"] == "system" {
+			if sections, ok := message["sections"].(map[string]any); ok {
+				if _, changed := sections["addendum"]; changed {
+					lastAddendum = i
+				}
+			}
+		}
+	}
+	for i, record := range records {
 		kind := stringValue(record["type"])
 		if kind == "session" {
 			detail.ID = stringValue(record["id"])
@@ -93,12 +99,8 @@ func parsePiWithAddendum(path string, records []map[string]any, addendum *string
 			text := extractText(message["content"])
 			if sections, structured := message["sections"].(map[string]any); structured {
 				text = ""
-				if value, changed := sections["addendum"]; changed {
-					next := piAddendum(stringValue(value))
-					if next != *addendum {
-						text = next
-					}
-					*addendum = next
+				if i == lastAddendum {
+					text = piAddendum(stringValue(sections["addendum"]))
 				}
 			}
 			if text == "" {

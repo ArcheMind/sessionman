@@ -195,6 +195,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		return fmt.Errorf("%s recorded fewer messages (%d) than the imported history (%d)", agent.ID, len(full.Messages), prefix)
 	}
 	delta := continueDelta(full.Messages, prefix)
+	if agent.ID == "pi" {
+		delta = sessions.RechainMessages(delta)
+	}
 	if len(delta) == 0 {
 		return fmt.Errorf("%s completed the turn but recorded no new messages", agent.ID)
 	}

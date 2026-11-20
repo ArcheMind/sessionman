@@ -114,3 +114,103 @@ func TestPiResumeProjectsOnlyImportedInstructions(t *testing.T) {
 		})
 	}
 }
+
+func TestPiStreamBuffersReplaceableSystemTail(t *testing.T) {
+	for _, clear := range []bool{false, true} {
+		t.Run(map[bool]string{false: "replace", true: "clear"}[clear], func(t *testing.T) {
+			workspace := testWorkspace(t)
+			app, _, runner := continueApp(t, "pi", "provider/model", continueTranscript(t, workspace))
+			capture := &continueStreamCapture{}
+			app.Stdout = capture
+			runner.reply = []sessions.Message{
+				{ID: "call", Role: "assistant", Content: []sessions.ContentBlock{{Type: "tool_use", ID: "bash-call", Name: "bash", Input: map[string]any{"command": "pwd"}}}},
+				{ID: "tool", ParentID: "call", Role: "tool", ToolName: "bash", ToolUseID: "bash-call", Result: "/work"},
+			}
+			app.Runner = continueStreamTestRunner{runner, func(options runtime.ExecuteOptions, result *runtime.CommandResult) error {
+				path := flagValue(runner.plans[len(runner.plans)-1].Args, "--session")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				var rebuilt strings.Builder
+				encoder := json.NewEncoder(&rebuilt)
+				for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+					var record map[string]any
+					if err := json.Unmarshal([]byte(line), &record); err != nil {
+						return err
+					}
+					if record["id"] == "call" {
+						if err := encoder.Encode(map[string]any{"type": "message", "id": "initial-a", "parentId": record["parentId"], "message": map[string]any{"role": "system", "sections": map[string]any{"addendum": "<addendum>\nA\n</addendum>"}}}); err != nil {
+							return err
+						}
+						record["parentId"] = "initial-a"
+					}
+					if err := encoder.Encode(record); err != nil {
+						return err
+					}
+				}
+				if err := os.WriteFile(path, []byte(rebuilt.String()), 0600); err != nil {
+					return err
+				}
+				if _, err := options.Stdout.Write([]byte(result.Stdout)); err != nil {
+					return err
+				}
+				messages, final := decodeContinueEvents(t, capture.snapshot())
+				if len(messages) != 2 || final != nil || messages[0].ParentID != "" {
+					t.Fatalf("tools not streamed immediately: %s", capture.snapshot())
+				}
+				appendRecord := func(id, parent string, message map[string]any) error {
+					file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+					if err != nil {
+						return err
+					}
+					defer file.Close()
+					return json.NewEncoder(file).Encode(map[string]any{"type": "message", "id": id, "parentId": parent, "message": message})
+				}
+				if err := appendRecord("patch-a", "tool", map[string]any{"role": "system", "sections": map[string]any{"addendum": "<addendum>\nA\n</addendum>"}}); err != nil {
+					return err
+				}
+				if err := appendRecord("middle", "patch-a", map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "working"}}}); err != nil {
+					return err
+				}
+				if _, err = options.Stdout.Write([]byte("\n")); err != nil {
+					return err
+				}
+				messages, _ = decodeContinueEvents(t, capture.snapshot())
+				if len(messages) != 2 {
+					t.Fatalf("mutable tail emitted: %s", capture.snapshot())
+				}
+				var value any = "<addendum>\nB\n</addendum>"
+				if clear {
+					value = nil
+				}
+				if err := appendRecord("patch-b", "middle", map[string]any{"role": "system", "sections": map[string]any{"addendum": value}}); err != nil {
+					return err
+				}
+				if err := appendRecord("answer", "patch-b", map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "done"}}}); err != nil {
+					return err
+				}
+				_, err = options.Stdout.Write([]byte("\n"))
+				return err
+			}}
+			if err := app.Run(context.Background(), []string{"session", "continue", "pi", "--model", "provider/model", "--stream"}); err != nil {
+				t.Fatal(err)
+			}
+			messages, final := decodeContinueEvents(t, capture.snapshot())
+			if final == nil || !reflect.DeepEqual(messages, final.Messages) {
+				t.Fatalf("stream/final mismatch: %s", capture.snapshot())
+			}
+			_, prompt := sessions.PreparePiTranscript(*final, "")
+			want := "B"
+			if clear {
+				want = ""
+			}
+			if prompt != want {
+				t.Fatalf("restored prompt=%q want=%q", prompt, want)
+			}
+			if len(messages) < 4 || messages[2].Role != "assistant" || messages[2].ParentID != messages[1].ID {
+				t.Fatalf("broken filtered parent: %+v", messages)
+			}
+		})
+	}
+}

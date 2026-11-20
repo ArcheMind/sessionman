@@ -142,6 +142,20 @@ func summarizeJSONL(item Summary, includeCount bool) (Summary, error) {
 		item.TurnCount = 0
 		item.FirstUserMessage, item.LatestUserMessage = "", ""
 		item.UserPrompts = nil
+		if item.Agent == "pi" {
+			records, err := readJSONL(item.Source)
+			if err != nil {
+				return item, err
+			}
+			detail, _ := parsePi(item.Source, records)
+			item.MessageCount = len(detail.Messages)
+			for _, message := range detail.Messages {
+				if message.Role == "user" {
+					item.addUserMessage(TextContent(message.Content))
+				}
+			}
+			return item, nil
+		}
 		lastRole := ""
 		err := scanJSONL(item.Source, func(record map[string]any) bool {
 			detail := decode(record)
@@ -232,10 +246,7 @@ func jsonlRecordDecoder(agent string) func(map[string]any) Session {
 		parse = parseCodex
 	case "pi":
 		meta = map[string]any{"type": "session", "id": "summary"}
-		var addendum string
-		parse = func(path string, records []map[string]any) (Session, bool) {
-			return parsePiWithAddendum(path, records, &addendum)
-		}
+		parse = parsePi
 	}
 	return func(record map[string]any) Session {
 		detail, _ := parse("summary", []map[string]any{meta, record})
