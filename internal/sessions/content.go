@@ -222,6 +222,9 @@ func isSessionPreview(value string) bool {
 		return false
 	}
 	value = strings.TrimSpace(value)
+	if value == "[Request interrupted by user]" || value == "[Request interrupted by user for tool use]" {
+		return false
+	}
 	for _, tag := range []string{"task-notification", "subagent_notification"} {
 		if strings.HasPrefix(value, "<"+tag+">") && strings.HasSuffix(value, "</"+tag+">") {
 			return false

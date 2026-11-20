@@ -9,6 +9,8 @@ import (
 
 func TestSessionPreviewsSkipRuntimeMessages(t *testing.T) {
 	special := []string{
+		"[Request interrupted by user]",
+		"[Request interrupted by user for tool use]",
 		"<local-command-caveat>context</local-command-caveat>",
 		"<command-name>/model</command-name><command-message>model</command-message><command-args></command-args>",
 		"<local-command-stdout>output</local-command-stdout>",
@@ -58,6 +60,7 @@ func TestSessionPreviewsSkipRuntimeMessages(t *testing.T) {
 
 func TestSessionPreviewsKeepRuntimeMessageDiscussion(t *testing.T) {
 	for _, text := range []string{
+		"Why does [Request interrupted by user] appear?",
 		"Explain <task-notification>done</task-notification>",
 		"```xml\n<subagent_notification>done</subagent_notification>\n```",
 		"<task-notification>done</task-notification> what does this mean?",
