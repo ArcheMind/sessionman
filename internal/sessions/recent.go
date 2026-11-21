@@ -3,6 +3,7 @@ package sessions
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 type RecentGroups struct {
@@ -25,13 +26,26 @@ func (s Service) RecentGroups(workspace string, limit int, includeSubagents bool
 
 	items, err := s.catalog("", includeSubagents)
 	failures := catalogFailure(err)
+	closed, hasClosed, closedErr := s.LatestClosed()
+	if closedErr != nil {
+		failures.Causes = append(failures.Causes, closedErr)
+	}
 	result := RecentGroups{Current: []Summary{}, Global: []Summary{}}
+	var pinned *Summary
 	for _, item := range items {
+		if hasClosed && item.Agent == closed.Agent && item.ID == closed.ID {
+			item.ClosedAt = closed.ClosedAt.UTC().Format(time.RFC3339Nano)
+			pinned = &item
+			continue
+		}
 		if matchesWorkspaceSummary(item, workspace) {
 			result.Current = append(result.Current, item)
 		} else {
 			result.Global = append(result.Global, item)
 		}
+	}
+	if pinned != nil {
+		result.Current = append([]Summary{*pinned}, result.Current...)
 	}
 	for i := range result.Current {
 		result.Current[i].collectUserPrompts = true
@@ -41,5 +55,8 @@ func (s Service) RecentGroups(workspace string, limit int, includeSubagents bool
 	}
 	result.Current = summarizeSessions(result.Current, false, limit, failures)
 	result.Global = summarizeSessions(result.Global, false, limit, failures)
+	if pinned != nil && len(result.Current) > 0 {
+		result.Current[0].ClosedAt = pinned.ClosedAt
+	}
 	return result, failures.err()
 }

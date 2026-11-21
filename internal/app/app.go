@@ -422,7 +422,7 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	if _, err := exec.LookPath(agent.Binary); err != nil {
 		return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 	}
-	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
+	result, err := a.executeTrackedSession(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr}, "")
 	if err != nil {
 		return &ExitError{Code: result.ExitCode, Err: err}
 	}
@@ -1017,7 +1017,7 @@ func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, det
 	if _, err := exec.LookPath(agent.Binary); err != nil {
 		return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 	}
-	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
+	result, err := a.executeTrackedSession(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr}, resumeToken)
 	if err != nil {
 		return &ExitError{Code: result.ExitCode, Err: err}
 	}

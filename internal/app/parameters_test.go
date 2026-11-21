@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"context"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -24,6 +25,15 @@ func TestCLIAndPresetUseTheSameInvocationParameters(t *testing.T) {
 	if len(runner.plans) != 2 {
 		t.Fatalf("plans = %#v", runner.plans)
 	}
+	for _, plan := range runner.plans {
+		if len(plan.Args) < 2 || plan.Args[0] != "--plugin-dir" || !strings.HasPrefix(filepath.Base(plan.Args[1]), "sessionman-session-") {
+			t.Fatalf("missing launch-specific session observer: %#v", plan)
+		}
+	}
+	if runner.plans[0].Args[1] == runner.plans[1].Args[1] {
+		t.Fatal("interactive launches share a session observer")
+	}
+	runner.plans[0].Args[1] = runner.plans[1].Args[1]
 	if !reflect.DeepEqual(runner.plans[0], runner.plans[1]) {
 		t.Fatalf("preset = %#v\nCLI = %#v", runner.plans[0], runner.plans[1])
 	}

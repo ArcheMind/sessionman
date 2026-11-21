@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/agentx/internal/hooks"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
@@ -138,7 +139,7 @@ func (d *Daemon) startAgyLocked() error {
 		return err
 	}
 	agyEnv := d.agyEnvironment()
-	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: mapped.Args, Cwd: req.Cwd, Env: agyEnv, Agent: "agy"})
+	stream, err := d.startStream(runtime.CommandPlan{Executable: "agy", Args: mapped.Args, Cwd: req.Cwd, Env: agyEnv, UnsetEnv: []string{hooks.SessionReportEnv}, Agent: "agy"})
 	if err != nil {
 		return err
 	}

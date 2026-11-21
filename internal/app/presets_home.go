@@ -382,7 +382,7 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 		return a.startFailure(ctx, reader, home, p, err.Error(), true)
 	}
 	fmt.Fprintf(a.Stdout, "Starting a new %s session with preset %s: model %s · effort %s · mode %s · %s\n", presets.AgentName(p.Agent), p.Name, p.Model, presets.EffortLabel(p.Effort), p.EffectiveMode(), cwd)
-	result, err := a.Runner.Execute(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr})
+	result, err := a.executeTrackedSession(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr}, "")
 	if err != nil {
 		fmt.Fprintf(a.Stderr, "sm: %s exited with an error after starting preset %s (model %s, effort %s, mode %s). SessionMan did not substitute another agent, model or effort. If the model or effort was rejected, edit the preset (run sm, select it, press m) or log in with sm auth login %s.\n", agent.Name, p.Name, p.Model, presets.EffortLabel(p.Effort), p.EffectiveMode(), agent.ID)
 		return true, &ExitError{Code: result.ExitCode, Err: err}

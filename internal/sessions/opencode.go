@@ -23,8 +23,25 @@ func discoverOpenCodeIn(root string, includeSubagents bool) ([]Summary, error) {
 	}
 	var items []Summary
 	var failures []error
+	database := filepath.Join(filepath.Dir(root), "opencode.db")
+	if _, err := os.Stat(database); err == nil {
+		found, err := discoverOpenCodeSQLite(database, includeSubagents)
+		items = append(items, found...)
+		if err != nil {
+			failures = append(failures, err)
+		}
+	} else if !os.IsNotExist(err) {
+		failures = append(failures, err)
+	}
+	seen := make(map[string]bool, len(items))
+	for _, item := range items {
+		seen[item.ID] = true
+	}
 	for _, path := range paths {
 		item, messages, ok, err := openCodeIndex(path)
+		if seen[item.ID] {
+			continue
+		}
 		if err == nil && ok && (includeSubagents || !item.IsSubagent) {
 			err = openCodeBounds(&item, messages)
 			if err == nil {
@@ -78,6 +95,9 @@ func summarizeOpenCode(item Summary, includeCount bool) (Summary, error) {
 }
 
 func openCodeIndex(path string) (Summary, []openCodeMessage, bool, error) {
+	if database, id, ok := openCodeSQLiteSource(path); ok {
+		return openCodeSQLiteIndex(database, id)
+	}
 	item := Summary{Agent: "opencode", Source: path}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -138,20 +158,19 @@ func openCodePartPaths(item Summary, message openCodeMessage) ([]string, error) 
 }
 
 func openCodePartSummary(item Summary, message openCodeMessage) (bool, int, string, error) {
-	paths, err := openCodePartPaths(item, message)
+	parts, err := openCodeParts(item, message)
 	if err != nil {
 		return false, 0, "", err
 	}
 	blocks, tools := false, 0
 	var texts []string
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return false, 0, "", err
-		}
+	for _, data := range parts {
 		var part struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type  string `json:"type"`
+			Text  string `json:"text"`
+			State struct {
+				Status string `json:"status"`
+			} `json:"state"`
 		}
 		if json.Unmarshal(data, &part) != nil {
 			continue
@@ -164,6 +183,13 @@ func openCodePartSummary(item Summary, message openCodeMessage) (bool, int, stri
 			}
 		case "step-start", "patch":
 			blocks = true
+		case "reasoning":
+			blocks = blocks || strings.TrimSpace(part.Text) != ""
+		case "tool":
+			blocks = true
+			if part.State.Status == "completed" || part.State.Status == "error" {
+				tools++
+			}
 		case "step-finish":
 			tools++
 		}
@@ -243,17 +269,13 @@ func readOpenCodeSession(path string) (Session, error) {
 	detail := Session{ID: item.ID, Provider: item.Agent, Source: item.Source, Workspace: item.Workspace, Title: item.Title, IsSubagent: item.IsSubagent, StartedAt: item.StartedAt, UpdatedAt: item.UpdatedAt}
 	var lastID string
 	for _, message := range messages {
-		paths, err := openCodePartPaths(item, message)
+		parts, err := openCodeParts(item, message)
 		if err != nil {
 			return Session{}, err
 		}
 		var blocks []ContentBlock
 		var toolMessages []Message
-		for _, path := range paths {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return Session{}, err
-			}
+		for _, data := range parts {
 			var part map[string]any
 			if json.Unmarshal(data, &part) != nil {
 				continue
@@ -261,6 +283,20 @@ func readOpenCodeSession(path string) (Session, error) {
 			switch stringValue(part["type"]) {
 			case "text":
 				blocks = append(blocks, ContentBlock{Type: "text", Text: stringValue(part["text"])})
+			case "reasoning":
+				blocks = append(blocks, ContentBlock{Type: "thinking", Text: stringValue(part["text"])})
+			case "tool":
+				state, _ := part["state"].(map[string]any)
+				callID, tool := stringValue(part["callID"]), stringValue(part["tool"])
+				blocks = append(blocks, ContentBlock{Type: "tool_use", ID: callID, Name: tool, Input: state["input"]})
+				status := stringValue(state["status"])
+				if status == "completed" || status == "error" {
+					result := state["output"]
+					if status == "error" {
+						result = state["error"]
+					}
+					toolMessages = append(toolMessages, Message{ID: fmt.Sprintf("oc-%d-tool", len(detail.Messages)+len(toolMessages)), Role: "tool", Result: result, Timestamp: message.timestamp, ToolUseID: callID, ToolName: tool, IsError: status == "error"})
+				}
 			case "step-start":
 				blocks = append(blocks, ContentBlock{Type: "tool_use", ID: stringValue(part["id"]), Name: "step"})
 			case "step-finish":

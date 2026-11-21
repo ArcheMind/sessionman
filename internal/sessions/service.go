@@ -45,6 +45,7 @@ type Summary struct {
 	UserPrompts        []string `json:"-" yaml:"-"`
 	StartedAt          string   `json:"startedAt,omitempty" yaml:"startedAt,omitempty"`
 	UpdatedAt          string   `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty"`
+	ClosedAt           string   `json:"-" yaml:"-"`
 	MessageCount       int      `json:"messageCount" yaml:"messageCount"`
 	Source             string   `json:"source" yaml:"source"`
 	collectUserPrompts bool

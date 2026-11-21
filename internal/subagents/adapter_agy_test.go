@@ -290,6 +290,7 @@ func TestAgyColdLoadFailureDoesNotCreateReplacement(t *testing.T) {
 }
 
 func TestAgyNormalLeavesNativePermissionConfiguration(t *testing.T) {
+	t.Setenv("SM_SESSION_REPORT", filepath.Join(t.TempDir(), "parent-session-report"))
 	s, record := agyServer(t, nil)
 	preset, err := presets.Read(s.Home, "agy-test")
 	if err != nil {
@@ -300,6 +301,9 @@ func TestAgyNormalLeavesNativePermissionConfiguration(t *testing.T) {
 	a := startAgyTest(t, s, "normal", false)
 	records := readFakeRecords(t, record)
 	for _, record := range records {
+		if record.Kind == "spawn" && record.Env["SM_SESSION_REPORT"] != "" {
+			t.Fatal("external subagent inherited parent interactive session report", record)
+		}
 		if record.Kind == "spawn" && (record.Env["SM_MCP_CWD"] != a.Cwd || record.Env["SM_HOST_AGENT_DIR"] != a.Dir || record.Env["SM_DELEGATION_DEPTH"] != "1") {
 			t.Fatal(record)
 		}

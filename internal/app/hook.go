@@ -16,6 +16,9 @@ import (
 )
 
 func (a App) hook(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "__session_start" {
+		return a.captureSessionStart(args[1:])
+	}
 	if len(args) > 0 && args[0] == "__agy_dispatch" {
 		return a.dispatchAgyHook(ctx, args[1:])
 	}
@@ -158,6 +161,9 @@ func (a App) dispatchAgyHook(ctx context.Context, args []string) error {
 	payload, err := io.ReadAll(a.Stdin)
 	if err != nil {
 		return err
+	}
+	if report := os.Getenv(sessionReportEnv); args[1] == "SessionStart" && report != "" {
+		a.logSessionTrackingError(recordSessionStart("agy", report, payload))
 	}
 	result, err := a.Hooks.DispatchAgy(ctx, a.Runner, args[1], payload)
 	if err != nil {

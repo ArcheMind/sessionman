@@ -51,6 +51,7 @@ type contentRow struct {
 	latestUser  string
 	turnCount   int
 	userPrompts []string
+	lastClosed  bool
 }
 
 type contentRowKind int
@@ -88,17 +89,20 @@ func buildContentRows(groups []sessionGroup, now time.Time) []contentRow {
 			latest := singleLine(item.LatestUserMessage, 60)
 			title = sessionMessagePreview(first, latest, 0)
 			updated := displaySessionTime(item.UpdatedAt, now)
+			if item.ClosedAt != "" {
+				updated = displaySessionTime(item.ClosedAt, now)
+			}
 			if group.Heading == "Global" {
 				text := fmt.Sprintf("%-10s  %-8s  %-20s  [%dt] %s", updated, item.Agent, displayWorkspace(item.Workspace, 20), item.TurnCount, title)
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount, userPrompts: item.UserPrompts,
+					agent: item.Agent, updated: updated, workspace: displayWorkspace(item.Workspace, 20), title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount, userPrompts: item.UserPrompts, lastClosed: item.ClosedAt != "",
 				})
 			} else {
 				text := fmt.Sprintf("%-10s  %-8s  [%dt] %s", updated, item.Agent, item.TurnCount, title)
 				rows = append(rows, contentRow{
 					text: text, itemIndex: itemIndex, kind: contentRowSession,
-					agent: item.Agent, updated: updated, title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount, userPrompts: item.UserPrompts,
+					agent: item.Agent, updated: updated, title: title, firstUser: first, latestUser: latest, turnCount: item.TurnCount, userPrompts: item.UserPrompts, lastClosed: item.ClosedAt != "",
 				})
 			}
 			itemIndex++
@@ -639,6 +643,9 @@ func styledContentRow(row contentRow, selected, color bool) string {
 			turns = "[?t] "
 		}
 		title = colorize(color, ansiDim, turns) + title
+		if row.lastClosed {
+			title += " " + colorize(color, ansiGreen, "[last closed]")
+		}
 		if row.workspace == "" {
 			return fmt.Sprintf("%s  %s  %s", updated, agent, title)
 		}

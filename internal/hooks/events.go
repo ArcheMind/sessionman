@@ -10,6 +10,8 @@ import (
 
 type Name string
 
+const SessionReportEnv = "SM_SESSION_REPORT"
+
 const (
 	SessionStart Name = "session.start"
 	SessionEnd   Name = "session.end"
@@ -69,14 +71,15 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 
 	if agent == "agy" {
 		var agy struct {
-			ConversationID    string   `json:"conversationId"`
-			WorkspacePaths    []string `json:"workspacePaths"`
-			CWD               string   `json:"cwd"`
-			TranscriptPath    string   `json:"transcriptPath"`
-			Model             string   `json:"modelName"`
-			LastUserInput     string   `json:"lastUserInput"`
-			TerminationReason string   `json:"terminationReason"`
-			FullyIdle         *bool    `json:"fullyIdle"`
+			ConversationID       string   `json:"conversationId"`
+			ParentConversationID string   `json:"parentConversationId"`
+			WorkspacePaths       []string `json:"workspacePaths"`
+			CWD                  string   `json:"cwd"`
+			TranscriptPath       string   `json:"transcriptPath"`
+			Model                string   `json:"modelName"`
+			LastUserInput        string   `json:"lastUserInput"`
+			TerminationReason    string   `json:"terminationReason"`
+			FullyIdle            *bool    `json:"fullyIdle"`
 		}
 		if err := json.Unmarshal(payload, &agy); err != nil {
 			return Event{}, err
@@ -84,6 +87,9 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 		native.SessionID, native.CWD, native.TranscriptPath, native.Model, native.Prompt = agy.ConversationID, agy.CWD, agy.TranscriptPath, agy.Model, agy.LastUserInput
 		if native.CWD == "" && len(agy.WorkspacePaths) > 0 {
 			native.CWD = agy.WorkspacePaths[0]
+		}
+		if agy.ParentConversationID != "" {
+			native.ParentSessionID = agy.ParentConversationID
 		}
 		native.Reason = agy.TerminationReason
 		if agy.FullyIdle != nil && !*agy.FullyIdle && native.Error == "" {
