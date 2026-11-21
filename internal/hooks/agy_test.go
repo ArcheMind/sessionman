@@ -2,10 +2,10 @@ package hooks
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ArcheMind/agentx/internal/hookmount"
 )
 
 func TestAgyHookSemantics(t *testing.T) {
@@ -23,7 +23,7 @@ func TestAgyHookSemantics(t *testing.T) {
 			t.Fatalf("incorrect portable mapping for %s", native)
 		}
 	}
-	if _, err := agentEvent("agy", "SessionEnd"); err == nil {
+	if _, err := hookmount.NativeEvent("agy", "SessionEnd"); err == nil {
 		t.Fatal("SessionEnd projected")
 	}
 }
@@ -34,17 +34,6 @@ func TestAgyHookUsesActualWorkspace(t *testing.T) {
 	event, err := Decode("agy", "SessionStart", payload)
 	if err != nil || event.CWD != workspace {
 		t.Fatalf("%+v %v", event, err)
-	}
-	home := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(workspace, ".agents"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(workspace, ".agents", "hooks.json"), []byte(`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo actual"}]}]}}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	list, err := (Service{Home: home, Project: event.CWD}).List()
-	if err != nil || len(list.Hooks) != 1 || !strings.Contains(list.Hooks[0].Command, "actual") {
-		t.Fatalf("%+v %v", list, err)
 	}
 }
 
@@ -59,23 +48,6 @@ func TestAgyHookOutputUsesNativeContract(t *testing.T) {
 	}
 }
 
-func TestAgyNativeProfileIsPreserved(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "hooks.json")
-	data := []byte(`{"native-project":{"PreInvocation":[{"type":"command","command":"echo native"}]}}`)
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	hooks, warnings, err := readConfig(path, ScopeProject)
-	if err != nil || len(hooks) != 0 || len(warnings) != 1 || !strings.Contains(warnings[0].Message, "native agy") {
-		t.Fatalf("%+v %+v %v", hooks, warnings, err)
-	}
-	actual, err := os.ReadFile(path)
-	if err != nil || string(actual) != string(data) {
-		t.Fatal("native config changed")
-	}
-}
-
 func TestAgyStopPreservesExecutionLoopState(t *testing.T) {
 	for _, test := range []struct{ failure, outcome string }{{"", "running"}, {"native failure", "error"}} {
 		payload, _ := json.Marshal(map[string]any{"conversationId": "native", "fullyIdle": false, "terminationReason": "background_pending", "error": test.failure})
@@ -87,5 +59,21 @@ func TestAgyStopPreservesExecutionLoopState(t *testing.T) {
 		if err != nil || !strings.Contains(output, `"decision":"stop"`) || strings.Contains(output, "SessionEnd") {
 			t.Fatalf("%s %v", output, err)
 		}
+	}
+}
+
+func TestAgyPreToolUseDecodesAndEncodesNativeContract(t *testing.T) {
+	payload := []byte(`{"conversationId":"c1","cwd":"/work","hookEventName":"PreToolUse","toolCall":{"id":"toolu_01","name":"run_command","args":{"CommandLine":"npm test"}}}`)
+	event, err := Decode("agy", "PreToolUse", payload)
+	if err != nil || event.Name != ToolBefore || event.SessionID != "c1" || event.ToolCall == nil || event.ToolCall.ID != "toolu_01" || event.ToolCall.Name != "run_command" || !strings.Contains(string(event.ToolCall.Args), "npm test") {
+		t.Fatalf("%+v %v", event, err)
+	}
+	output, err := encodeOutput("agy", "PreToolUse", "", "", "block", "not allowed")
+	if err != nil || output != "{\"decision\":\"deny\",\"reason\":\"not allowed\"}\n" {
+		t.Fatalf("%s %v", output, err)
+	}
+	output, err = encodeOutput("agy", "PreToolUse", "", "", "", "")
+	if err != nil || output != "{\"decision\":\"allow\"}\n" {
+		t.Fatalf("%s %v", output, err)
 	}
 }

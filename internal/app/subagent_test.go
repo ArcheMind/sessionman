@@ -17,10 +17,10 @@ func TestClaudeLaunchAttachesAgentXWithoutRegistration(t *testing.T) {
 	var output bytes.Buffer
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()
-	app.Hooks.Project = t.TempDir()
+	project := t.TempDir()
 	t.Setenv("SM_SUBAGENT_HOME", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", app.Hooks.Project, "--dry-run"}); err != nil {
+	if err := app.Run(context.Background(), []string{"--json", "claude", "--cwd", project, "--dry-run"}); err != nil {
 		t.Fatal(err)
 	}
 	var plan runtime.CommandPlan

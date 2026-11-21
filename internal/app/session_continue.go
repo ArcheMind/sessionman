@@ -133,9 +133,6 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		return err
 	}
 	if agent.ID == "agy" {
-		if err := a.prepareHooks(&runtime.RunRequest{Cwd: workspace}, "agy", true); err != nil {
-			return err
-		}
 		prepareAgyNativePlan("agy", &plan)
 	}
 	input := io.Reader(strings.NewReader(prompt))

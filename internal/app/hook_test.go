@@ -12,21 +12,21 @@ import (
 )
 
 func TestHookListUsesPublicConfigurationAndStructuredOutput(t *testing.T) {
-	project := t.TempDir()
-	path := filepath.Join(project, ".agents", "hooks.json")
+	configDir := t.TempDir()
+	path := filepath.Join(configDir, "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"./hooks/check.sh"}]}],"PreToolUse":[{"hooks":[{"type":"command","command":"native.sh"}]}]}}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"./hooks/check.sh"}]}],"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"gate.sh"}]}]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
-	application.Hooks = hooks.Service{Home: t.TempDir(), Project: project}
+	application.Hooks = hooks.Service{Home: t.TempDir(), ConfigDir: configDir}
 	if err := application.Run(context.Background(), []string{"--json", "hook", "list"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{`"event": "UserPromptSubmit"`, `"command": "./hooks/check.sh"`, `"portable": true`, `"PreToolUse"`, `not projected`} {
+	for _, expected := range []string{`"event": "UserPromptSubmit"`, `"command": "./hooks/check.sh"`, `"portable": true`, `"PreToolUse"`, `matcher has no portable subject`} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("output %q does not contain %q", stdout.String(), expected)
 		}
@@ -37,21 +37,21 @@ func TestHookListUsesPublicConfigurationAndStructuredOutput(t *testing.T) {
 }
 
 func TestHookListTextShowsPortableHooksAndWarning(t *testing.T) {
-	project := t.TempDir()
-	path := filepath.Join(project, ".agents", "hooks.json")
+	configDir := t.TempDir()
+	path := filepath.Join(configDir, "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"load.sh"}]}],"PreToolUse":[]}}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"load.sh"}]}],"PostToolUse":[]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout bytes.Buffer
 	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
-	application.Hooks = hooks.Service{Home: t.TempDir(), Project: project}
+	application.Hooks = hooks.Service{Home: t.TempDir(), ConfigDir: configDir}
 	if err := application.Run(context.Background(), []string{"hook", "list"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"SCOPE", "EVENT", "COMMAND", "SessionStart", "load.sh", "warning: PreToolUse"} {
+	for _, expected := range []string{"SCOPE", "EVENT", "COMMAND", "SessionStart", "load.sh", "warning: PostToolUse"} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("output %q does not contain %q", stdout.String(), expected)
 		}
@@ -70,36 +70,22 @@ func TestHookListRejectsOtherGrammar(t *testing.T) {
 	}
 }
 
-func TestAgentRunProjectsHooksIntoNativeLaunchArguments(t *testing.T) {
-	project := t.TempDir()
-	path := filepath.Join(project, ".agents", "hooks.json")
+func TestHookListWithoutConfigDirIsEmpty(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".agents", "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"load-policy"}]}]}}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"legacy"}]}]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tests := []struct {
-		agent    string
-		expected []string
-	}{
-		{"claude", []string{"--plugin-dir", ".agents"}},
-		{"codex", []string{"-c", "hooks.SessionStart", "--handler"}},
-		{"pi", []string{"--extension", "sessionman-hooks.ts"}},
+	var stdout bytes.Buffer
+	application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
+	application.Hooks = hooks.Service{Home: home}
+	if err := application.Run(context.Background(), []string{"hook", "list"}); err != nil {
+		t.Fatal(err)
 	}
-	for _, test := range tests {
-		t.Run(test.agent, func(t *testing.T) {
-			var stdout bytes.Buffer
-			application := New(false, strings.NewReader(""), &stdout, &bytes.Buffer{})
-			application.Hooks = hooks.Service{Home: t.TempDir(), Project: project}
-			if err := application.Run(context.Background(), []string{test.agent, "--cwd", project, "--dry-run"}); err != nil {
-				t.Fatal(err)
-			}
-			for _, expected := range test.expected {
-				if !strings.Contains(stdout.String(), expected) {
-					t.Fatalf("launch plan %q does not contain %q", stdout.String(), expected)
-				}
-			}
-		})
+	if !strings.Contains(stdout.String(), "No portable hooks configured.") || strings.Contains(stdout.String(), "legacy") {
+		t.Fatalf("output = %q", stdout.String())
 	}
 }

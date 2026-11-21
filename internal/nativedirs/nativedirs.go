@@ -3,9 +3,11 @@ package nativedirs
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -277,14 +279,6 @@ func ResolvedArgs(agent string) []string {
 	return nil
 }
 
-// GeminiDir returns the resolved gemini directory (native or overridden by C).
-func GeminiDir(fallbackHome string) string {
-	if ad := Cached("agy"); ad != nil && ad.ConfigDir != "" {
-		return filepath.Dir(ad.ConfigDir)
-	}
-	return NativeRoot("agy", fallbackHome)
-}
-
 // AgyAppDataDir returns the resolved agy app_data_dir (the directory
 // containing conversations/).
 func AgyAppDataDir(fallbackHome string) string {
@@ -308,8 +302,12 @@ type AgentDirs struct {
 	Symlinks []Symlink
 	// CDirs are directory entries Prepare creates in C so config links never
 	// dangle and the agent's own writes through them (e.g. skill installs) land in C.
-	CDirs        []string
-	PatchFiles   []PatchFile
+	CDirs      []string
+	PatchFiles []PatchFile
+	// GenHome is the composed root whose entries sm may generate; Generated
+	// lists those entries (relative to GenHome) that are generated this run.
+	GenHome      string
+	Generated    []string
 	SessionRoots []string
 	ConfigDir    string
 	NativeHome   string
@@ -479,6 +477,47 @@ func (ad *AgentDirs) dirs() []string {
 	return out
 }
 
+const generatedMarker = ".sessionman-generated"
+
+// staleGenerated lists entries a previous run generated that this run no
+// longer does; they must give way to the links that replace them.
+func (ad *AgentDirs) staleGenerated() []string {
+	if ad.GenHome == "" {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(ad.GenHome, generatedMarker))
+	if err != nil {
+		return nil
+	}
+	var previous []string
+	if json.Unmarshal(data, &previous) != nil {
+		return nil
+	}
+	current := map[string]bool{}
+	for _, name := range ad.Generated {
+		current[name] = true
+	}
+	var stale []string
+	for _, name := range previous {
+		if !current[name] {
+			stale = append(stale, filepath.Join(ad.GenHome, name))
+		}
+	}
+	return stale
+}
+
+// removeUnlessLink removes a generated entry so it can be rewritten; a link
+// is removed as a link, never followed into C.
+func removeUnlessLink(path string) error {
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return nil
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("remove generated entry %s: %w", path, err)
+	}
+	return nil
+}
+
 // Prepare validates the full plan (directories, symlinks, patch files) and
 // only then creates it, so a conflict leaves the filesystem untouched.
 func Prepare(ad *AgentDirs) error {
@@ -488,8 +527,16 @@ func Prepare(ad *AgentDirs) error {
 			return err
 		}
 	}
+	stale := map[string]bool{}
+	for _, path := range ad.staleGenerated() {
+		stale[path] = true
+	}
 	var links []Symlink
 	for _, link := range ad.Symlinks {
+		if stale[link.Link] {
+			links = append(links, link)
+			continue
+		}
 		needed, err := symlinkNeeded(link)
 		if err != nil {
 			return err
@@ -499,10 +546,20 @@ func Prepare(ad *AgentDirs) error {
 		}
 	}
 	for _, patch := range ad.PatchFiles {
-		if info, err := os.Lstat(patch.Path); err == nil && !info.Mode().IsRegular() {
+		if info, err := os.Lstat(patch.Path); err == nil && !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
 			return fmt.Errorf("patch %s exists and is not a regular file", patch.Path)
 		} else if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("check patch %s: %w", patch.Path, err)
+		}
+	}
+	for path := range stale {
+		if err := removeUnlessLink(path); err != nil {
+			return err
+		}
+	}
+	for _, name := range ad.Generated {
+		if err := removeUnlessLink(filepath.Join(ad.GenHome, name)); err != nil {
+			return err
 		}
 	}
 	for _, dir := range dirs {
@@ -525,6 +582,32 @@ func Prepare(ad *AgentDirs) error {
 			return fmt.Errorf("write patch %s: %w", patch.Path, err)
 		}
 	}
+	return ad.recordGenerated()
+}
+
+func (ad *AgentDirs) recordGenerated() error {
+	if ad.GenHome == "" {
+		return nil
+	}
+	marker := filepath.Join(ad.GenHome, generatedMarker)
+	if len(ad.Generated) == 0 {
+		if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove %s: %w", marker, err)
+		}
+		return nil
+	}
+	names := append([]string(nil), ad.Generated...)
+	sort.Strings(names)
+	data, err := json.Marshal(names)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(ad.GenHome, 0700); err != nil {
+		return fmt.Errorf("create directory %s: %w", ad.GenHome, err)
+	}
+	if err := os.WriteFile(marker, data, 0600); err != nil {
+		return fmt.Errorf("write %s: %w", marker, err)
+	}
 	return nil
 }
 
@@ -538,6 +621,10 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
+	mount, err := loadHookMount(dirs)
+	if err != nil {
+		return nil, err
+	}
 	piConfigEntries := []configEntry{
 		{"settings.json", false}, {"models.json", false}, {"AGENTS.md", false},
 		{"prompts", true}, {"themes", true}, {"skills", true}, {"extensions", true},
@@ -556,6 +643,9 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 			Symlink{filepath.Join(piHome, "mcp-auth.json"), filepath.Join(native, "mcp-auth.json")},
 		)
 		ad.linkConfig(piHome, configSource, piConfigEntries, dirs.ConfigDir != "")
+		if err := mount.mount(ad, "pi", piHome, configSource); err != nil {
+			return nil, err
+		}
 		ad.SessionRoots = []string{filepath.Join(piHome, "sessions")}
 	} else {
 		// C only: shadow home; sessions stay native
@@ -566,6 +656,9 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 			Symlink{filepath.Join(shadow, "mcp-auth.json"), filepath.Join(native, "mcp-auth.json")},
 		)
 		ad.linkConfig(shadow, configSource, piConfigEntries, true)
+		if err := mount.mount(ad, "pi", shadow, configSource); err != nil {
+			return nil, err
+		}
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(shadow, "sessions"), nativeSessions,
 		})
@@ -584,6 +677,10 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
+	mount, err := loadHookMount(dirs)
+	if err != nil {
+		return nil, err
+	}
 	configEntries := []configEntry{
 		{"config.toml", false}, {"AGENTS.md", false}, {"AGENTS.override.md", false},
 		{"skills", true}, {"hooks.json", false}, {"rules", true}, {"themes", true},
@@ -606,6 +703,9 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		ad.SessionRoots = []string{filepath.Join(codexHome, "sessions")}
 		// config entries symlinked into the session home
 		ad.linkConfig(codexHome, configSource, configEntries, dirs.ConfigDir != "")
+		if err := mount.mount(ad, "codex", codexHome, configSource); err != nil {
+			return nil, err
+		}
 		// auth stays native
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(codexHome, "auth.json"), filepath.Join(native, "auth.json"),
@@ -619,6 +719,9 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		ad.Limitation = "Codex C-only: session_index.jsonl diverges after thread delete"
 		// config entries from C
 		ad.linkConfig(shadow, configSource, configEntries, true)
+		if err := mount.mount(ad, "codex", shadow, configSource); err != nil {
+			return nil, err
+		}
 		// session data stays native
 		ad.Symlinks = append(ad.Symlinks,
 			Symlink{filepath.Join(shadow, "sessions"), filepath.Join(native, "sessions")},
@@ -643,6 +746,10 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		return ad, nil
 	}
 
+	mount, err := loadHookMount(dirs)
+	if err != nil {
+		return nil, err
+	}
 	configEntries := []configEntry{
 		{"settings.json", false}, {"CLAUDE.md", false}, {"agents", true}, {"commands", true},
 		{"skills", true}, {"hooks", true}, {"plugins", true}, {"output-styles", true},
@@ -662,6 +769,9 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		ad.Env["CLAUDE_CONFIG_DIR"] = claudeHome
 		ad.SessionRoots = []string{filepath.Join(claudeHome, "projects")}
 		ad.linkConfig(claudeHome, configSource, configEntries, dirs.ConfigDir != "")
+		if err := mount.mount(ad, "claude", claudeHome, configSource); err != nil {
+			return nil, err
+		}
 		// .claude.json holds account/state (credentials); always link to true native
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(claudeHome, ".claude.json"), nativeClaudeJSON,
@@ -672,6 +782,9 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		ad.Env["CLAUDE_CONFIG_DIR"] = shadow
 		ad.SessionRoots = []string{filepath.Join(native, "projects")}
 		ad.linkConfig(shadow, configSource, configEntries, true)
+		if err := mount.mount(ad, "claude", shadow, configSource); err != nil {
+			return nil, err
+		}
 		// .claude.json holds account/state (credentials); always link to true native
 		ad.Symlinks = append(ad.Symlinks,
 			Symlink{filepath.Join(shadow, ".claude.json"), nativeClaudeJSON},
@@ -750,10 +863,14 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 	}
 
 	// C set: gemini_dir is an sm-owned shadow because it also holds sm's own
-	// agy plugin, an sm artifact rather than user config; user config entries
+	// agy plugin (hooks and MCP), an sm artifact rather than user config; user config entries
 	// from C are symlinked into it.
 	geminiDir := native
 	if dirs.ConfigDir != "" {
+		mount, err := loadHookMount(dirs)
+		if err != nil {
+			return nil, err
+		}
 		shadow := shadowDir(dirs.ConfigDir, "agy")
 		geminiDir = filepath.Join(shadow, ".gemini")
 		ad.Args = append(ad.Args, "--gemini_dir="+geminiDir)
@@ -764,6 +881,9 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 			filepath.Join(geminiDir, "config", "settings.json"),
 			filepath.Join(configSource, "settings.json"),
 		})
+		if err := mount.mountAgy(ad, geminiDir); err != nil {
+			return nil, err
+		}
 	}
 
 	if dirs.SessionDir != "" {

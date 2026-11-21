@@ -75,9 +75,6 @@ func (a App) execAgent(ctx context.Context, args []string) error {
 		return err
 	}
 	if args[0] == "agy" {
-		if err := a.prepareHooks(&runtime.RunRequest{Cwd: cwd}, "agy", !dryRun); err != nil {
-			return err
-		}
 		prepareAgyNativePlan("agy", &plan)
 	}
 	if dryRun {

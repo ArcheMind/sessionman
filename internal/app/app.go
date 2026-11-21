@@ -403,9 +403,6 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
-		return err
-	}
 	plan, err := agent.Launch.PlanRun(request)
 	if err == nil {
 		prepareAgyNativePlan(agent.ID, &plan)
@@ -997,9 +994,6 @@ func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, det
 		if err := injectPiAgentX(a.Sessions.HomeDir, &request, !dryRun); err != nil {
 			return err
 		}
-	}
-	if err := a.prepareHooks(&request, agent.ID, !dryRun); err != nil {
-		return err
 	}
 	plan, err := agent.Launch.PlanRun(request)
 	if err == nil {

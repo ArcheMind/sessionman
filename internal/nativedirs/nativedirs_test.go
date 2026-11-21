@@ -124,37 +124,6 @@ func TestApplyToProcess(t *testing.T) {
 	}
 }
 
-func TestGeminiDirFollowsConfig(t *testing.T) {
-	resolvedMu.Lock()
-	resolved = map[string]*AgentDirs{
-		"agy": {ConfigDir: "/shadow/agy/.gemini/config"},
-	}
-	resolvedMu.Unlock()
-	defer func() {
-		resolvedMu.Lock()
-		resolved = nil
-		resolvedMu.Unlock()
-	}()
-
-	got := GeminiDir("/fallback")
-	want := "/shadow/agy/.gemini"
-	if got != want {
-		t.Errorf("GeminiDir = %q, want %q", got, want)
-	}
-}
-
-func TestGeminiDirFallback(t *testing.T) {
-	resolvedMu.Lock()
-	resolved = nil
-	resolvedMu.Unlock()
-
-	got := GeminiDir("/myhome")
-	want := "/myhome/.gemini"
-	if got != want {
-		t.Errorf("GeminiDir = %q, want %q", got, want)
-	}
-}
-
 func TestRestoreNativeEnvOnEmptyDirs(t *testing.T) {
 	resetCache(t)
 	t.Setenv("SM_NATIVE_CODEX_HOME", "set:/original/codex")

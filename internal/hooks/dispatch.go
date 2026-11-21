@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -14,20 +13,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/hookmount"
 	agentruntime "github.com/ArcheMind/agentx/internal/runtime"
 )
+
+type Handler = hookmount.Handler
 
 type DispatchResult struct {
 	Stdout   string
 	Stderr   string
 	ExitCode int
-}
-
-type Handler struct {
-	Command string  `json:"command"`
-	Matcher string  `json:"matcher,omitempty"`
-	Timeout float64 `json:"timeout"`
-	Project string  `json:"project,omitempty"`
 }
 
 type commandOutput struct {
@@ -50,22 +45,19 @@ type commandResult struct {
 }
 
 func DispatchOne(ctx context.Context, runner agentruntime.Runner, agent, event string, payload []byte, handler Handler) (DispatchResult, error) {
-	if !isPortableTarget(agent) {
+	if !hookmount.IsPortableTarget(agent) {
 		return DispatchResult{}, fmt.Errorf("unsupported hook agent %q", agent)
 	}
-	if !isPortableEvent(event) {
+	if !hookmount.IsPortableEvent(event) {
 		return DispatchResult{}, fmt.Errorf("unsupported portable hook event %q", event)
 	}
-	native, err := agentEvent(agent, event)
+	native, err := hookmount.NativeEvent(agent, event)
 	if err != nil {
 		return DispatchResult{}, err
 	}
 	canonical, input, err := canonicalInput(agent, native, event, payload)
 	if err != nil {
 		return DispatchResult{}, err
-	}
-	if handler.Project != "" && filepath.Clean(handler.Project) != filepath.Clean(canonical.CWD) {
-		return DispatchResult{}, nil
 	}
 	if !matches(handler.Matcher, matcherSubject(canonical)) {
 		return DispatchResult{}, nil
@@ -158,7 +150,7 @@ func aggregate(agent, event string, results []commandResult) (DispatchResult, er
 			contexts = append(contexts, result.output.HookSpecificOutput.AdditionalContext)
 		}
 		decision := strings.ToLower(result.output.Decision)
-		if (event == "UserPromptSubmit" || (agent == "agy" && event == "Stop")) && (decision == "block" || decision == "deny" || result.exitCode == 2) {
+		if (event == "UserPromptSubmit" || event == "PreToolUse" || (agent == "agy" && event == "Stop")) && (decision == "block" || decision == "deny" || result.exitCode == 2) {
 			blocked = true
 			if blockReason == "" {
 				blockReason = result.output.Reason
@@ -179,6 +171,9 @@ func aggregate(agent, event string, results []commandResult) (DispatchResult, er
 	if blocked {
 		if blockReason == "" {
 			blockReason = "Hook blocked the turn."
+			if event == "PreToolUse" {
+				blockReason = "Hook blocked the tool call."
+			}
 		}
 		output, err := encodeOutput(agent, event, strings.Join(systemMessages, "\n"), "", "block", blockReason)
 		return DispatchResult{Stdout: output, Stderr: strings.Join(diagnostics, "\n"), ExitCode: 0}, err
@@ -207,6 +202,11 @@ func encodeOutput(agent, event, systemMessage, additionalContext, decision, reas
 			if decision == "block" {
 				output["decision"], output["reason"] = "continue", reason
 			}
+		} else if event == "PreToolUse" {
+			output["decision"] = "allow"
+			if decision == "block" {
+				output["decision"], output["reason"] = "deny", reason
+			}
 		} else {
 			return "", fmt.Errorf("unsupported agy portable output event %q", event)
 		}
@@ -224,12 +224,14 @@ func encodeOutput(agent, event, systemMessage, additionalContext, decision, reas
 	if systemMessage != "" {
 		output["systemMessage"] = systemMessage
 	}
-	if decision != "" {
+	if event == "PreToolUse" && decision != "" && agent != "pi" {
+		output["hookSpecificOutput"] = map[string]string{"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}
+	} else if decision != "" {
 		output["decision"] = decision
 		output["reason"] = reason
 	}
 	if additionalContext != "" {
-		native, err := agentEvent(agent, event)
+		native, err := hookmount.NativeEvent(agent, event)
 		if err != nil {
 			return "", err
 		}
@@ -262,29 +264,4 @@ func matches(pattern, subject string) bool {
 	}
 	matched, err := regexp.MatchString(pattern, subject)
 	return err == nil && matched
-}
-
-func (s Service) DispatchAgy(ctx context.Context, runner agentruntime.Runner, event string, payload []byte) (DispatchResult, error) {
-	canonical, input, err := canonicalInput("agy", event, event, payload)
-	if err != nil {
-		return DispatchResult{}, err
-	}
-	if canonical.CWD == "" {
-		return DispatchResult{}, fmt.Errorf("agy hook has no workspace path")
-	}
-	s.Project = canonical.CWD
-	result, err := s.List()
-	if err != nil {
-		return DispatchResult{}, err
-	}
-	handlers := []Handler{}
-	for _, item := range result.Hooks {
-		if item.Event == event {
-			handler := projectedHandler(item, s.Project)
-			if matches(handler.Matcher, matcherSubject(canonical)) {
-				handlers = append(handlers, handler)
-			}
-		}
-	}
-	return dispatchHandlers(ctx, runner, "agy", event, canonical, input, handlers)
 }

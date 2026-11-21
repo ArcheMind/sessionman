@@ -17,50 +17,61 @@ const (
 	SessionEnd   Name = "session.end"
 	TurnBefore   Name = "turn.before"
 	TurnAfter    Name = "turn.after"
+	ToolBefore   Name = "tool.before"
 )
 
+type ToolCall struct {
+	ID   string          `json:"id"`
+	Name string          `json:"name"`
+	Args json.RawMessage `json:"args"`
+}
+
 type Event struct {
-	Name                 Name   `json:"event" yaml:"event"`
-	SessionID            string `json:"session_id" yaml:"session_id"`
-	TurnID               string `json:"turn_id,omitempty" yaml:"turn_id,omitempty"`
-	CWD                  string `json:"cwd,omitempty" yaml:"cwd,omitempty"`
-	Source               string `json:"source,omitempty" yaml:"source,omitempty"`
-	Reason               string `json:"reason,omitempty" yaml:"reason,omitempty"`
-	Prompt               string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-	Outcome              string `json:"outcome,omitempty" yaml:"outcome,omitempty"`
-	TranscriptPath       string `json:"transcript_path,omitempty" yaml:"transcript_path,omitempty"`
-	ParentSessionID      string `json:"parent_session_id,omitempty" yaml:"parent_session_id,omitempty"`
-	Model                string `json:"model,omitempty" yaml:"model,omitempty"`
-	Agent                string `json:"agent,omitempty" yaml:"agent,omitempty"`
-	PermissionMode       string `json:"permission_mode,omitempty" yaml:"permission_mode,omitempty"`
-	LastAssistantMessage string `json:"last_assistant_message,omitempty" yaml:"last_assistant_message,omitempty"`
-	Error                string `json:"error,omitempty" yaml:"error,omitempty"`
-	StartedAt            string `json:"started_at,omitempty" yaml:"started_at,omitempty"`
-	EndedAt              string `json:"ended_at,omitempty" yaml:"ended_at,omitempty"`
-	DurationMS           int64  `json:"duration_ms,omitempty" yaml:"duration_ms,omitempty"`
+	Name                 Name      `json:"event" yaml:"event"`
+	SessionID            string    `json:"session_id" yaml:"session_id"`
+	TurnID               string    `json:"turn_id,omitempty" yaml:"turn_id,omitempty"`
+	CWD                  string    `json:"cwd,omitempty" yaml:"cwd,omitempty"`
+	Source               string    `json:"source,omitempty" yaml:"source,omitempty"`
+	Reason               string    `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Prompt               string    `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+	Outcome              string    `json:"outcome,omitempty" yaml:"outcome,omitempty"`
+	TranscriptPath       string    `json:"transcript_path,omitempty" yaml:"transcript_path,omitempty"`
+	ParentSessionID      string    `json:"parent_session_id,omitempty" yaml:"parent_session_id,omitempty"`
+	Model                string    `json:"model,omitempty" yaml:"model,omitempty"`
+	Agent                string    `json:"agent,omitempty" yaml:"agent,omitempty"`
+	PermissionMode       string    `json:"permission_mode,omitempty" yaml:"permission_mode,omitempty"`
+	LastAssistantMessage string    `json:"last_assistant_message,omitempty" yaml:"last_assistant_message,omitempty"`
+	Error                string    `json:"error,omitempty" yaml:"error,omitempty"`
+	StartedAt            string    `json:"started_at,omitempty" yaml:"started_at,omitempty"`
+	EndedAt              string    `json:"ended_at,omitempty" yaml:"ended_at,omitempty"`
+	DurationMS           int64     `json:"duration_ms,omitempty" yaml:"duration_ms,omitempty"`
+	ToolCall             *ToolCall `json:"tool_call,omitempty" yaml:"tool_call,omitempty"`
 }
 
 type nativeEvent struct {
-	HookEventName        string `json:"hook_event_name"`
-	SessionID            string `json:"session_id"`
-	TurnID               string `json:"turn_id"`
-	CWD                  string `json:"cwd"`
-	Source               string `json:"source"`
-	Reason               string `json:"reason"`
-	Prompt               string `json:"prompt"`
-	Text                 string `json:"text"`
-	Outcome              string `json:"outcome"`
-	TranscriptPath       string `json:"transcript_path"`
-	ParentSessionID      string `json:"parent_session_id"`
-	Model                string `json:"model"`
-	Agent                string `json:"agent"`
-	AgentType            string `json:"agent_type"`
-	PermissionMode       string `json:"permission_mode"`
-	LastAssistantMessage string `json:"last_assistant_message"`
-	Error                string `json:"error"`
-	StartedAt            string `json:"started_at"`
-	EndedAt              string `json:"ended_at"`
-	DurationMS           int64  `json:"duration_ms"`
+	HookEventName        string          `json:"hook_event_name"`
+	SessionID            string          `json:"session_id"`
+	TurnID               string          `json:"turn_id"`
+	CWD                  string          `json:"cwd"`
+	Source               string          `json:"source"`
+	Reason               string          `json:"reason"`
+	Prompt               string          `json:"prompt"`
+	Text                 string          `json:"text"`
+	Outcome              string          `json:"outcome"`
+	TranscriptPath       string          `json:"transcript_path"`
+	ParentSessionID      string          `json:"parent_session_id"`
+	Model                string          `json:"model"`
+	Agent                string          `json:"agent"`
+	AgentType            string          `json:"agent_type"`
+	PermissionMode       string          `json:"permission_mode"`
+	LastAssistantMessage string          `json:"last_assistant_message"`
+	Error                string          `json:"error"`
+	StartedAt            string          `json:"started_at"`
+	EndedAt              string          `json:"ended_at"`
+	DurationMS           int64           `json:"duration_ms"`
+	ToolName             string          `json:"tool_name"`
+	ToolInput            json.RawMessage `json:"tool_input"`
+	ToolUseID            string          `json:"tool_use_id"`
 }
 
 func Decode(agent, event string, payload []byte) (Event, error) {
@@ -80,6 +91,11 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 			LastUserInput        string   `json:"lastUserInput"`
 			TerminationReason    string   `json:"terminationReason"`
 			FullyIdle            *bool    `json:"fullyIdle"`
+			ToolCall             *struct {
+				ID   string          `json:"id"`
+				Name string          `json:"name"`
+				Args json.RawMessage `json:"args"`
+			} `json:"toolCall"`
 		}
 		if err := json.Unmarshal(payload, &agy); err != nil {
 			return Event{}, err
@@ -92,6 +108,9 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 			native.ParentSessionID = agy.ParentConversationID
 		}
 		native.Reason = agy.TerminationReason
+		if agy.ToolCall != nil {
+			native.ToolName, native.ToolInput, native.ToolUseID = agy.ToolCall.Name, agy.ToolCall.Args, agy.ToolCall.ID
+		}
 		if agy.FullyIdle != nil && !*agy.FullyIdle && native.Error == "" {
 			native.Outcome = "running"
 		}
@@ -141,6 +160,12 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 		if result.Prompt == "" && agent == "pi" {
 			result.Prompt = native.Text
 		}
+	case ToolBefore:
+		args := native.ToolInput
+		if len(args) == 0 {
+			args = json.RawMessage("{}")
+		}
+		result.ToolCall = &ToolCall{ID: native.ToolUseID, Name: native.ToolName, Args: args}
 	case TurnAfter:
 		if agent == "agy" {
 			result.Reason = native.Reason
@@ -153,10 +178,10 @@ func Decode(agent, event string, payload []byte) (Event, error) {
 
 func eventName(agent, event string) (Name, error) {
 	events := map[string]map[string]Name{
-		"agy":    {"SessionStart": SessionStart, "Stop": TurnAfter},
-		"claude": {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "Stop": TurnAfter, "StopFailure": TurnAfter},
-		"codex":  {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "Stop": TurnAfter, "Interrupt": TurnAfter},
-		"pi":     {"session_start": SessionStart, "session_shutdown": SessionEnd, "input": TurnBefore, "agent_settled": TurnAfter},
+		"agy":    {"SessionStart": SessionStart, "PreToolUse": ToolBefore, "Stop": TurnAfter},
+		"claude": {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "PreToolUse": ToolBefore, "Stop": TurnAfter, "StopFailure": TurnAfter},
+		"codex":  {"SessionStart": SessionStart, "SessionEnd": SessionEnd, "UserPromptSubmit": TurnBefore, "PreToolUse": ToolBefore, "Stop": TurnAfter, "Interrupt": TurnAfter},
+		"pi":     {"session_start": SessionStart, "session_shutdown": SessionEnd, "input": TurnBefore, "tool_call": ToolBefore, "agent_settled": TurnAfter},
 	}
 	agentEvents, ok := events[agent]
 	if !ok {
