@@ -1324,7 +1324,7 @@ type structuredError struct {
 func WriteError(writer io.Writer, args []string, err error) error {
 	format, _, formatErr := parseOutputFormat(args)
 	if formatErr != nil || format == OutputText {
-		_, writeErr := fmt.Fprintf(writer, "ax: %v\n", err)
+		_, writeErr := fmt.Fprintf(writer, "sm: %v\n", err)
 		return writeErr
 	}
 	envelope := errorEnvelope{Error: structuredError{

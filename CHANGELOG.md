@@ -4,6 +4,10 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- Prefix text-mode errors with `sm:` instead of the old `ax:` name.
+
 ## [0.15.9] - 2026-11-20
 
 ### Added
