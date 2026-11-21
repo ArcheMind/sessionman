@@ -4,6 +4,27 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.15.9] - 2026-11-20
+
+### Added
+
+- `tool.before` portable hook event (`PreToolUse`): runs before every tool
+  call; a block decision or exit 2 denies the call with its reason. Mapped to
+  Claude/Codex/Agy `PreToolUse` and Pi `tool_call`.
+
+### Changed
+
+- Portable hooks are read only from `<C>/hooks.json` and take effect only when
+  a User Config directory (`--config-dir`/`SM_CONFIG_DIR`) is set.
+- Hooks are mounted only through the composed native root; Agy hooks and the
+  SessionMan MCP server are injected only with a User Config directory.
+
+### Removed
+
+- `~/.agents/hooks.json` and project `.agents/hooks.json` hook sources.
+- Per-agent hook projection (`--plugin-dir`, `-c hooks.*`, `--extension`) and
+  the Agy plugin written into the native `~/.gemini`.
+
 ## [0.15.8] - 2026-11-20
 
 ### Fixed
