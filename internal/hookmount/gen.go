@@ -36,6 +36,16 @@ func IsPortableTarget(agent string) bool {
 	}
 }
 
+// HasAgentHooks reports whether any configured hook projects onto agent.
+func HasAgentHooks(agent string, hooks []Hook) bool {
+	for _, item := range hooks {
+		if _, err := NativeEvent(agent, item.Event); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // NativeEvent maps a portable (user configuration) event to an agent's own name.
 func NativeEvent(agent, event string) (string, error) {
 	mapping := map[string]map[string]string{

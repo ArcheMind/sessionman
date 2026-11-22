@@ -61,12 +61,18 @@ func (m *hookMount) mount(ad *AgentDirs, agent, home, configSource string) error
 	}
 	switch agent {
 	case "codex":
+		if !hookmount.HasAgentHooks("codex", m.hooks) {
+			return nil
+		}
 		content, err := hookmount.CodexHooks(m.executable, m.hooks)
 		if err != nil {
 			return err
 		}
 		ad.unlink(home, "hooks.json")
 		ad.generate(home, "hooks.json", content)
+		// Codex 0.170+ skips hooks.json unless persisted trust exists or hook trust
+		// is bypassed; sm generated this hooks.json from the caller's vetted C dir.
+		ad.Args = append(ad.Args, "--dangerously-bypass-hook-trust")
 	case "claude":
 		base, err := os.ReadFile(filepath.Join(configSource, "settings.json"))
 		if err != nil && !os.IsNotExist(err) {

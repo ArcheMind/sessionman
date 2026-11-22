@@ -3,6 +3,7 @@ package nativedirs
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -217,5 +218,57 @@ func TestInvalidHooksJSONFailsResolution(t *testing.T) {
 	writeFile(t, filepath.Join(c, "hooks.json"), `{`)
 	if _, err := Resolve("claude", Dirs{ConfigDir: c}); err == nil {
 		t.Fatal("invalid hooks.json accepted")
+	}
+}
+
+func TestCodexHookTrustFlagFollowsMountedPortableHooks(t *testing.T) {
+	const flag = "--dangerously-bypass-hook-trust"
+	t.Setenv("CODEX_HOME", codexAuth(t))
+
+	// With portable hooks in C (both C-only and S+C): flag is included.
+	cWithHooks := t.TempDir()
+	writeFile(t, filepath.Join(cWithHooks, "hooks.json"), toolHooks)
+	for _, dirs := range []Dirs{{ConfigDir: cWithHooks}, {SessionDir: t.TempDir(), ConfigDir: cWithHooks}} {
+		ad, err := Resolve("codex", dirs)
+		if err != nil {
+			t.Fatalf("Resolve(%+v): %v", dirs, err)
+		}
+		if !slices.Contains(ad.Args, flag) {
+			t.Fatalf("Resolve(%+v).Args = %q, want %s", dirs, ad.Args, flag)
+		}
+	}
+
+	// Empty C, empty hooks object, non-portable-only hooks, S-only, or native: flag is omitted.
+	cEmpty := t.TempDir()
+	cEmptyHooks := t.TempDir()
+	writeFile(t, filepath.Join(cEmptyHooks, "hooks.json"), `{"hooks":{}}`)
+	cNonPortable := t.TempDir()
+	writeFile(t, filepath.Join(cNonPortable, "hooks.json"), `{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"noop"}]}]}}`)
+	for _, dirs := range []Dirs{
+		{},
+		{SessionDir: t.TempDir()},
+		{ConfigDir: cEmpty},
+		{SessionDir: t.TempDir(), ConfigDir: cEmpty},
+		{ConfigDir: cEmptyHooks},
+		{ConfigDir: cNonPortable},
+	} {
+		ad, err := Resolve("codex", dirs)
+		if err != nil {
+			t.Fatalf("Resolve(%+v): %v", dirs, err)
+		}
+		if slices.Contains(ad.Args, flag) {
+			t.Fatalf("Resolve(%+v).Args = %q, should omit %s", dirs, ad.Args, flag)
+		}
+	}
+
+	// Non-codex agents never receive Codex's hook-trust flag.
+	for _, agent := range []string{"claude", "pi", "agy"} {
+		ad, err := Resolve(agent, Dirs{ConfigDir: cWithHooks})
+		if err != nil {
+			t.Fatalf("Resolve(%s): %v", agent, err)
+		}
+		if slices.Contains(ad.Args, flag) {
+			t.Fatalf("Resolve(%s).Args = %q, should not contain %s", agent, ad.Args, flag)
+		}
 	}
 }

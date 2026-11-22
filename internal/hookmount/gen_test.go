@@ -162,3 +162,21 @@ func TestAgyPluginCarriesMCPAndSupportedHooksOnly(t *testing.T) {
 		t.Fatalf("no-hook plugin = %v %v", files, err)
 	}
 }
+
+func TestHasAgentHooks(t *testing.T) {
+	if hookmount.HasAgentHooks("codex", nil) {
+		t.Fatal("nil hooks should not match codex")
+	}
+	dir := t.TempDir()
+	writeConfig(t, filepath.Join(dir, "hooks.json"), `{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"prompt"}]}]}}`)
+	result, err := hookmount.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hookmount.HasAgentHooks("codex", result.Hooks) {
+		t.Fatal("UserPromptSubmit should match codex")
+	}
+	if hookmount.HasAgentHooks("agy", result.Hooks) {
+		t.Fatal("UserPromptSubmit should not match agy")
+	}
+}

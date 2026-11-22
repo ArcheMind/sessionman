@@ -37,8 +37,34 @@ func prepareAgent(plan *CommandPlan) error {
 	if err := nativedirs.Ready(plan.Agent, true); err != nil {
 		return err
 	}
-	plan.Args = append(nativedirs.ResolvedArgs(plan.Agent), plan.Args...)
+	plan.Args = prependResolvedArgs(nativedirs.ResolvedArgs(plan.Agent), plan.Args)
 	return nil
+}
+
+func prependResolvedArgs(resolved, args []string) []string {
+	if len(resolved) == 0 {
+		return args
+	}
+	out := make([]string, 0, len(resolved)+len(args))
+	for _, arg := range resolved {
+		if arg == "--dangerously-bypass-hook-trust" && hasFlagBeforeTerminator(args, arg) {
+			continue
+		}
+		out = append(out, arg)
+	}
+	return append(out, args...)
+}
+
+func hasFlagBeforeTerminator(args []string, target string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			return false
+		}
+		if arg == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options ExecuteOptions) (CommandResult, error) {
