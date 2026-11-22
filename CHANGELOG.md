@@ -4,9 +4,20 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-22
+
+### Changed
+
+- Unified headless execution (`sm session continue` and `ExternalSubagent`) onto shared protocol clients:
+  - Added `internal/acp` (`acp.Client`) and unified AGY (`agy acp --stdio`), Claude (`claude-agent-acp`), and Codex (`codex-acp`) onto one ACP execution path with capability negotiation (`session/resume`/`session/load`, standard `systemPrompt`, category-based `configOptions`, `_session/steering`, and Codex `_codex/hooks/trust`).
+  - Added `internal/pirpc` (`pirpc.Client`) and unified Pi `session continue` and `ExternalSubagent` onto `pi --mode rpc --no-approve`.
+  - Removed legacy `OneShot`, `Stream`, and `AppServer` headless execution transports, per-agent Claude/Codex subagent adapters, and OneShot stdout stream parsers; added `TestSingleHeadlessExecutionPathGuard`.
+  - SessionMan owns native session preparation, S/C directory isolation, hook mounting, and canonical delta readback; ACP loads prepared native sessions directly.
+
 ### Fixed
 
 - Prefix text-mode errors with `sm:` instead of the old `ax:` name.
+- Pass `--dangerously-bypass-hook-trust` when mounting native Codex CLI hooks and support `_codex/hooks/trust` over ACP.
 
 ## [0.15.9] - 2026-11-20
 
