@@ -39,23 +39,20 @@ type Transport string
 
 const (
 	Interactive Transport = "interactive"
-	OneShot     Transport = "one-shot"
-	Stream      Transport = "stream"
-	AppServer   Transport = "app-server"
 	RPC         Transport = "rpc"
 	ACP         Transport = "acp"
 	Exec        Transport = "exec"
 )
 
-type Setting struct {
-	Method string
-	Params map[string]any
-}
 type Plan struct {
+	Executable   string
 	Args         []string
+	Env          map[string]string
 	Params       map[string]any
-	Settings     []Setting
-	PromptPrefix string
+	Model        string
+	Effort       string
+	Mode         string
+	SystemPrompt string
 }
 
 var sessionID = regexp.MustCompile(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`)

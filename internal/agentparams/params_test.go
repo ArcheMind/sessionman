@@ -2,7 +2,6 @@ package agentparams
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -33,10 +32,8 @@ func TestTransportBehavior(t *testing.T) {
 		want  []string
 	}{
 		{"claude", Interactive, Request{Model: "opus", Mode: ModeYolo, Session: testUUID}, []string{"--resume", testUUID, "--dangerously-skip-permissions", "--model", "opus"}},
-		{"claude", Stream, Request{Model: "opus", Mode: ModeNormal}, []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--model", "opus"}},
 		{"codex", Interactive, Request{Model: "gpt-6", Mode: ModeYolo, Session: testUUID}, []string{"resume", testUUID, "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-6"}},
-		{"codex", OneShot, Request{Mode: ModeNormal}, []string{"exec", "--json", "--skip-git-repo-check", "-c", `approval_policy="never"`, "-"}},
-		{"pi", OneShot, Request{Model: "native", Effort: "low", Mode: ModeYolo}, []string{"--print", "--mode", "json", "--no-approve", "--thinking", "low", "--model", "native"}},
+		{"pi", RPC, Request{Model: "native", Effort: "low", Mode: ModeYolo}, []string{"--mode", "rpc", "--no-approve", "--thinking", "low", "--model", "native"}},
 		{"pi", Exec, Request{Model: "native"}, []string{"--print", "--mode", "json", "--model", "native"}},
 		{"agy", Exec, Request{Model: "gemini", Session: testUUID}, []string{"--input-format", "stream-json", "--output-format", "stream-json", "--conversation", testUUID, "--model", "gemini"}},
 		{"opencode", Interactive, Request{Session: "token"}, []string{"--session", "token"}},
@@ -54,33 +51,28 @@ func TestTransportBehavior(t *testing.T) {
 	}
 }
 
-func TestStructuredTransportsAndMCP(t *testing.T) {
+func TestACPTransportsCarryUnifiedFields(t *testing.T) {
 	mcp := MCPConfig{Servers: map[string]MCPServer{"bridge": {Command: "node", Args: []string{"bridge.mjs"}, Env: map[string]string{"A": "1"}}}}
 	agy, err := Build("agy", ACP, Request{Cwd: "/ws", Model: "gemini", Effort: "high", Mode: ModeYolo, Session: "native", SystemPrompt: "role", MCP: mcp})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(agy.Args, []string{"acp", "--stdio", "--dangerously-skip-permissions"}) || agy.Params["sessionId"] != "native" || len(agy.Settings) != 2 || agy.Settings[0].Params["modelId"] != "gemini" || agy.Settings[1].Params["value"] != "high" || agy.PromptPrefix != "role" {
-		t.Fatalf("ACP %#v", agy)
+	if agy.Executable != "agy" || !reflect.DeepEqual(agy.Args, []string{"acp", "--stdio", "--dangerously-skip-permissions"}) || agy.Params["sessionId"] != "native" || agy.Model != "gemini" || agy.Effort != "high" || agy.SystemPrompt != "role" {
+		t.Fatalf("agy ACP %#v", agy)
 	}
-	codex, err := Build("codex", AppServer, Request{Cwd: "/ws", Model: "gpt-6", Effort: "high", Mode: ModeYolo, Session: testUUID, SystemPrompt: "role", MCP: mcp, Flags: []string{"--verbose"}})
+	claude, err := Build("claude", ACP, Request{Cwd: "/ws", Model: "opus", Effort: "high", Mode: ModeYolo, Session: testUUID, SystemPrompt: "role", MCP: mcp})
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := codex.Params["config"].(map[string]any)
-	if !reflect.DeepEqual(codex.Args, []string{"app-server", "--verbose"}) || codex.Params["threadId"] != testUUID || codex.Params["excludeTurns"] != true || codex.Params["approvalPolicy"] != "never" || codex.Params["sandbox"] != "danger-full-access" || codex.Params["developerInstructions"] != "role" || config["model_reasoning_effort"] != "high" || config["mcp_servers"] == nil {
-		t.Fatalf("AppServer %#v", codex)
+	if claude.Executable != "claude-agent-acp" || claude.Params["sessionId"] != testUUID || claude.Model != "opus" || claude.Effort != "high" || claude.Mode != "bypassPermissions" || claude.SystemPrompt != "role" {
+		t.Fatalf("claude ACP %#v", claude)
 	}
-	claudeInteractive, err := Build("claude", Interactive, Request{MCP: mcp})
+	codex, err := Build("codex", ACP, Request{Cwd: "/ws", Model: "gpt-6", Effort: "high", Mode: ModeYolo, Session: testUUID, SystemPrompt: "role", MCP: mcp, Flags: []string{"--verbose"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	claudeOneShot, err := Build("claude", OneShot, Request{MCP: mcp})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(strings.Join(claudeInteractive.Args, " "), "--strict-mcp-config") || !strings.Contains(strings.Join(claudeOneShot.Args, " "), "--strict-mcp-config") {
-		t.Fatal("MCP strictness differs by transport")
+	if codex.Executable != "codex-acp" || !reflect.DeepEqual(codex.Args, []string{"--verbose"}) || codex.Params["sessionId"] != testUUID || codex.Model != "gpt-6" || codex.Effort != "high" || codex.Mode != "agent-full-access" || codex.Env["INITIAL_AGENT_MODE"] != "agent-full-access" || codex.SystemPrompt != "role" {
+		t.Fatalf("codex ACP %#v", codex)
 	}
 }
 
@@ -91,13 +83,17 @@ func TestRejectsUnsupportedAndConflictingParameters(t *testing.T) {
 		r     Request
 	}{
 		{"codex", Interactive, Request{UserConfig: boolPtr(false)}},
-		{"pi", OneShot, Request{MCP: MCPConfig{Servers: map[string]MCPServer{"x": {Command: "node"}}}}},
-		{"agy", OneShot, Request{SystemPrompt: "role"}},
+		{"codex", ACP, Request{UserConfig: boolPtr(false)}},
+		{"claude", ACP, Request{UserConfig: boolPtr(false)}},
+		{"pi", RPC, Request{MCP: MCPConfig{Servers: map[string]MCPServer{"x": {Command: "node"}}}}},
+		{"agy", Exec, Request{SystemPrompt: "role"}},
 		{"opencode", Interactive, Request{Mode: ModeYolo}},
 		{"dsh", Interactive, Request{Model: "model"}},
 		{"claude", Interactive, Request{Model: "opus", Flags: []string{"--model=sonnet"}}},
 		{"codex", Interactive, Request{Effort: "high", Flags: []string{"--config=model_reasoning_effort=low"}}},
 		{"claude", Interactive, Request{Session: "bad"}},
+		{"claude", ACP, Request{Session: "bad"}},
+		{"codex", ACP, Request{Session: "bad"}},
 		{"claude", Interactive, Request{Effort: "ultra"}},
 	}
 	for _, tc := range cases {
@@ -146,101 +142,8 @@ func TestPiProjectFileTrustFlagDoesNotConflictWithMode(t *testing.T) {
 		t.Fatal(got.Args)
 	}
 }
+
 func boolPtr(v bool) *bool { return &v }
-
-func TestOneShotClaudePreservesNativeResumeAndMCP(t *testing.T) {
-	mcp := MCPConfig{Servers: map[string]MCPServer{"harness": {Command: "/usr/bin/node", Args: []string{"bridge.mjs"}, Env: map[string]string{"KERNEL_URL": "http://localhost:1"}}}}
-	got, err := Build("claude", OneShot, Request{Cwd: "/ws", Model: "opus", Session: testUUID, Effort: "high", SystemPrompt: "stay focused", Mode: ModeYolo, MCP: mcp})
-	if err != nil {
-		t.Fatal(err)
-	}
-	args := strings.Join(got.Args, " ")
-	for _, want := range []string{"-p --output-format stream-json --verbose", "--resume " + testUUID, "--dangerously-skip-permissions", "--effort high", "--append-system-prompt stay focused", "--strict-mcp-config", "--model opus"} {
-		if !strings.Contains(args, want) {
-			t.Fatalf("args %q missing %q", args, want)
-		}
-	}
-	config := got.Args[findArg(t, got.Args, "--mcp-config")+1]
-	for _, want := range []string{`"command":"/usr/bin/node"`, `"args":["bridge.mjs"]`, `"env":{"KERNEL_URL":"http://localhost:1"}`, `"type":"stdio"`} {
-		if !strings.Contains(config, want) {
-			t.Fatalf("MCP config %q missing %q", config, want)
-		}
-	}
-	plain, err := Build("claude", OneShot, Request{Mode: ModeNormal})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(plain.Args, []string{"-p", "--output-format", "stream-json", "--verbose"}) {
-		t.Fatal(plain.Args)
-	}
-	if _, err := Build("claude", OneShot, Request{Session: "bad"}); err == nil {
-		t.Fatal("invalid UUID accepted")
-	}
-}
-
-func TestOneShotCodexTranslatesNativeMCPAndInstructions(t *testing.T) {
-	mcp := MCPConfig{Servers: map[string]MCPServer{"harness": {Command: "/usr/bin/node", Args: []string{"bridge.mjs"}, Env: map[string]string{"A": "1"}, EnvPassthrough: []string{"KERNEL_URL", "PATH"}}}}
-	got, err := Build("codex", OneShot, Request{Cwd: "/ws", Model: "gpt-6", Session: testUUID, Effort: "low", SystemPrompt: "be terse", Mode: ModeYolo, MCP: mcp})
-	if err != nil {
-		t.Fatal(err)
-	}
-	args := strings.Join(got.Args, " ")
-	for _, want := range []string{"exec resume --json --skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", `model_reasoning_effort="low"`, `developer_instructions="be terse"`, `mcp_servers.harness.command="/usr/bin/node"`, `mcp_servers.harness.args=["bridge.mjs"]`, `mcp_servers.harness.env.A="1"`, `mcp_servers.harness.env_vars=["KERNEL_URL","PATH"]`, "--model gpt-6"} {
-		if !strings.Contains(args, want) {
-			t.Fatalf("args %q missing %q", args, want)
-		}
-	}
-	if got.Args[len(got.Args)-1] != "-" || got.Args[len(got.Args)-2] != testUUID {
-		t.Fatalf("resume marker %q", got.Args)
-	}
-	normal, err := Build("codex", OneShot, Request{Mode: ModeNormal})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(strings.Join(normal.Args, " "), "sandbox_mode") || !strings.Contains(strings.Join(normal.Args, " "), `approval_policy="never"`) {
-		t.Fatal(normal.Args)
-	}
-	if _, err := Build("codex", OneShot, Request{Session: "bad"}); err == nil {
-		t.Fatal("invalid UUID accepted")
-	}
-}
-
-func TestOneShotPiAndAgyKeepNativeSessionRules(t *testing.T) {
-	pi, err := Build("pi", OneShot, Request{Model: "anthropic/claude-x", Session: "/state/abc.jsonl", Effort: "medium", SystemPrompt: "persona", Mode: ModeYolo})
-	if err != nil {
-		t.Fatal(err)
-	}
-	args := strings.Join(pi.Args, " ")
-	for _, want := range []string{"--print --mode json --no-approve", "--session /state/abc.jsonl", "--thinking medium", "--append-system-prompt persona", "--model anthropic/claude-x"} {
-		if !strings.Contains(args, want) {
-			t.Fatalf("Pi %q missing %q", args, want)
-		}
-	}
-	if strings.Contains(args, "--tools") {
-		t.Fatal("Pi tools were restricted", args)
-	}
-	agy, err := Build("agy", OneShot, Request{Model: "native-model", Session: testUUID, Effort: "high", Mode: ModeYolo})
-	if err != nil {
-		t.Fatal(err)
-	}
-	args = strings.Join(agy.Args, " ")
-	for _, want := range []string{"--input-format stream-json --output-format stream-json", "--conversation " + testUUID, "--effort high", "--model native-model", "--dangerously-skip-permissions"} {
-		if !strings.Contains(args, want) {
-			t.Fatalf("agy %q missing %q", args, want)
-		}
-	}
-	if _, err := Build("agy", OneShot, Request{MCP: MCPConfig{Servers: map[string]MCPServer{"x": {Command: "tool"}}}}); err == nil {
-		t.Fatal("temporary MCP accepted")
-	}
-	if _, err := Build("agy", OneShot, Request{Session: "bad"}); err == nil {
-		t.Fatal("invalid UUID accepted")
-	}
-	for _, agent := range []string{"opencode", "dsh"} {
-		if _, err := Build(agent, OneShot, Request{}); err == nil {
-			t.Fatalf("%s OneShot accepted", agent)
-		}
-	}
-}
 
 func TestAgyACPMCPInheritsExplicitEnvironment(t *testing.T) {
 	t.Setenv("AGY_TEST_PASSTHROUGH", "inherited")
@@ -250,38 +153,34 @@ func TestAgyACPMCPInheritsExplicitEnvironment(t *testing.T) {
 	}
 }
 
-func findArg(t *testing.T, args []string, want string) int {
-	t.Helper()
-	for i, arg := range args {
-		if arg == want {
-			return i
+// TestSingleHeadlessExecutionPathGuard enforces that every headless-capable
+// agent uses exactly one shared protocol transport (ACP preferred; Pi on RPC).
+func TestSingleHeadlessExecutionPathGuard(t *testing.T) {
+	for _, agent := range AgentOrder {
+		_, supportsACP := Build(agent, ACP, Request{Cwd: "/ws"})
+		_, supportsRPC := Build(agent, RPC, Request{Cwd: "/ws"})
+		if supportsACP == nil && supportsRPC == nil {
+			t.Fatalf("%s supports both ACP and RPC; keep one shared transport", agent)
+		}
+		if agent == "pi" {
+			if supportsRPC != nil {
+				t.Fatalf("pi must support RPC: %v", supportsRPC)
+			}
+		} else if agent != "opencode" {
+			if supportsACP != nil {
+				t.Fatalf("%s must support ACP: %v", agent, supportsACP)
+			}
 		}
 	}
-	t.Fatalf("args %q missing %q", args, want)
-	return -1
 }
 
-func TestCodexOmittedParametersKeepNativeDefaults(t *testing.T) {
-	plan, err := Build("codex", AppServer, Request{})
-	if err != nil {
-		t.Fatal(err)
+func TestCodexACPNormalAndYoloModes(t *testing.T) {
+	normal, err := Build("codex", ACP, Request{Cwd: "/ws", Mode: ModeNormal})
+	if err != nil || normal.Mode != "workspace-write" || normal.Env["INITIAL_AGENT_MODE"] != "workspace-write" {
+		t.Fatalf("normal=%#v err=%v", normal, err)
 	}
-	for _, key := range []string{"model", "cwd", "approvalPolicy", "sandbox", "config", "developerInstructions", "threadId"} {
-		if _, present := plan.Params[key]; present {
-			t.Fatalf("unspecified %s overrides a native default: %#v", key, plan.Params)
-		}
-	}
-}
-
-func TestOpenCodeResumeRequiresNativeSessionIdentity(t *testing.T) {
-	plan, err := Build("opencode", Interactive, Request{Session: "ses_native"})
-	if err != nil || !reflect.DeepEqual(plan.Args, []string{"--session", "ses_native"}) {
-		t.Fatalf("resume = %#v, %v", plan, err)
-	}
-	if _, err := Build("opencode", Interactive, Request{Session: "/tmp/imported-session"}); err == nil {
-		t.Fatal("accepted imported directory as a native session ID")
-	}
-	if _, err := Build("opencode", Interactive, Request{Session: "ses_native", Flags: []string{"-c"}}); err == nil {
-		t.Fatal("continue flag overrides the selected session")
+	yolo, err := Build("codex", ACP, Request{Cwd: "/ws", Mode: ModeYolo})
+	if err != nil || yolo.Mode != "agent-full-access" || yolo.Env["INITIAL_AGENT_MODE"] != "agent-full-access" {
+		t.Fatalf("yolo=%#v err=%v", yolo, err)
 	}
 }

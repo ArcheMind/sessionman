@@ -101,21 +101,3 @@ func codexMCPArgs(m MCPConfig) ([]string, error) {
 	}
 	return args, nil
 }
-func codexMCPConfig(m MCPConfig) map[string]any {
-	servers := map[string]any{}
-	for _, name := range serverNames(m) {
-		s := m.Servers[name]
-		entry := map[string]any{"command": s.Command}
-		if len(s.Args) > 0 {
-			entry["args"] = s.Args
-		}
-		if len(s.Env) > 0 {
-			entry["env"] = s.Env
-		}
-		if len(s.EnvPassthrough) > 0 {
-			entry["env_vars"] = s.EnvPassthrough
-		}
-		servers[name] = entry
-	}
-	return servers
-}

@@ -25,6 +25,31 @@ type Stream struct {
 	writeMu     sync.Mutex
 	stderrMu    sync.Mutex
 	stderrFinal string
+
+	customKill   func()
+	customWait   func() error
+	customStderr func() string
+}
+
+// NewPipeStream constructs a Stream backed by caller-provided pipes/callbacks
+// (for in-process tests and adapters without spawning an OS process).
+func NewPipeStream(stdin io.WriteCloser, stdout io.Reader, stderr func() string, kill func(), wait func() error) *Stream {
+	s := &Stream{
+		stdin:        stdin,
+		lines:        make(chan string, 64),
+		customKill:   kill,
+		customWait:   wait,
+		customStderr: stderr,
+	}
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+		for scanner.Scan() {
+			s.lines <- scanner.Text()
+		}
+		close(s.lines)
+	}()
+	return s
 }
 
 // StreamStarter starts a long-lived line-oriented process in its own process group.
@@ -104,10 +129,25 @@ func (s *Stream) WriteLine(line string) error {
 func (s *Stream) CloseStdin() error { return s.stdin.Close() }
 
 // Kill terminates the whole process group.
-func (s *Stream) Kill() { killProcessTree(s.cmd, s.debug, s.log) }
+func (s *Stream) Kill() {
+	if s.customKill != nil {
+		s.customKill()
+		return
+	}
+	if s.cmd != nil {
+		killProcessTree(s.cmd, s.debug, s.log)
+	}
+}
 
 func (s *Stream) Wait() error {
 	s.waitOnce.Do(func() {
+		if s.customWait != nil {
+			s.waitErr = s.customWait()
+			return
+		}
+		if s.cmd == nil {
+			return
+		}
 		s.waitErr = s.cmd.Wait()
 		s.stderrMu.Lock()
 		s.stderrFinal = s.readStderrLocked()
@@ -124,6 +164,9 @@ func (s *Stream) Wait() error {
 }
 
 func (s *Stream) Stderr() string {
+	if s.customStderr != nil {
+		return s.customStderr()
+	}
 	s.stderrMu.Lock()
 	defer s.stderrMu.Unlock()
 	return s.readStderrLocked()

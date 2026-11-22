@@ -2,69 +2,61 @@ package agentparams
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 )
 
 func buildCodex(t Transport, r Request) (Plan, error) {
-	if t != Interactive && t != OneShot && t != AppServer {
+	if t != Interactive && t != ACP {
 		return unsupported("codex", t, "transport")
 	}
 	if err := requireUUID("Codex resume", r.Session); err != nil {
 		return Plan{}, err
 	}
-	if r.UserConfig != nil && !*r.UserConfig && t != OneShot {
+	if r.UserConfig != nil && !*r.UserConfig {
 		return unsupported("codex", t, "user_config=false")
 	}
-	if t == AppServer {
-		config := map[string]any{}
-		if r.Effort != "" {
-			config["model_reasoning_effort"] = r.Effort
+	if t == ACP {
+		exe := os.Getenv("SM_CODEX_ACP_BIN")
+		if exe == "" {
+			exe = "codex-acp"
 		}
-		if len(r.MCP.Servers) > 0 {
-			config["mcp_servers"] = codexMCPConfig(r.MCP)
+		env := map[string]string{}
+		if os.Getenv("CODEX_PATH") == "" {
+			if codexBin, err := exec.LookPath("codex"); err == nil {
+				env["CODEX_PATH"] = codexBin
+			}
 		}
-		params := map[string]any{}
-		if r.Cwd != "" {
-			params["cwd"] = r.Cwd
-		}
-		if r.Model != "" {
-			params["model"] = r.Model
-		}
-		if r.SystemPrompt != "" {
-			params["developerInstructions"] = r.SystemPrompt
-		}
-		if len(config) > 0 {
-			params["config"] = config
-		}
+		mode := ""
 		if r.Mode == ModeYolo {
-			params["approvalPolicy"] = "never"
-			params["sandbox"] = "danger-full-access"
+			mode = "agent-full-access"
+			env["INITIAL_AGENT_MODE"] = mode
+		} else if r.Mode == ModeNormal {
+			mode = "workspace-write"
+			env["INITIAL_AGENT_MODE"] = mode
 		}
+		params := map[string]any{"cwd": r.Cwd, "mcpServers": AgyMCPServers(r.MCP)}
 		if r.Session != "" {
-			params["threadId"] = r.Session
-			params["excludeTurns"] = true
+			params["sessionId"] = r.Session
 		}
-		return Plan{Args: append([]string{"app-server"}, r.Flags...), Params: params}, nil
+		return Plan{
+			Executable:   exe,
+			Args:         append([]string{}, r.Flags...),
+			Env:          env,
+			Params:       params,
+			Model:        r.Model,
+			Effort:       r.Effort,
+			Mode:         mode,
+			SystemPrompt: r.SystemPrompt,
+		}, nil
 	}
 	args := []string{}
-	if t == OneShot {
-		args = append(args, "exec")
-		if r.Session != "" {
-			args = append(args, "resume")
-		}
-		args = append(args, "--json", "--skip-git-repo-check")
-	}
-	if t == Interactive && r.Session != "" {
+	if r.Session != "" {
 		args = append(args, "resume", r.Session)
 	}
 	if r.Mode == ModeYolo {
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
-	}
-	if t == OneShot && r.Mode != ModeYolo {
-		args = append(args, "-c", `approval_policy="never"`)
-	}
-	if r.UserConfig != nil && !*r.UserConfig {
-		args = append(args, "--ignore-user-config")
 	}
 	if r.Effort != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", r.Effort))
@@ -81,12 +73,6 @@ func buildCodex(t Transport, r Request) (Plan, error) {
 		args = append(args, "--model", r.Model)
 	}
 	args = append(args, r.Flags...)
-	if t == OneShot {
-		if r.Session != "" {
-			args = append(args, r.Session)
-		}
-		args = append(args, "-")
-	}
 	return Plan{Args: args}, nil
 }
 

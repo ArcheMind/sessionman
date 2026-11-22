@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,35 +19,175 @@ import (
 // continueRunner simulates one native agent turn: it appends the turn's
 // messages to the native session file and answers with the native stream.
 type continueRunner struct {
-	home    string
-	agent   string
-	model   string
-	reply   []sessions.Message
-	plans   []runtime.CommandPlan
-	prompts []string
-	fresh   string
+	home       string
+	agent      string
+	model      string
+	reply      []sessions.Message
+	plans      []runtime.CommandPlan
+	prompts    []string
+	resumedIDs []string
+	fresh      string
 }
 
 func (r *continueRunner) ExecuteJSONRPC(_ context.Context, _ runtime.CommandPlan, _ []json.RawMessage, _ json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(`{"id":2,"result":{"config":{"model_provider":"company"}}}`), nil
 }
 
-func (r *continueRunner) Execute(_ context.Context, plan runtime.CommandPlan, options runtime.ExecuteOptions) (runtime.CommandResult, error) {
+func (r *continueRunner) Execute(_ context.Context, _ runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	return runtime.CommandResult{}, fmt.Errorf("agent %s must use stream protocol (ACP/RPC), not OneShot Execute", r.agent)
+}
+
+func (r *continueRunner) StartStream(plan runtime.CommandPlan) (*runtime.Stream, error) {
+	if r.agent == "pi" {
+		return r.startPiStream(plan, nil, nil)
+	}
+	return r.startACPStream(plan, nil)
+}
+
+func (r *continueRunner) startACPStream(plan runtime.CommandPlan, hook func(emit func(any), sessionID string) error) (*runtime.Stream, error) {
 	r.plans = append(r.plans, plan)
-	prompt := ""
-	if options.Stdin != nil {
-		data, _ := io.ReadAll(options.Stdin)
-		prompt = string(data)
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	emit := func(v any) {
+		raw, _ := json.Marshal(v)
+		_, _ = io.WriteString(outW, string(raw)+"\n")
 	}
-	r.prompts = append(r.prompts, prompt)
-	switch r.agent {
-	case "claude":
-		return r.runClaude(plan, prompt)
-	case "codex":
-		return r.runCodex(plan, prompt)
-	default:
-		return r.runPi(plan, prompt)
+	go func() {
+		defer outW.Close()
+		var sessionID string
+		scanner := bufio.NewScanner(inR)
+		for scanner.Scan() {
+			var req struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+				Params struct {
+					SessionID string `json:"sessionId"`
+					Prompt    []struct {
+						Text string `json:"text"`
+					} `json:"prompt"`
+				} `json:"params"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &req) != nil {
+				continue
+			}
+			switch req.Method {
+			case "initialize":
+				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
+					"agentCapabilities": map[string]any{
+						"loadSession": true,
+						"sessionCapabilities": map[string]any{
+							"resume":       map[string]any{},
+							"systemPrompt": map[string]any{},
+						},
+					},
+				}})
+			case "_codex/hooks/list":
+				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"hooks": []any{}}})
+			case "session/new", "session/resume", "session/load":
+				sessionID = req.Params.SessionID
+				r.resumedIDs = append(r.resumedIDs, sessionID)
+				if sessionID == "" {
+					sessionID = r.fresh
+				}
+				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
+					"sessionId": sessionID,
+					"configOptions": []map[string]any{
+						{"id": "model", "category": "model"},
+						{"id": "effort", "category": "thought_level"},
+						{"id": "mode", "category": "mode"},
+					},
+				}})
+			case "session/set_config_option", "session/set_model":
+				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			case "session/prompt":
+				prompt := ""
+				if len(req.Params.Prompt) > 0 {
+					prompt = req.Params.Prompt[0].Text
+				}
+				r.prompts = append(r.prompts, prompt)
+				var err error
+				if r.agent == "claude" {
+					path := sessions.ClaudeProjectFile(r.home, plan.Cwd, sessionID)
+					err = r.appendTurn(path, "claude", prompt, func(detail sessions.Session) []map[string]any {
+						detail.ID = sessionID
+						return sessions.SerializeClaude(detail)
+					})
+				} else if r.agent == "codex" {
+					codexHome := plan.Env["CODEX_HOME"]
+					if codexHome == "" {
+						codexHome = os.Getenv("CODEX_HOME")
+					}
+					path, findErr := sessions.FindCodexRollout(codexHome, sessionID)
+					if findErr != nil {
+						err = findErr
+					} else {
+						err = r.appendTurn(path, "codex", prompt, sessions.SerializeCodex)
+					}
+				}
+				if err != nil {
+					emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": err.Error()}})
+					continue
+				}
+				emit(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": sessionID, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "done"}}}})
+				if hook != nil {
+					if herr := hook(emit, sessionID); herr != nil {
+						emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": herr.Error()}})
+						continue
+					}
+				}
+				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
+			}
+		}
+	}()
+	return runtime.NewPipeStream(inW, outR, func() string { return "" }, func() { _ = inW.Close(); _ = outW.Close() }, func() error { return nil }), nil
+}
+
+func (r *continueRunner) startPiStream(plan runtime.CommandPlan, beforeEmit func(emit func(string)) error, beforeSettle func(emit func(string)) error) (*runtime.Stream, error) {
+	r.plans = append(r.plans, plan)
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	emit := func(line string) {
+		_, _ = io.WriteString(outW, line+"\n")
 	}
+	go func() {
+		defer outW.Close()
+		scanner := bufio.NewScanner(inR)
+		for scanner.Scan() {
+			var cmd struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &cmd) != nil {
+				continue
+			}
+			if cmd.Type != "prompt" {
+				continue
+			}
+			r.prompts = append(r.prompts, cmd.Message)
+			res, err := r.runPi(plan, cmd.Message)
+			if err != nil {
+				emit(fmt.Sprintf(`{"type":"response","command":"prompt","success":false,"error":%q}`, err.Error()))
+				return
+			}
+			if beforeEmit != nil {
+				if err := beforeEmit(emit); err != nil {
+					emit(fmt.Sprintf(`{"type":"response","command":"prompt","success":false,"error":%q}`, err.Error()))
+					return
+				}
+			}
+			emit(`{"type":"response","command":"prompt","success":true,"data":{"disposition":"started"}}`)
+			lines := strings.Split(strings.TrimSuffix(res.Stdout, "\n"), "\n")
+			for i, line := range lines {
+				if i == len(lines)-1 && beforeSettle != nil {
+					if err := beforeSettle(emit); err != nil {
+						return
+					}
+				}
+				emit(line)
+			}
+		}
+	}()
+	return runtime.NewPipeStream(inW, outR, func() string { return "" }, func() { _ = inW.Close(); _ = outW.Close() }, func() error { return nil }), nil
 }
 
 func flagValue(args []string, name string) string {
@@ -82,40 +223,6 @@ func (r *continueRunner) appendTurn(path, agent, prompt string, write func(sessi
 		}
 	}
 	return os.WriteFile(path, buffer.Bytes(), 0o600)
-}
-
-func (r *continueRunner) runClaude(plan runtime.CommandPlan, prompt string) (runtime.CommandResult, error) {
-	id := flagValue(plan.Args, "--resume")
-	if id == "" {
-		id = r.fresh
-	}
-	path := sessions.ClaudeProjectFile(r.home, plan.Cwd, id)
-	detailID := id
-	if err := r.appendTurn(path, "claude", prompt, func(detail sessions.Session) []map[string]any {
-		detail.ID = detailID
-		return sessions.SerializeClaude(detail)
-	}); err != nil {
-		return runtime.CommandResult{}, err
-	}
-	stdout := fmt.Sprintf(`{"type":"system","subtype":"init","session_id":%q}`+"\n"+`{"type":"result","result":"done","is_error":false,"session_id":%q}`+"\n", id, id)
-	return runtime.CommandResult{Stdout: stdout}, nil
-}
-
-func (r *continueRunner) runCodex(plan runtime.CommandPlan, prompt string) (runtime.CommandResult, error) {
-	id := plan.Args[len(plan.Args)-2]
-	codexHome := plan.Env["CODEX_HOME"]
-	if codexHome == "" {
-		codexHome = os.Getenv("CODEX_HOME")
-	}
-	path, err := sessions.FindCodexRollout(codexHome, id)
-	if err != nil {
-		return runtime.CommandResult{}, err
-	}
-	if err := r.appendTurn(path, "codex", prompt, sessions.SerializeCodex); err != nil {
-		return runtime.CommandResult{}, err
-	}
-	stdout := fmt.Sprintf(`{"type":"thread.started","thread_id":%q}`+"\n"+`{"type":"turn.completed","usage":{}}`+"\n", id)
-	return runtime.CommandResult{Stdout: stdout}, nil
 }
 
 func (r *continueRunner) runPi(plan runtime.CommandPlan, prompt string) (runtime.CommandResult, error) {
@@ -211,11 +318,10 @@ func TestSessionContinueClaudeEmitsNamespacedDelta(t *testing.T) {
 	if message.Role != "assistant" || sessions.MessageText(message) != "the answer" {
 		t.Fatalf("message = %+v", message)
 	}
-	run := runner.plans[len(runner.plans)-1]
-	token := flagValue(run.Args, "--resume")
-	if token == "" {
-		t.Fatalf("claude plan missing --resume: %q", run.Args)
+	if len(runner.resumedIDs) == 0 || runner.resumedIDs[len(runner.resumedIDs)-1] == "" {
+		t.Fatalf("claude ACP missing sessionId: %q", runner.resumedIDs)
 	}
+	token := runner.resumedIDs[len(runner.resumedIDs)-1]
 	if !strings.HasPrefix(message.ID, token+":") {
 		t.Fatalf("id %q not namespaced by %q", message.ID, token)
 	}
@@ -238,9 +344,8 @@ func TestSessionContinueClaudeFreshSessionWithoutHistory(t *testing.T) {
 	if err := application.Run(context.Background(), []string{"session", "continue", "claude"}); err != nil {
 		t.Fatal(err)
 	}
-	run := runner.plans[len(runner.plans)-1]
-	if flagValue(run.Args, "--resume") != "" {
-		t.Fatalf("fresh turn must not resume: %q", run.Args)
+	if len(runner.resumedIDs) == 0 || runner.resumedIDs[len(runner.resumedIDs)-1] != "" {
+		t.Fatalf("fresh turn must not resume: %q", runner.resumedIDs)
 	}
 	delta := decodeDelta(t, stdout)
 	if delta.ID != runner.fresh {
@@ -363,11 +468,10 @@ func TestSessionContinueRoundTripAppendsDeltaAsIs(t *testing.T) {
 		t.Fatalf("second delta = %+v", delta2.Messages)
 	}
 
-	run2 := runner2.plans[len(runner2.plans)-1]
-	token := flagValue(run2.Args, "--resume")
-	if token == "" {
-		t.Fatalf("second turn must resume the imported history: %q", run2.Args)
+	if len(runner2.resumedIDs) == 0 || runner2.resumedIDs[len(runner2.resumedIDs)-1] == "" {
+		t.Fatalf("second turn must resume the imported history: %q", runner2.resumedIDs)
 	}
+	token := runner2.resumedIDs[len(runner2.resumedIDs)-1]
 	records := readClaudeRecords(t, sessions.ClaudeProjectFile(runner2.home, workspace, token))
 	joined := ""
 	// Only the imported history (first 2 records) is under test; the fake

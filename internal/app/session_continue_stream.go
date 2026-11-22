@@ -88,19 +88,39 @@ func (s *continueTranscriptStream) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
+// Wake binds sessionID (when non-empty) and triggers an immediate native-store read.
+func (s *continueTranscriptStream) Wake(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return
+	}
+	if sessionID != "" {
+		if s.sessionID != "" && s.sessionID != sessionID {
+			s.fail(fmt.Errorf("%s changed session identity while streaming", s.agent))
+			return
+		}
+		s.sessionID = sessionID
+	}
+	s.fail(s.readStore())
+}
+
 func (s *continueTranscriptStream) observe(line []byte) error {
 	if len(bytes.TrimSpace(line)) == 0 {
 		return nil
 	}
-	run, err := parseContinueStream(s.agent, s.model, expectedSession(s.agent, s.token), string(line))
-	if err != nil {
-		return err
+	var event struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
 	}
-	if run.sessionID != "" {
-		if s.sessionID != "" && s.sessionID != run.sessionID {
-			return fmt.Errorf("%s changed session identity while streaming", s.agent)
+	if err := json.Unmarshal(line, &event); err != nil {
+		return fmt.Errorf("invalid %s event: %w", s.agent, err)
+	}
+	if s.agent == "pi" && event.Type == "session" && event.ID != "" {
+		if s.sessionID != "" && s.sessionID != event.ID {
+			return fmt.Errorf("pi changed session identity while streaming")
 		}
-		s.sessionID = run.sessionID
+		s.sessionID = event.ID
 	}
 	return nil
 }

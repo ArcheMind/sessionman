@@ -327,14 +327,9 @@ func (s *Server) callStart(raw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("%w; no task started", err)
 	}
 	in.Mode = resolved.Mode
-	transport := agentparams.Stream
-	switch o.Agent {
-	case "codex":
-		transport = agentparams.AppServer
-	case "pi":
+	transport := agentparams.ACP
+	if o.Agent == "pi" {
 		transport = agentparams.RPC
-	case "agy":
-		transport = agentparams.ACP
 	}
 	if _, err := agentparams.Build(o.Agent, transport, resolved); err != nil {
 		return "", fmt.Errorf("%w; no task started", err)

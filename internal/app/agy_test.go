@@ -1,18 +1,19 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
 
@@ -32,27 +33,6 @@ func TestAgyConvertSQLite(t *testing.T) {
 	}
 	if !strings.Contains(unified.String(), "remember this") {
 		t.Fatal(unified.String())
-	}
-}
-
-func TestAgyContinueStream(t *testing.T) {
-	for _, test := range []struct {
-		output    string
-		failed    bool
-		completed bool
-	}{
-		{`{"event":"init","conversation_id":"native"}` + "\n" + `{"event":"result","result":{"conversation_id":"native","status":"SUCCESS"}}`, false, true},
-		{`{"event":"init","conversation_id":"wrong"}`, true, false},
-		{`{"event":"result","result":{"conversation_id":"wrong","status":"SUCCESS"}}`, true, false},
-		{`{"event":"result","result":{"conversation_id":"native","status":"ERROR","response":"rejected"}}`, false, false},
-	} {
-		run, err := parseContinueStream("agy", "future-model", "native", test.output)
-		if (err != nil) != test.failed || run.completed != test.completed {
-			t.Fatalf("run=%+v err=%v", run, err)
-		}
-	}
-	if _, err := parseContinueStream("unknown", "", "", ""); err == nil {
-		t.Fatal("unknown agent accepted")
 	}
 }
 
@@ -102,53 +82,97 @@ type agyContinueRunner struct {
 	home         string
 	prompt       string
 	plan         runtime.CommandPlan
+	methods      []string
+	modelSet     string
 	beforeReturn func()
 	failure      error
 }
 
-func (r *agyContinueRunner) Execute(_ context.Context, plan runtime.CommandPlan, opts runtime.ExecuteOptions) (runtime.CommandResult, error) {
+func (r *agyContinueRunner) Execute(_ context.Context, _ runtime.CommandPlan, _ runtime.ExecuteOptions) (runtime.CommandResult, error) {
+	return runtime.CommandResult{}, fmt.Errorf("agy continue must use ACP stream, not OneShot Execute")
+}
+
+func (r *agyContinueRunner) StartStream(plan runtime.CommandPlan) (*runtime.Stream, error) {
 	r.plan = plan
-	data, err := io.ReadAll(opts.Stdin)
-	if err != nil {
-		return runtime.CommandResult{}, err
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	send := func(v any) {
+		raw, _ := json.Marshal(v)
+		_, _ = io.WriteString(outW, string(raw)+"\n")
 	}
-	var event struct {
-		Event   string `json:"event"`
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	}
-	if err := json.Unmarshal(data, &event); err != nil {
-		return runtime.CommandResult{}, err
-	}
-	if event.Event != "user" {
-		return runtime.CommandResult{}, fmt.Errorf("unexpected input event %s", event.Event)
-	}
-	r.prompt = event.Message.Content
-	token := flagValue(plan.Args, "--conversation")
-	detail := sessions.Session{Provider: "agy", Workspace: plan.Cwd}
-	if token == "" {
-		token, err = sessions.WriteAgySessionFile(detail, filepath.Join(r.home, ".gemini", "antigravity-cli"))
-		if err != nil {
-			return runtime.CommandResult{}, err
+	go func() {
+		defer outW.Close()
+		var sessionID string
+		scanner := bufio.NewScanner(inR)
+		for scanner.Scan() {
+			var req struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+				Params struct {
+					SessionID string `json:"sessionId"`
+					ModelID   string `json:"modelId"`
+					Prompt    []struct {
+						Text string `json:"text"`
+					} `json:"prompt"`
+				} `json:"params"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &req) != nil {
+				continue
+			}
+			if req.Method != "" {
+				r.methods = append(r.methods, req.Method)
+			}
+			switch req.Method {
+			case "initialize", "session/set_config_option":
+				send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			case "session/set_model":
+				r.modelSet = req.Params.ModelID
+				send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			case "session/new":
+				detail := sessions.Session{Provider: "agy", Workspace: plan.Cwd}
+				id, err := sessions.WriteAgySessionFile(detail, filepath.Join(r.home, ".gemini", "antigravity-cli"))
+				if err != nil {
+					send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": err.Error()}})
+					continue
+				}
+				sessionID = id
+				send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"sessionId": sessionID}})
+			case "session/load":
+				sessionID = req.Params.SessionID
+				// Replay historical chunk before load response to verify ACP discards it.
+				send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": sessionID, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "OLD"}}}})
+				send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"sessionId": sessionID}})
+			case "session/prompt":
+				if len(req.Params.Prompt) > 0 {
+					r.prompt = req.Params.Prompt[0].Text
+				}
+				path := filepath.Join(r.home, ".gemini", "antigravity-cli", "conversations", sessionID+".db")
+				detail, err := sessions.ParseAgySessionFile(path)
+				if err != nil {
+					send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": err.Error()}})
+					continue
+				}
+				detail.Messages = append(detail.Messages,
+					sessions.Message{ID: "echo", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: r.prompt}}},
+					sessions.Message{ID: "answer", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "new answer"}}},
+				)
+				_ = os.Remove(path)
+				if err := sessions.WriteAgyDatabaseFile(detail, path); err != nil {
+					send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": err.Error()}})
+					continue
+				}
+				if r.beforeReturn != nil {
+					r.beforeReturn()
+				}
+				if r.failure != nil {
+					send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": r.failure.Error()}})
+					continue
+				}
+				send(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
+			}
 		}
-	}
-	path := filepath.Join(r.home, ".gemini", "antigravity-cli", "conversations", token+".db")
-	detail, err = sessions.ParseAgySessionFile(path)
-	if err != nil {
-		return runtime.CommandResult{}, err
-	}
-	detail.Messages = append(detail.Messages, sessions.Message{ID: "echo", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: r.prompt}}}, sessions.Message{ID: "answer", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "new answer"}}})
-	if err := os.Remove(path); err != nil {
-		return runtime.CommandResult{}, err
-	}
-	if err := sessions.WriteAgyDatabaseFile(detail, path); err != nil {
-		return runtime.CommandResult{}, err
-	}
-	if r.beforeReturn != nil {
-		r.beforeReturn()
-	}
-	return runtime.CommandResult{Stdout: fmt.Sprintf("{\"event\":\"init\",\"conversation_id\":%q}\n{\"event\":\"result\",\"result\":{\"conversation_id\":%q,\"status\":\"SUCCESS\"}}\n", token, token)}, r.failure
+	}()
+	return runtime.NewPipeStream(inW, outR, func() string { return "" }, func() { _ = inW.Close(); _ = outW.Close() }, func() error { return nil }), nil
 }
 
 func TestAgyContinueReparsesProjectedHistoryPrefix(t *testing.T) {
@@ -176,6 +200,40 @@ func TestAgyContinueReparsesProjectedHistoryPrefix(t *testing.T) {
 	}
 	if len(delta.Messages) != 1 || sessions.MessageText(delta.Messages[0]) != "new answer" || runner.prompt != "new prompt\nwith special \"quotes\"" || runner.plan.Env["SM_MCP_CWD"] != workspace {
 		t.Fatalf("delta=%+v prompt=%q plan=%+v", delta, runner.prompt, runner.plan)
+	}
+	if runner.modelSet != "native-future-model" || len(runner.plan.Args) < 2 || runner.plan.Args[0] != "acp" || runner.plan.Args[1] != "--stdio" {
+		t.Fatalf("expected ACP transport and set_model: model=%q args=%q", runner.modelSet, runner.plan.Args)
+	}
+	if !strings.Contains(strings.Join(runner.methods, ","), "session/load") {
+		t.Fatalf("expected session/load on history continue, got %v", runner.methods)
+	}
+}
+
+func TestAgyContinueACPUnlocksMCPAndUserConfigFalse(t *testing.T) {
+	home, workspace := t.TempDir(), testWorkspace(t)
+	source := sessions.Session{ID: "source", Provider: "harness", Workspace: workspace, Messages: []sessions.Message{
+		{ID: "u1", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: "hello"}}},
+	}}
+	input, _ := json.Marshal(source)
+	var stdout, stderr bytes.Buffer
+	application := New(false, bytes.NewReader(input), &stdout, &stderr)
+	application.Sessions = sessions.Service{HomeDir: home}
+	application.Hooks.Home = home
+	runner := &agyContinueRunner{home: home}
+	application.Runner = runner
+	mcpJSON := `{"mcpServers":{"tool":{"command":"/usr/bin/node","args":["s.mjs"]}}}`
+	if err := application.Run(context.Background(), []string{"session", "continue", "agy", "--mcp-config", mcpJSON, "--user-config", "false", "--effort", "high"}); err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(runner.plan.Args, " ")
+	if !strings.Contains(args, "acp --stdio") || !strings.Contains(args, "--include-default-customizations=false") {
+		t.Fatalf("unexpected ACP args: %q", args)
+	}
+	methods := strings.Join(runner.methods, ",")
+	for _, want := range []string{"initialize", "session/new", "session/set_config_option", "session/prompt"} {
+		if !strings.Contains(methods, want) {
+			t.Fatalf("methods %q missing %q", methods, want)
+		}
 	}
 }
 

@@ -16,7 +16,7 @@ func Plan(agent string, transport agentparams.Transport, request agentparams.Req
 	if err != nil {
 		return runtime.CommandPlan{}, err
 	}
-	if len(plan.Params) > 0 || len(plan.Settings) > 0 {
+	if len(plan.Params) > 0 {
 		return runtime.CommandPlan{}, fmt.Errorf("%s %s requires a native protocol session", agent, transport)
 	}
 	return runtime.CommandPlan{Executable: agent, Args: plan.Args, Cwd: request.Cwd, Agent: agent}, nil

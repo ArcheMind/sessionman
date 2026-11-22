@@ -1,6 +1,7 @@
 package subagents
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,17 +47,16 @@ func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 	s := testServer(t, nil)
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "read", "prompt": "review", "model": "review", "mode": "normal", "run_in_background": false})
 	records := readFakeRecords(t, record)
-	params := fakeRequest(t, records, "thread/start")
-	if params["sandbox"] != nil || params["approvalPolicy"] != nil || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth source for this turn: CODEX_HOME="`+os.Getenv("CODEX_HOME")+`"`+"\n") {
-		t.Fatal(params, text)
+	modeCfg := fakeRequest(t, records, "session/set_config_option")
+	if modeCfg["configId"] != "mode" || modeCfg["value"] != "workspace-write" || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth source for this turn: CODEX_HOME="`+os.Getenv("CODEX_HOME")+`"`+"\n") {
+		t.Fatal(modeCfg, text)
 	}
-	plan, err := agentparams.Build("claude", agentparams.Stream, agentparams.Request{Cwd: "/cwd", Model: "opus", Mode: ModeNormal})
+	plan, err := agentparams.Build("claude", agentparams.ACP, agentparams.Request{Cwd: "/cwd", Model: "opus", Mode: ModeNormal})
 	if err != nil {
 		t.Fatal(err)
 	}
-	claude := strings.Join(plan.Args, " ")
-	if strings.Contains(claude, "permission") || strings.Contains(claude, "dangerously") || !strings.Contains(claude, "--input-format stream-json") {
-		t.Fatal(claude)
+	if plan.Mode != "default" || plan.Executable != "claude-agent-acp" {
+		t.Fatalf("%#v", plan)
 	}
 	if records[0].Env["CODEX_HOME"] != os.Getenv("CODEX_HOME") {
 		t.Fatalf("auth environment not explicit: %#v", records[0].Env)
@@ -67,16 +67,16 @@ func TestYoloModeBypassesNativePermissions(t *testing.T) {
 	record := installFakeNative(t, "codex", nil)
 	s := testServer(t, nil)
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "mode": "yolo", "run_in_background": false})
-	params := fakeRequest(t, readFakeRecords(t, record), "thread/start")
-	if params["sandbox"] != "danger-full-access" || params["approvalPolicy"] != "never" || !strings.Contains(text, "Mode: yolo\n") {
-		t.Fatal(params, text)
+	modeCfg := fakeRequest(t, readFakeRecords(t, record), "session/set_config_option")
+	if modeCfg["configId"] != "mode" || modeCfg["value"] != "agent-full-access" || !strings.Contains(text, "Mode: yolo\n") {
+		t.Fatal(modeCfg, text)
 	}
-	plan, err := agentparams.Build("claude", agentparams.Stream, agentparams.Request{Cwd: "/cwd", Model: "opus", Mode: ModeYolo})
+	plan, err := agentparams.Build("claude", agentparams.ACP, agentparams.Request{Cwd: "/cwd", Model: "opus", Mode: ModeYolo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(plan.Args, " "), "--dangerously-skip-permissions") {
-		t.Fatal(plan.Args)
+	if plan.Mode != "bypassPermissions" {
+		t.Fatal(plan)
 	}
 }
 
@@ -93,19 +93,23 @@ func TestModeIsFixedForContinuation(t *testing.T) {
 		t.Fatal("continuation accepted a mode change")
 	}
 	records := readFakeRecords(t, record)
-	if countFakeRequests(t, records, "thread/start") != 2 || countFakeRequests(t, records, "turn/start") != 4 {
-		t.Fatal("continuation restarted a thread or lost a turn", records)
+	if countFakeRequests(t, records, "session/new") != 2 || countFakeRequests(t, records, "session/prompt") != 4 {
+		t.Fatal("continuation restarted a session or lost a turn", records)
 	}
-	var starts []fakeRecord
+	var modeValues []string
 	for _, entry := range records {
-		if entry.Kind == "request" && strings.Contains(string(entry.Line), `"method":"thread/start"`) {
-			starts = append(starts, entry)
+		if entry.Kind == "request" && strings.Contains(string(entry.Line), `"configId":"mode"`) {
+			var req struct {
+				Params struct {
+					Value string `json:"value"`
+				} `json:"params"`
+			}
+			_ = json.Unmarshal(entry.Line, &req)
+			modeValues = append(modeValues, req.Params.Value)
 		}
 	}
-	yolo := fakeRequest(t, starts[:1], "thread/start")
-	normal := fakeRequest(t, starts[1:], "thread/start")
-	if yolo["sandbox"] != "danger-full-access" || normal["sandbox"] != nil {
-		t.Fatal("continuation changed mode", yolo, normal)
+	if len(modeValues) != 2 || modeValues[0] != "agent-full-access" || modeValues[1] != "workspace-write" {
+		t.Fatal("continuation changed mode", modeValues)
 	}
 }
 

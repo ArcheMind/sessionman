@@ -1,30 +1,20 @@
 package subagents
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/agentx/internal/pirpc"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
 // piState is the per-round scratch beside the live `pi --mode rpc` process.
-type piReply struct {
-	Type    string `json:"type"`
-	Command string `json:"command"`
-	Success bool   `json:"success"`
-	Error   string `json:"error"`
-	Data    struct {
-		Disposition string `json:"disposition"`
-	} `json:"data"`
-}
-
 type piState struct {
-	replies chan piReply
+	client  *pirpc.Client
 	text    string
 	usage   json.RawMessage
 	failure string
@@ -45,7 +35,7 @@ func (d *Daemon) sendPiLocked(message, delivery string) controlResponse {
 			d.queue = append(d.queue, message)
 			return controlResponse{Disposition: "queued", Seq: seq}
 		}
-		if err := d.writePiLocked("steer", steerPrefix+message); err != nil {
+		if err := d.pi.client.Send(context.Background(), "steer", steerPrefix+message); err != nil {
 			return controlResponse{Error: err.Error()}
 		}
 		return controlResponse{Disposition: "steered", Seq: seq}
@@ -54,44 +44,11 @@ func (d *Daemon) sendPiLocked(message, delivery string) controlResponse {
 	if info, err := os.Stat(d.agent.Session); err == nil {
 		d.pi.offset = info.Size()
 	}
-	if err := d.writePiLocked("prompt", message); err != nil {
+	if err := d.pi.client.Send(context.Background(), "prompt", message); err != nil {
 		return controlResponse{Error: err.Error()}
 	}
 	d.running = true
 	return controlResponse{Disposition: "started", Seq: seq}
-}
-
-func (d *Daemon) writePiLocked(command, message string) error {
-	line, err := json.Marshal(map[string]any{"type": command, "message": message})
-	if err != nil {
-		return err
-	}
-	if err := d.proc.stream.WriteLine(string(line)); err != nil {
-		return err
-	}
-	select {
-	case reply, ok := <-d.pi.replies:
-		if !ok {
-			return fmt.Errorf("pi exited while awaiting %s", command)
-		}
-		if reply.Command != command {
-			return fmt.Errorf("pi acknowledged %s while awaiting %s", reply.Command, command)
-		}
-		if !reply.Success {
-			return fmt.Errorf("pi %s failed: %s", command, runtime.RedactSecrets(reply.Error))
-		}
-		expected := "started"
-		if command == "steer" {
-			expected = "queued"
-		}
-		if reply.Data.Disposition != expected {
-			return fmt.Errorf("pi %s disposition %q did not start or steer a turn", command, reply.Data.Disposition)
-		}
-		return nil
-	case <-time.After(30 * time.Second):
-		d.proc.stream.Kill()
-		return fmt.Errorf("pi did not acknowledge %s within 30s", command)
-	}
 }
 
 func (d *Daemon) startPiLocked() error {
@@ -136,30 +93,13 @@ func (d *Daemon) startPiLocked() error {
 		return err
 	}
 	proc := &nativeProc{stream: stream, done: make(chan struct{})}
-	d.proc, d.pi, d.procAuth = proc, &piState{replies: make(chan piReply, 1)}, Auth{Key: "PI_CODING_AGENT_DIR", Dir: os.Getenv("PI_CODING_AGENT_DIR")}
-	d.persistMetaLocked()
-	notes := make(chan string, 256)
-	go d.readPi(proc, d.pi, notes)
-	go func() {
-		for line := range notes {
-			d.handlePiLine(line)
-		}
+	state := &piState{}
+	state.client = pirpc.New(stream, d.handlePiLine, func() {
 		d.procExit(proc, "pi execution")
-	}()
+	})
+	d.proc, d.pi, d.procAuth = proc, state, Auth{Key: "PI_CODING_AGENT_DIR", Dir: os.Getenv("PI_CODING_AGENT_DIR")}
+	d.persistMetaLocked()
 	return nil
-}
-
-func (d *Daemon) readPi(proc *nativeProc, pi *piState, notes chan<- string) {
-	for line := range proc.stream.Lines() {
-		var reply piReply
-		if json.Unmarshal([]byte(line), &reply) == nil && reply.Type == "response" {
-			pi.replies <- reply
-		} else {
-			notes <- line
-		}
-	}
-	close(pi.replies)
-	close(notes)
 }
 
 func (d *Daemon) handlePiLine(line string) {
@@ -189,13 +129,13 @@ func (d *Daemon) handlePiLine(line string) {
 		}
 		d.mu.Unlock()
 	case "message_end":
-		text, usage, failure, err := parsePiAssistant(event.Message, d.agent.Option.Model)
+		msg, err := pirpc.ParseAssistant(event.Message, d.agent.Option.Model)
 		if err != nil {
 			return
 		}
 		d.mu.Lock()
 		if d.pi != nil {
-			d.pi.text, d.pi.usage, d.pi.failure = text, usage, failure
+			d.pi.text, d.pi.usage, d.pi.failure = msg.Text, msg.Usage, msg.Failure
 		}
 		d.running = true
 		d.mu.Unlock()
@@ -233,49 +173,4 @@ func (d *Daemon) handlePiLine(line string) {
 		d.mu.Unlock()
 		d.deliverQueue()
 	}
-}
-
-// parsePiAssistant extracts this round's report fields from an assistant message_end; other
-// roles return ok with nothing.
-func parsePiAssistant(raw json.RawMessage, expectedModel string) (string, json.RawMessage, string, error) {
-	var role struct {
-		Role string `json:"role"`
-	}
-	if err := json.Unmarshal(raw, &role); err != nil {
-		return "", nil, "", err
-	}
-	if role.Role != "assistant" {
-		return "", nil, "", fmt.Errorf("not an assistant message")
-	}
-	var message struct {
-		Model        string `json:"model"`
-		Provider     string `json:"provider"`
-		StopReason   string `json:"stopReason"`
-		ErrorMessage string `json:"errorMessage"`
-		Content      []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		Usage json.RawMessage `json:"usage"`
-	}
-	if err := json.Unmarshal(raw, &message); err != nil {
-		return "", nil, "", err
-	}
-	if message.Provider+"/"+message.Model != expectedModel {
-		return "", nil, fmt.Sprintf("Pi returned model %s/%s instead of %s", message.Provider, message.Model, expectedModel), nil
-	}
-	failure := ""
-	if message.StopReason == "error" || message.StopReason == "aborted" {
-		failure = message.ErrorMessage
-		if failure == "" {
-			failure = message.StopReason
-		}
-	}
-	var parts []string
-	for _, part := range message.Content {
-		if part.Type == "text" {
-			parts = append(parts, part.Text)
-		}
-	}
-	return strings.Join(parts, "\n"), message.Usage, failure, nil
 }

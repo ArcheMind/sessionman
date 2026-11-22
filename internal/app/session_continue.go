@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -12,9 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/acp"
 	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/hooks"
 	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/agentx/internal/pirpc"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
@@ -65,11 +67,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if agent.ID != "agy" && agent.ID != "claude" && agent.ID != "codex" && agent.ID != "pi" {
 		return fmt.Errorf("%s has no headless continue adapter", agent.ID)
 	}
-	var agySystemPrompt string
-	if agent.ID == "agy" {
-		agySystemPrompt, request.SystemPrompt = request.SystemPrompt, ""
-	}
-	if _, err := agentparams.Build(agent.ID, agentparams.OneShot, request); err != nil {
+	if _, err := agentparams.Build(agent.ID, continueTransport(agent.ID), request); err != nil {
 		return err
 	}
 	// The caller owns this process (a host harness); SIGTERM/SIGINT must cancel
@@ -128,49 +126,36 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 
 	request.Cwd, request.Session = workspace, token
-	plan, err := drivers.Plan(agent.ID, agentparams.OneShot, request)
-	if err != nil {
-		return err
-	}
-	if agent.ID == "agy" {
-		prepareAgyNativePlan("agy", &plan)
-	}
-	input := io.Reader(strings.NewReader(prompt))
-	if agent.ID == "agy" {
-		if agySystemPrompt != "" {
-			prompt = "<system-prompt>\n" + agySystemPrompt + "\n</system-prompt>\n\n" + prompt
-		}
-		input = agyPromptInput(prompt)
-	}
 	execCtx, cancelExecution := context.WithCancel(ctx)
 	defer cancelExecution()
-	options := runtime.ExecuteOptions{Stdin: input, CancelProcessGroup: true}
 	var transcriptStream *continueTranscriptStream
 	if stream && agent.ID != "agy" {
 		transcriptStream = newContinueTranscriptStream(a, agent.ID, model, workspace, token, prefix, cancelExecution)
-		options.Stdout = transcriptStream
 	}
-	result, execErr := a.Runner.Execute(execCtx, plan, options)
+
+	var run continueRun
+	switch agent.ID {
+	case "pi":
+		run, err = a.runContinuePiRPC(execCtx, request, model, prompt, transcriptStream)
+	default:
+		run, err = a.runContinueACP(execCtx, agent.ID, request, prompt, transcriptStream)
+	}
 	if transcriptStream != nil {
-		if err := transcriptStream.stop(); err != nil {
-			return err
+		if stopErr := transcriptStream.stop(); stopErr != nil {
+			return stopErr
 		}
 	}
 	if ctx.Err() != nil {
 		return fmt.Errorf("session continue cancelled: %w", ctx.Err())
 	}
-	run, parseErr := parseContinueStream(agent.ID, model, expectedSession(agent.ID, token), result.Stdout)
 	if run.failure != "" {
 		return fmt.Errorf("%s turn failed: %s", agent.ID, runtime.RedactSecrets(run.failure))
 	}
-	if execErr != nil {
-		return fmt.Errorf("%s execution failed: %s; stderr: %s", agent.ID, runtime.RedactSecrets(execErr.Error()), runtime.RedactSecrets(strings.TrimSpace(result.Stderr)))
-	}
-	if parseErr != nil {
-		return parseErr
+	if err != nil {
+		return err
 	}
 	if !run.completed {
-		return fmt.Errorf("%s exited without completing the turn; stderr: %s", agent.ID, runtime.RedactSecrets(strings.TrimSpace(result.Stderr)))
+		return fmt.Errorf("%s exited without completing the turn", agent.ID)
 	}
 	if run.sessionID == "" && agent.ID != "pi" {
 		return fmt.Errorf("%s reported no native session for the turn", agent.ID)
@@ -338,13 +323,6 @@ func (a App) continueSessionFile(agentID, workspace, token string) (string, erro
 	}
 }
 
-func expectedSession(agentID, token string) string {
-	if agentID == "pi" {
-		return ""
-	}
-	return token
-}
-
 // continueRunID is a fresh-per-call namespace that keeps delta message ids
 // unique in the caller's accumulated transcript across turns.
 func continueRunID(agentID, token, sessionID string) string {
@@ -407,134 +385,150 @@ type continueRun struct {
 	failure   string
 }
 
-// parseContinueStream reads the native headless event stream for the turn's
-// session identity and completion; the content itself comes from the native
-// store afterwards, not from the stream.
-func parseContinueStream(agentID, model, expectSession, output string) (continueRun, error) {
-	run := continueRun{}
-	if agentID != "agy" && agentID != "claude" && agentID != "codex" && agentID != "pi" {
-		return run, fmt.Errorf("unsupported continue agent %q", agentID)
+func continueTransport(agentID string) agentparams.Transport {
+	if agentID == "pi" {
+		return agentparams.RPC
 	}
-	for _, line := range strings.Split(output, "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		var event struct {
-			Type         string          `json:"type"`
-			Event        string          `json:"event"`
-			Conversation string          `json:"conversation_id"`
-			Result       json.RawMessage `json:"result"`
-			Subtype      string          `json:"subtype"`
-			Thread       string          `json:"thread_id"`
-			ID           string          `json:"id"`
-			Session      string          `json:"session_id"`
-			IsError      bool            `json:"is_error"`
-			Error        json.RawMessage `json:"error"`
-			Message      json.RawMessage `json:"message"`
-		}
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			return run, fmt.Errorf("invalid %s event: %w", agentID, err)
-		}
-		switch agentID {
-		case "agy":
-			if event.Event == "init" {
-				if expectSession != "" && event.Conversation != expectSession {
-					return run, fmt.Errorf("agy continued conversation %s instead of %s", event.Conversation, expectSession)
-				}
-				run.sessionID = event.Conversation
-			}
-			if event.Event == "result" {
-				var result struct {
-					Conversation string `json:"conversation_id"`
-					Status       string `json:"status"`
-					Response     string `json:"response"`
-				}
-				if err := json.Unmarshal(event.Result, &result); err != nil {
-					return run, fmt.Errorf("invalid agy result: %w", err)
-				}
-				if expectSession != "" && result.Conversation != expectSession {
-					return run, fmt.Errorf("agy continued conversation %s instead of %s", result.Conversation, expectSession)
-				}
-				run.sessionID = result.Conversation
-				run.completed = result.Status == "SUCCESS"
-				if !run.completed {
-					run.failure = result.Status + ": " + result.Response
-				}
-			}
-		case "claude":
-			switch event.Type {
-			case "system":
-				if event.Subtype == "init" && event.Session != "" {
-					if expectSession != "" && event.Session != expectSession {
-						return run, fmt.Errorf("claude continued session %s instead of %s", event.Session, expectSession)
-					}
-					run.sessionID = event.Session
-				}
-			case "result":
-				if event.Session != "" && run.sessionID == "" {
-					run.sessionID = event.Session
-				}
-				if event.IsError {
-					var result struct {
-						Result string `json:"result"`
-					}
-					if err := json.Unmarshal([]byte(line), &result); err != nil {
-						return run, fmt.Errorf("invalid %s event: %w", agentID, err)
-					}
-					run.failure = result.Result
-					if run.failure == "" {
-						run.failure = event.Subtype
-					}
-				} else {
-					run.completed = true
-				}
-			}
-		case "codex":
-			switch event.Type {
-			case "thread.started":
-				if expectSession != "" && event.Thread != expectSession {
-					return run, fmt.Errorf("codex continued thread %s instead of %s", event.Thread, expectSession)
-				}
-				run.sessionID = event.Thread
-			case "turn.completed":
-				run.completed = true
-			case "error", "turn.failed":
-				failure := string(event.Error)
-				if failure == "" || failure == "null" {
-					failure = string(event.Message)
-				}
-				run.failure = failure
-			}
-		case "pi":
-			switch event.Type {
-			case "session":
-				run.sessionID = event.ID
-			case "message_end":
-				var message struct {
-					Role         string `json:"role"`
-					Model        string `json:"model"`
-					Provider     string `json:"provider"`
-					StopReason   string `json:"stopReason"`
-					ErrorMessage string `json:"errorMessage"`
-				}
-				if err := json.Unmarshal(event.Message, &message); err != nil {
-					return run, err
-				}
-				if message.Role == "assistant" {
-					if model != "" && message.Provider+"/"+message.Model != model {
-						return run, fmt.Errorf("pi answered with model %s/%s instead of %s", message.Provider, message.Model, model)
-					}
-					if message.StopReason == "error" || message.StopReason == "aborted" {
-						run.failure = message.ErrorMessage
-						if run.failure == "" {
-							run.failure = message.StopReason
-						}
-					}
-				}
-			case "agent_end":
-				run.completed = true
+	return agentparams.ACP
+}
+
+func shutdownStream(stream *runtime.Stream) {
+	if stream == nil {
+		return
+	}
+	_ = stream.CloseStdin()
+	done := make(chan struct{})
+	go func() {
+		_ = stream.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		stream.Kill()
+		<-done
+	}
+}
+
+func (a App) runContinueACP(ctx context.Context, agentID string, request runtime.RunRequest, prompt string, transcriptStream *continueTranscriptStream) (continueRun, error) {
+	if err := nativedirs.CachedError(agentID); err != nil {
+		return continueRun{}, err
+	}
+	mapped, err := agentparams.Build(agentID, agentparams.ACP, request)
+	if err != nil {
+		return continueRun{}, err
+	}
+	starter, ok := a.Runner.(runtime.StreamStarter)
+	if !ok {
+		return continueRun{}, fmt.Errorf("%s continue requires a stream runner", agentID)
+	}
+	env := map[string]string{}
+	for k, v := range mapped.Env {
+		env[k] = v
+	}
+	var unset []string
+	if agentID == "agy" {
+		unset = []string{hooks.SessionReportEnv}
+	}
+	plan := runtime.CommandPlan{
+		Executable: mapped.Executable,
+		Args:       mapped.Args,
+		Cwd:        request.Cwd,
+		Env:        env,
+		UnsetEnv:   unset,
+		Agent:      agentID,
+	}
+	if agentID == "agy" {
+		prepareAgyNativePlan("agy", &plan)
+	}
+	stream, err := starter.StartStream(plan)
+	if err != nil {
+		return continueRun{}, fmt.Errorf("%s execution failed: %s", agentID, runtime.RedactSecrets(err.Error()))
+	}
+	defer shutdownStream(stream)
+
+	var onLine func(string)
+	if transcriptStream != nil {
+		onLine = func(line string) {
+			if sid, _, _, ok := acp.ParseLine(line); ok {
+				transcriptStream.Wake(sid)
 			}
 		}
 	}
-	return run, nil
+	client := acp.New(stream, acp.Handlers{Agent: agentID, OnLine: onLine})
+	clientVer := ""
+	if agentID != "agy" {
+		clientVer = "1.0"
+	}
+	info, err := client.Start(ctx, acp.StartOptions{
+		ClientVersion:   clientVer,
+		SessionID:       request.Session,
+		Params:          mapped.Params,
+		SystemPrompt:    mapped.SystemPrompt,
+		Model:           mapped.Model,
+		Effort:          mapped.Effort,
+		Mode:            mapped.Mode,
+		TrustCodexHooks: agentID == "codex",
+		Cwd:             request.Cwd,
+	})
+	if err != nil {
+		return continueRun{}, fmt.Errorf("%s execution failed: %s; stderr: %s", agentID, runtime.RedactSecrets(err.Error()), runtime.RedactSecrets(strings.TrimSpace(stream.Stderr())))
+	}
+	if transcriptStream != nil {
+		transcriptStream.Wake(info.SessionID)
+	}
+	if info.PromptPrefix != "" {
+		prompt = "<system-prompt>\n" + info.PromptPrefix + "\n</system-prompt>\n\n" + prompt
+	}
+	result, err := client.PromptSync(ctx, info.SessionID, prompt)
+	if err != nil {
+		if result.Err != nil {
+			return continueRun{sessionID: info.SessionID, failure: err.Error()}, nil
+		}
+		return continueRun{sessionID: info.SessionID}, err
+	}
+	switch result.StopReason {
+	case "end_turn":
+		return continueRun{sessionID: info.SessionID, completed: true}, nil
+	case "cancelled":
+		return continueRun{sessionID: info.SessionID, failure: "native turn cancelled"}, nil
+	default:
+		return continueRun{sessionID: info.SessionID, failure: fmt.Sprintf("stopReason=%s", result.StopReason)}, nil
+	}
+}
+
+func (a App) runContinuePiRPC(ctx context.Context, request runtime.RunRequest, model, prompt string, transcriptStream *continueTranscriptStream) (continueRun, error) {
+	plan, err := drivers.Plan("pi", agentparams.RPC, request)
+	if err != nil {
+		return continueRun{}, err
+	}
+	starter, ok := a.Runner.(runtime.StreamStarter)
+	if !ok {
+		return continueRun{}, fmt.Errorf("pi continue requires a stream runner")
+	}
+	stream, err := starter.StartStream(plan)
+	if err != nil {
+		return continueRun{}, fmt.Errorf("pi execution failed: %s", runtime.RedactSecrets(err.Error()))
+	}
+	defer shutdownStream(stream)
+
+	var onLine func(string) error
+	if transcriptStream != nil {
+		onLine = func(line string) error {
+			_, writeErr := transcriptStream.Write([]byte(line + "\n"))
+			return writeErr
+		}
+	}
+	turn, err := pirpc.RunTurn(ctx, stream, prompt, model, onLine)
+	if err != nil {
+		if ctx.Err() != nil {
+			return continueRun{}, err
+		}
+		stderr := runtime.RedactSecrets(strings.TrimSpace(stream.Stderr()))
+		if stderr != "" {
+			return continueRun{}, fmt.Errorf("pi execution failed: %s; stderr: %s", runtime.RedactSecrets(err.Error()), stderr)
+		}
+		return continueRun{}, fmt.Errorf("pi execution failed: %s", runtime.RedactSecrets(err.Error()))
+	}
+	return continueRun{sessionID: turn.SessionID, completed: turn.Completed, failure: turn.Failure}, nil
 }

@@ -46,15 +46,16 @@ func (c *continueStreamCapture) snapshot() string {
 
 type continueStreamTestRunner struct {
 	*continueRunner
-	during func(runtime.ExecuteOptions, *runtime.CommandResult) error
+	acpHook      func(emit func(any), sessionID string) error
+	piBeforeEmit func(emit func(string)) error
+	piHook       func(emit func(string)) error
 }
 
-func (r continueStreamTestRunner) Execute(ctx context.Context, plan runtime.CommandPlan, opts runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	result, err := r.continueRunner.Execute(ctx, plan, opts)
-	if err == nil {
-		err = r.during(opts, &result)
+func (r continueStreamTestRunner) StartStream(plan runtime.CommandPlan) (*runtime.Stream, error) {
+	if r.agent == "pi" {
+		return r.continueRunner.startPiStream(plan, r.piBeforeEmit, r.piHook)
 	}
-	return result, err
+	return r.continueRunner.startACPStream(plan, r.acpHook)
 }
 
 func decodeContinueEvents(t *testing.T, output string) ([]sessions.Message, *sessions.Session) {
@@ -102,27 +103,26 @@ func TestContinueStreamMessagesBeforeRunnerFinishes(t *testing.T) {
 				{ID: "tool", ParentID: "call", Role: "tool", ToolUseID: "tool-id", ToolName: "read", Result: []any{map[string]any{"type": "text", "text": "body"}}, Timestamp: "2026-11-01T01:02:05Z"},
 				{ID: "answer", ParentID: "tool", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "done"}}},
 			}
-			application.Runner = continueStreamTestRunner{runner, func(opts runtime.ExecuteOptions, result *runtime.CommandResult) error {
-				if opts.Stdout == nil {
-					t.Fatal("missing live output writer")
-				}
-				// Exercise arbitrary stdout chunk boundaries, including a final line
-				// without a newline. The runner has not returned at this point.
-				output := strings.TrimSuffix(result.Stdout, "\n")
-				for i := range len(output) {
-					if _, err := opts.Stdout.Write([]byte(output[i : i+1])); err != nil {
-						return err
+			waitRealtime := func() error {
+				deadline := time.Now().Add(2 * time.Second)
+				for time.Now().Before(deadline) {
+					messages, final := decodeContinueEvents(t, capture.snapshot())
+					if len(messages) >= 2 && final == nil {
+						if agent == "codex" && len(messages) != 2 {
+							t.Fatal("mutable Codex tail was emitted")
+						}
+						return nil
 					}
+					time.Sleep(10 * time.Millisecond)
 				}
-				messages, final := decodeContinueEvents(t, capture.snapshot())
-				if len(messages) < 2 || final != nil {
-					t.Fatalf("no realtime messages before runner exit: %s", capture.snapshot())
-				}
-				if agent == "codex" && len(messages) != 2 {
-					t.Fatal("mutable Codex tail was emitted")
-				}
+				t.Fatalf("no realtime %s messages before turn end: %s", agent, capture.snapshot())
 				return nil
-			}}
+			}
+			application.Runner = continueStreamTestRunner{
+				continueRunner: runner,
+				acpHook:        func(_ func(any), _ string) error { return waitRealtime() },
+				piHook:         func(_ func(string)) error { return waitRealtime() },
+			}
 			if err := application.Run(context.Background(), []string{"session", "continue", agent, "--model", "provider/model", "--stream"}); err != nil {
 				t.Fatal(err)
 			}
@@ -162,13 +162,17 @@ func TestContinueStreamFreshClaudeSkipsPrompt(t *testing.T) {
 	capture := &continueStreamCapture{}
 	application.Stdout = capture
 	runner.reply = []sessions.Message{{ID: "reply", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "fresh answer"}}}}
-	application.Runner = continueStreamTestRunner{runner, func(opts runtime.ExecuteOptions, result *runtime.CommandResult) error {
-		_, err := io.WriteString(opts.Stdout, result.Stdout)
-		messages, _ := decodeContinueEvents(t, capture.snapshot())
-		if len(messages) != 1 {
-			t.Fatal(capture.snapshot())
+	application.Runner = continueStreamTestRunner{continueRunner: runner, acpHook: func(_ func(any), _ string) error {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			messages, _ := decodeContinueEvents(t, capture.snapshot())
+			if len(messages) == 1 {
+				return nil
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		return err
+		t.Fatal(capture.snapshot())
+		return nil
 	}}
 	if err := application.Run(context.Background(), []string{"session", "continue", "claude", "--stream"}); err != nil {
 		t.Fatal(err)
@@ -180,7 +184,7 @@ func TestContinueStreamFreshClaudeSkipsPrompt(t *testing.T) {
 }
 
 func TestContinueStreamFailuresHaveNoResult(t *testing.T) {
-	for _, failure := range []string{"execution", "cancel", "malformed", "native"} {
+	for _, failure := range []string{"execution", "cancel", "native"} {
 		t.Run(failure, func(t *testing.T) {
 			application, _, runner := continueApp(t, "claude", "", continueTranscript(t, testWorkspace(t)))
 			capture := &continueStreamCapture{}
@@ -188,21 +192,10 @@ func TestContinueStreamFailuresHaveNoResult(t *testing.T) {
 			runner.reply = []sessions.Message{{ID: "reply", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "answer"}}}}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			application.Runner = continueStreamTestRunner{runner, func(opts runtime.ExecuteOptions, result *runtime.CommandResult) error {
-				if failure == "malformed" {
-					_, err := io.WriteString(opts.Stdout, "{broken}\n")
-					return err
-				}
-				if failure == "native" {
-					result.Stdout = "{\"type\":\"result\",\"is_error\":true,\"result\":\"failed\"}\n"
-					_, err := io.WriteString(opts.Stdout, result.Stdout)
-					return err
-				}
-				if _, err := io.WriteString(opts.Stdout, result.Stdout); err != nil {
-					return err
-				}
+			application.Runner = continueStreamTestRunner{continueRunner: runner, acpHook: func(_ func(any), _ string) error {
 				if failure == "cancel" {
 					cancel()
+					time.Sleep(50 * time.Millisecond)
 					return nil
 				}
 				return errors.New("runner failed")

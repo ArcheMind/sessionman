@@ -1,7 +1,7 @@
 package agentparams
 
 func buildAgy(t Transport, r Request) (Plan, error) {
-	if t != Interactive && t != OneShot && t != ACP && t != Exec {
+	if t != Interactive && t != ACP && t != Exec {
 		return unsupported("agy", t, "transport")
 	}
 	if t != ACP {
@@ -22,14 +22,14 @@ func buildAgy(t Transport, r Request) (Plan, error) {
 		if r.Session != "" {
 			params["sessionId"] = r.Session
 		}
-		settings := []Setting{}
-		if r.Model != "" {
-			settings = append(settings, Setting{Method: "session/set_model", Params: map[string]any{"modelId": r.Model}})
-		}
-		if r.Effort != "" {
-			settings = append(settings, Setting{Method: "session/set_config_option", Params: map[string]any{"configId": "thought_level", "value": r.Effort}})
-		}
-		return Plan{Args: args, Params: params, Settings: settings, PromptPrefix: r.SystemPrompt}, nil
+		return Plan{
+			Executable:   "agy",
+			Args:         args,
+			Params:       params,
+			Model:        r.Model,
+			Effort:       r.Effort,
+			SystemPrompt: r.SystemPrompt,
+		}, nil
 	}
 	if len(r.MCP.Servers) > 0 {
 		return unsupported("agy", t, "temporary MCP mount")
@@ -41,7 +41,7 @@ func buildAgy(t Transport, r Request) (Plan, error) {
 		return unsupported("agy", t, "user_config")
 	}
 	args := []string{}
-	if t == OneShot || t == Exec {
+	if t == Exec {
 		args = append(args, "--input-format", "stream-json", "--output-format", "stream-json")
 	}
 	if r.Session != "" {

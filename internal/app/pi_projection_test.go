@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
@@ -30,30 +31,30 @@ func TestPiContinueProjectsHistoryInstructionsWithStreamParity(t *testing.T) {
 				{ID: "result", ParentID: "call", Role: "tool", ToolName: "bash", ToolUseID: "bash-call", Result: "/work"},
 				{ID: "answer", ParentID: "result", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "done"}}},
 			}
-			app.Runner = continueStreamTestRunner{runner, func(options runtime.ExecuteOptions, result *runtime.CommandResult) error {
-				plan := runner.plans[len(runner.plans)-1]
-				if got := flagValue(plan.Args, "--append-system-prompt"); got != "history instructions\n\nlater instructions\n\ncurrent" {
-					t.Fatalf("append=%q", got)
-				}
-				// The fake runner has now recorded its reply. Inspect the imported prefix only.
-				path := flagValue(plan.Args, "--session")
-				data, err := os.ReadFile(path)
-				if err != nil {
-					return err
-				}
-				lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-				var first map[string]any
-				if err := json.Unmarshal([]byte(lines[1]), &first); err != nil {
-					return err
-				}
-				if m := first["message"].(map[string]any); m["role"] != "user" || first["parentId"] != nil {
-					t.Fatalf("unsafe imported prefix: %s", lines[1])
-				}
-				if options.Stdout != nil {
-					_, err = options.Stdout.Write([]byte(result.Stdout))
-				}
-				return err
-			}}
+			app.Runner = continueStreamTestRunner{
+				continueRunner: runner,
+				piBeforeEmit: func(_ func(string)) error {
+					plan := runner.plans[len(runner.plans)-1]
+					if got := flagValue(plan.Args, "--append-system-prompt"); got != "history instructions\n\nlater instructions\n\ncurrent" {
+						t.Fatalf("append=%q", got)
+					}
+					// The fake runner has now recorded its reply. Inspect the imported prefix only.
+					path := flagValue(plan.Args, "--session")
+					data, err := os.ReadFile(path)
+					if err != nil {
+						return err
+					}
+					lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+					var first map[string]any
+					if err := json.Unmarshal([]byte(lines[1]), &first); err != nil {
+						return err
+					}
+					if m := first["message"].(map[string]any); m["role"] != "user" || first["parentId"] != nil {
+						t.Fatalf("unsafe imported prefix: %s", lines[1])
+					}
+					return nil
+				},
+			}
 			args := []string{"session", "continue", "pi", "--model", "provider/model", "--append-system-prompt", "current"}
 			if stream {
 				args = append(args, "--stream")
@@ -126,73 +127,80 @@ func TestPiStreamBuffersReplaceableSystemTail(t *testing.T) {
 				{ID: "call", Role: "assistant", Content: []sessions.ContentBlock{{Type: "tool_use", ID: "bash-call", Name: "bash", Input: map[string]any{"command": "pwd"}}}},
 				{ID: "tool", ParentID: "call", Role: "tool", ToolName: "bash", ToolUseID: "bash-call", Result: "/work"},
 			}
-			app.Runner = continueStreamTestRunner{runner, func(options runtime.ExecuteOptions, result *runtime.CommandResult) error {
-				path := flagValue(runner.plans[len(runner.plans)-1].Args, "--session")
-				data, err := os.ReadFile(path)
-				if err != nil {
-					return err
-				}
-				var rebuilt strings.Builder
-				encoder := json.NewEncoder(&rebuilt)
-				for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-					var record map[string]any
-					if err := json.Unmarshal([]byte(line), &record); err != nil {
-						return err
-					}
-					if record["id"] == "call" {
-						if err := encoder.Encode(map[string]any{"type": "message", "id": "initial-a", "parentId": record["parentId"], "message": map[string]any{"role": "system", "sections": map[string]any{"addendum": "<addendum>\nA\n</addendum>"}}}); err != nil {
-							return err
-						}
-						record["parentId"] = "initial-a"
-					}
-					if err := encoder.Encode(record); err != nil {
-						return err
-					}
-				}
-				if err := os.WriteFile(path, []byte(rebuilt.String()), 0600); err != nil {
-					return err
-				}
-				if _, err := options.Stdout.Write([]byte(result.Stdout)); err != nil {
-					return err
-				}
-				messages, final := decodeContinueEvents(t, capture.snapshot())
-				if len(messages) != 2 || final != nil || messages[0].ParentID != "" {
-					t.Fatalf("tools not streamed immediately: %s", capture.snapshot())
-				}
-				appendRecord := func(id, parent string, message map[string]any) error {
-					file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+			app.Runner = continueStreamTestRunner{
+				continueRunner: runner,
+				piBeforeEmit: func(_ func(string)) error {
+					path := flagValue(runner.plans[len(runner.plans)-1].Args, "--session")
+					data, err := os.ReadFile(path)
 					if err != nil {
 						return err
 					}
-					defer file.Close()
-					return json.NewEncoder(file).Encode(map[string]any{"type": "message", "id": id, "parentId": parent, "message": message})
-				}
-				if err := appendRecord("patch-a", "tool", map[string]any{"role": "system", "sections": map[string]any{"addendum": "<addendum>\nA\n</addendum>"}}); err != nil {
-					return err
-				}
-				if err := appendRecord("middle", "patch-a", map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "working"}}}); err != nil {
-					return err
-				}
-				if _, err = options.Stdout.Write([]byte("\n")); err != nil {
-					return err
-				}
-				messages, _ = decodeContinueEvents(t, capture.snapshot())
-				if len(messages) != 2 {
-					t.Fatalf("mutable tail emitted: %s", capture.snapshot())
-				}
-				var value any = "<addendum>\nB\n</addendum>"
-				if clear {
-					value = nil
-				}
-				if err := appendRecord("patch-b", "middle", map[string]any{"role": "system", "sections": map[string]any{"addendum": value}}); err != nil {
-					return err
-				}
-				if err := appendRecord("answer", "patch-b", map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "done"}}}); err != nil {
-					return err
-				}
-				_, err = options.Stdout.Write([]byte("\n"))
-				return err
-			}}
+					var rebuilt strings.Builder
+					encoder := json.NewEncoder(&rebuilt)
+					for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+						var record map[string]any
+						if err := json.Unmarshal([]byte(line), &record); err != nil {
+							return err
+						}
+						if record["id"] == "call" {
+							if err := encoder.Encode(map[string]any{"type": "message", "id": "initial-a", "parentId": record["parentId"], "message": map[string]any{"role": "system", "sections": map[string]any{"addendum": "<addendum>\nA\n</addendum>"}}}); err != nil {
+								return err
+							}
+							record["parentId"] = "initial-a"
+						}
+						if err := encoder.Encode(record); err != nil {
+							return err
+						}
+					}
+					return os.WriteFile(path, []byte(rebuilt.String()), 0600)
+				},
+				piHook: func(emit func(string)) error {
+					path := flagValue(runner.plans[len(runner.plans)-1].Args, "--session")
+					deadline := time.Now().Add(2 * time.Second)
+					for {
+						messages, final := decodeContinueEvents(t, capture.snapshot())
+						if len(messages) == 2 && final == nil && messages[0].ParentID == "" {
+							break
+						}
+						if time.Now().After(deadline) {
+							t.Fatalf("tools not streamed immediately: %s", capture.snapshot())
+						}
+						time.Sleep(10 * time.Millisecond)
+					}
+					appendRecord := func(id, parent string, message map[string]any) error {
+						file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+						if err != nil {
+							return err
+						}
+						defer file.Close()
+						return json.NewEncoder(file).Encode(map[string]any{"type": "message", "id": id, "parentId": parent, "message": message})
+					}
+					if err := appendRecord("patch-a", "tool", map[string]any{"role": "system", "sections": map[string]any{"addendum": "<addendum>\nA\n</addendum>"}}); err != nil {
+						return err
+					}
+					if err := appendRecord("middle", "patch-a", map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "working"}}}); err != nil {
+						return err
+					}
+					emit(`{"type":"turn_update"}`)
+					time.Sleep(50 * time.Millisecond)
+					messages, _ := decodeContinueEvents(t, capture.snapshot())
+					if len(messages) != 2 {
+						t.Fatalf("mutable tail emitted: %s", capture.snapshot())
+					}
+					var value any = "<addendum>\nB\n</addendum>"
+					if clear {
+						value = nil
+					}
+					if err := appendRecord("patch-b", "middle", map[string]any{"role": "system", "sections": map[string]any{"addendum": value}}); err != nil {
+						return err
+					}
+					if err := appendRecord("answer", "patch-b", map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "done"}}}); err != nil {
+						return err
+					}
+					emit(`{"type":"turn_update"}`)
+					return nil
+				},
+			}
 			if err := app.Run(context.Background(), []string{"session", "continue", "pi", "--model", "provider/model", "--stream"}); err != nil {
 				t.Fatal(err)
 			}

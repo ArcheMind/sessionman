@@ -1,7 +1,7 @@
 package agentparams
 
 func buildPi(t Transport, r Request) (Plan, error) {
-	if t != Interactive && t != OneShot && t != RPC && t != Exec {
+	if t != Interactive && t != RPC && t != Exec {
 		return unsupported("pi", t, "transport")
 	}
 	if len(r.MCP.Servers) > 0 {
@@ -13,9 +13,6 @@ func buildPi(t Transport, r Request) (Plan, error) {
 		}
 	}
 	args := []string{}
-	if t == OneShot {
-		args = append(args, "--print", "--mode", "json", "--no-approve")
-	}
 	if t == RPC {
 		args = append(args, "--mode", "rpc", "--no-approve")
 	}
