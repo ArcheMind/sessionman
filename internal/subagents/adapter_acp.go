@@ -22,9 +22,7 @@ type agyPromptResult = acp.PromptResult
 
 type acpState struct {
 	client       *acp.Client
-	prompts      map[int]bool
 	text         string
-	results      []acp.PromptResult
 	terminal     string
 	failure      string
 	cancelled    bool
@@ -45,7 +43,7 @@ func (d *Daemon) sendACPLocked(message, delivery string) controlResponse {
 			d.queue = append(d.queue, message)
 			return controlResponse{Disposition: "queued", Seq: seq}
 		}
-		disposition, id, err := state.client.Steer(context.Background(), d.agent.Session, steerPrefix+message)
+		disposition, _, err := state.client.Steer(context.Background(), d.agent.Session, steerPrefix+message)
 		if err != nil {
 			return controlResponse{Error: err.Error()}
 		}
@@ -53,12 +51,9 @@ func (d *Daemon) sendACPLocked(message, delivery string) controlResponse {
 			d.queue = append(d.queue, message)
 			return controlResponse{Disposition: "queued", Seq: seq}
 		}
-		if id != 0 {
-			state.prompts[id] = true
-		}
 		return controlResponse{Disposition: "steered", Seq: seq}
 	}
-	state.text, state.results, state.terminal, state.failure, state.cancelled = "", nil, "", "", false
+	state.text, state.terminal, state.failure, state.cancelled = "", "", "", false
 	state.stderrOffset = len(d.proc.stream.Stderr())
 	if state.role != "" {
 		if body, marked := strings.CutPrefix(message, sessions.SubagentMarker+"\n"); marked {
@@ -67,11 +62,10 @@ func (d *Daemon) sendACPLocked(message, delivery string) controlResponse {
 			message = state.role + "\n\n" + message
 		}
 	}
-	id, err := state.client.SendPrompt(d.agent.Session, message)
-	if err != nil {
+	state.client.ResetTurn(d.agent.Session)
+	if _, err := state.client.SendPrompt(d.agent.Session, message); err != nil {
 		return controlResponse{Error: err.Error()}
 	}
-	state.prompts[id] = true
 	d.running = true
 	return controlResponse{Disposition: "started", Seq: seq}
 }
@@ -114,7 +108,7 @@ func (d *Daemon) startACPLocked() error {
 		return err
 	}
 	proc := &nativeProc{stream: stream, done: make(chan struct{})}
-	state := &acpState{prompts: map[int]bool{}}
+	state := &acpState{}
 	client := acp.New(stream, acp.Handlers{
 		Agent: a.Option.Agent,
 		OnRequest: func(_ json.RawMessage, method string) (any, *acp.Error) {
@@ -123,9 +117,10 @@ func (d *Daemon) startACPLocked() error {
 			}
 			return nil, &acp.Error{Code: -32601, Message: "interactive client request unavailable in an ExternalSubagent: " + method}
 		},
-		OnLine:  func(line string) { d.handleACPLine(state, line) },
-		OnExit:  func() { d.procExit(proc, a.Option.Agent+" ACP execution") },
-		OnDebug: d.debugf,
+		OnLine:    func(line string) { d.handleACPLine(state, line) },
+		OnTurnEnd: func(res acp.PromptResult) { d.handleACPTurnEnd(state, res) },
+		OnExit:    func() { d.procExit(proc, a.Option.Agent+" ACP execution") },
+		OnDebug:   d.debugf,
 	})
 	state.client = client
 	d.proc, d.acp, d.procAuth = proc, state, auth
@@ -165,56 +160,39 @@ func (d *Daemon) agyEnvironment() map[string]string {
 }
 
 func (d *Daemon) handleACPLine(state *acpState, line string) {
-	sid, chunk, prompt, ok := acp.ParseLine(line)
-	if !ok {
+	sid, chunk, _, ok := acp.ParseLine(line)
+	if !ok || chunk == "" {
 		return
 	}
+	d.mu.Lock()
+	if d.acp == state && !d.stopping && sid == d.agent.Session {
+		state.text += chunk
+	}
+	d.mu.Unlock()
+}
+
+func (d *Daemon) handleACPTurnEnd(state *acpState, prompt acp.PromptResult) {
 	d.mu.Lock()
 	if d.acp != state || d.stopping {
 		d.mu.Unlock()
 		return
 	}
-	if prompt == nil {
-		if sid == d.agent.Session && chunk != "" {
-			state.text += chunk
-		}
-		d.mu.Unlock()
-		return
-	}
-	if !state.prompts[prompt.ID] {
-		d.mu.Unlock()
-		return
-	}
-	delete(state.prompts, prompt.ID)
 	agentID := d.agent.Option.Agent
 	if prompt.Err != nil {
 		state.failure = fmt.Sprintf("%s session/prompt failed %s", agentID, prompt.Err.Error())
-	}
-	state.results = append(state.results, *prompt)
-	if prompt.Err == nil {
+	} else {
 		switch prompt.StopReason {
 		case "end_turn":
 		case "cancelled":
 			state.cancelled = true
 		case "max_tokens", "max_turn_requests", "refusal":
-			state.terminal = fmt.Sprintf("%s prompt RPC %d stopped with native stopReason=%s; no implicit retry", agentID, prompt.ID, prompt.StopReason)
+			state.terminal = fmt.Sprintf("%s prompt stopped with native stopReason=%s; no implicit retry", agentID, prompt.StopReason)
 		default:
-			state.failure = fmt.Sprintf("%s prompt RPC %d returned invalid native stopReason %q; no implicit retry", agentID, prompt.ID, prompt.StopReason)
+			state.failure = fmt.Sprintf("%s prompt returned invalid native stopReason %q; no implicit retry", agentID, prompt.StopReason)
 		}
 	}
-	if len(state.prompts) > 0 {
-		d.mu.Unlock()
-		return
-	}
-	var usage json.RawMessage
-	if len(state.results) == 1 {
-		usage = state.results[0].Usage
-	} else {
-		usage, _ = json.Marshal(struct {
-			Prompts []acp.PromptResult `json:"prompts"`
-		}{state.results})
-	}
-	report := Event{Status: "completed", Report: state.text, Usage: usage}
+
+	report := Event{Status: "completed", Report: state.text, Usage: prompt.Usage}
 	switch agentID {
 	case "agy":
 		report.Auth = "agy native credential resolution (no identity override)"

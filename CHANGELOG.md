@@ -4,6 +4,15 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-11-23
+
+### Changed
+
+- Split `internal/acp` turn lifecycle into ACP v2 (`v2.go`) and ACP v1 (`v1.go`) sharing `acp.Client` transport and session negotiation:
+  - Negotiate ACP v2 (`protocolVersion: 2`) for Claude (`claude-agent-acp`) and Codex (`codex-acp`), using standard `state_update` (`idle` + empty `background`) for turn and background-task completion with zero vendor-specific hacks, `type: "id"` on `session/set_config_option`, and `type: "stdio"` normalization on v2 `mcpServers`.
+  - Keep ACP v1 (`protocolVersion: 1`) fallback for AGY (`agy acp`), waiting for in-progress non-daemon `tool_call`s and their post-`end_turn` reactive wakeup before closing the session.
+- Simplified `internal/subagents/adapter_acp.go` to consume `acp.Client` `OnTurnEnd` uniformly across v1 and v2.
+
 ## [0.16.0] - 2026-11-22
 
 ### Changed

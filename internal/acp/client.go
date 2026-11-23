@@ -47,18 +47,21 @@ type StartOptions struct {
 }
 
 type SessionInfo struct {
-	SessionID    string
-	Capabilities Capabilities
-	PromptPrefix string // non-empty when agent does not advertise systemPrompt capability
-	ConfigByCat  map[string]string
+	SessionID       string
+	ProtocolVersion int
+	Capabilities    Capabilities
+	PromptPrefix    string // non-empty when agent does not advertise systemPrompt capability
+	ConfigByCat     map[string]string
 }
 
 type Handlers struct {
-	Agent     string
-	OnRequest func(id json.RawMessage, method string) (any, *Error)
-	OnLine    func(line string)
-	OnExit    func()
-	OnDebug   func(format string, args ...any)
+	Agent                  string
+	OnRequest              func(id json.RawMessage, method string) (any, *Error)
+	OnLine                 func(line string)
+	OnTurnEnd              func(result PromptResult)
+	OnExit                 func()
+	OnDebug                func(format string, args ...any)
+	BackgroundSettleWindow time.Duration
 }
 
 type reply struct {
@@ -66,31 +69,65 @@ type reply struct {
 	err    *Error
 }
 
-// Client speaks ACP v1 JSON-RPC 2.0 over a runtime.Stream.
+type noteItem struct {
+	line string
+	fn   func()
+}
+
+type turnBackend interface {
+	Reset(sessionID string, onEnd func(PromptResult)) <-chan struct{}
+	OnPromptSent(id int)
+	OnPromptResponse(id int, result json.RawMessage, rpcErr *Error)
+	Observe(line string)
+	Result() PromptResult
+	Close()
+}
+
+// Client speaks ACP (v2 by default, falling back to v1 when the server
+// negotiates protocolVersion 1) over a runtime.Stream.
 type Client struct {
-	agent    string
-	stream   *runtime.Stream
-	handlers Handlers
-	caps     Capabilities
+	agent           string
+	stream          *runtime.Stream
+	handlers        Handlers
+	protocolVersion int
+	caps            Capabilities
+
+	turnMu sync.Mutex
+	turn   turnBackend
 
 	rpcMu   sync.Mutex
 	nextID  int
 	pending map[int]chan reply
 	live    bool
 	closed  chan struct{}
+
+	notesMu     sync.Mutex
+	notes       chan noteItem
+	notesClosed bool
 }
 
 func New(stream *runtime.Stream, h Handlers) *Client {
 	if h.Agent == "" {
 		h.Agent = "acp"
 	}
-	c := &Client{agent: h.Agent, stream: stream, handlers: h, pending: map[int]chan reply{}, closed: make(chan struct{})}
-	notes := make(chan string, 256)
-	go c.readLoop(notes)
+	notes := make(chan noteItem, 256)
+	c := &Client{
+		agent:           h.Agent,
+		stream:          stream,
+		handlers:        h,
+		protocolVersion: 1,
+		turn:            newV1Turn(h.BackgroundSettleWindow),
+		pending:         map[int]chan reply{},
+		closed:          make(chan struct{}),
+		notes:           notes,
+	}
+	go c.readLoop()
 	go func() {
-		for line := range notes {
-			if c.handlers.OnLine != nil {
-				c.handlers.OnLine(line)
+		for item := range notes {
+			if item.fn != nil {
+				item.fn()
+			} else if c.handlers.OnLine != nil {
+				c.handlers.OnLine(item.line)
 			}
 		}
 		if c.handlers.OnExit != nil {
@@ -100,7 +137,52 @@ func New(stream *runtime.Stream, h Handlers) *Client {
 	return c
 }
 
-func (c *Client) readLoop(notes chan<- string) {
+func (c *Client) setProtocolVersion(ver int) {
+	c.turnMu.Lock()
+	defer c.turnMu.Unlock()
+	if ver >= 2 {
+		if c.protocolVersion < 2 {
+			if c.turn != nil {
+				c.turn.Close()
+			}
+			c.protocolVersion = 2
+			c.turn = newV2Turn()
+		}
+		return
+	}
+	if c.protocolVersion != 1 {
+		if c.turn != nil {
+			c.turn.Close()
+		}
+		c.protocolVersion = 1
+		c.turn = newV1Turn(c.handlers.BackgroundSettleWindow)
+	}
+}
+
+func (c *Client) getTurn() turnBackend {
+	c.turnMu.Lock()
+	defer c.turnMu.Unlock()
+	return c.turn
+}
+
+func (c *Client) enqueueNote(item noteItem) bool {
+	c.notesMu.Lock()
+	defer c.notesMu.Unlock()
+	if c.notesClosed {
+		return false
+	}
+	c.notes <- item
+	return true
+}
+
+func (c *Client) drainNotes() {
+	done := make(chan struct{})
+	if c.enqueueNote(noteItem{fn: func() { close(done) }}) {
+		<-done
+	}
+}
+
+func (c *Client) readLoop() {
 	for line := range c.stream.Lines() {
 		var env struct {
 			ID     json.RawMessage `json:"id"`
@@ -124,22 +206,34 @@ func (c *Client) readLoop(notes chan<- string) {
 				c.rpcMu.Lock()
 				ch := c.pending[id]
 				delete(c.pending, id)
+				live := c.live
 				c.rpcMu.Unlock()
+
 				if ch != nil {
 					ch <- reply{result: env.Result, err: env.Error}
 					continue
 				}
+				if live {
+					c.enqueueNote(noteItem{line: line})
+				}
+				c.getTurn().OnPromptResponse(id, env.Result, env.Error)
+				continue
 			}
 		}
 		c.rpcMu.Lock()
 		live := c.live
 		c.rpcMu.Unlock()
 		if live {
-			notes <- line
+			c.enqueueNote(noteItem{line: line})
+			c.getTurn().Observe(line)
 		}
 	}
+	c.getTurn().Close()
 	close(c.closed)
-	close(notes)
+	c.notesMu.Lock()
+	c.notesClosed = true
+	close(c.notes)
+	c.notesMu.Unlock()
 }
 
 func (c *Client) answerRequest(id json.RawMessage, method string) {
@@ -208,7 +302,8 @@ func (c *Client) Call(ctx context.Context, method string, params any) (json.RawM
 	}
 }
 
-// Start performs initialize, opens/resumes/loads the session, applies
+// Start negotiates ACP v2 (falling back to v1 when the server answers
+// protocolVersion 1), opens/resumes/loads the session, applies
 // model/effort/mode via negotiated configOptions, and trusts Codex hooks when requested.
 func (c *Client) Start(ctx context.Context, opts StartOptions) (SessionInfo, error) {
 	clientInfo := map[string]any{"name": "sessionman"}
@@ -216,12 +311,23 @@ func (c *Client) Start(ctx context.Context, opts StartOptions) (SessionInfo, err
 		clientInfo["version"] = opts.ClientVersion
 	}
 	initRaw, err := c.Call(ctx, "initialize", map[string]any{
-		"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": clientInfo,
+		"protocolVersion":    2,
+		"capabilities":       map[string]any{},
+		"clientCapabilities": map[string]any{},
+		"info":               clientInfo,
+		"clientInfo":         clientInfo,
 	})
 	if err != nil {
 		return SessionInfo{}, err
 	}
 	var initResp struct {
+		ProtocolVersion int `json:"protocolVersion"`
+		Capabilities    struct {
+			Session struct {
+				Resume       json.RawMessage `json:"resume"`
+				SystemPrompt json.RawMessage `json:"systemPrompt"`
+			} `json:"session"`
+		} `json:"capabilities"`
 		AgentCapabilities struct {
 			LoadSession         bool `json:"loadSession"`
 			SessionCapabilities struct {
@@ -236,11 +342,28 @@ func (c *Client) Start(ctx context.Context, opts StartOptions) (SessionInfo, err
 		} `json:"_meta"`
 	}
 	_ = json.Unmarshal(initRaw, &initResp)
-	caps := Capabilities{
-		Load:         initResp.AgentCapabilities.LoadSession,
-		Resume:       len(initResp.AgentCapabilities.SessionCapabilities.Resume) > 0 && string(initResp.AgentCapabilities.SessionCapabilities.Resume) != "null",
-		SystemPrompt: len(initResp.AgentCapabilities.SessionCapabilities.SystemPrompt) > 0 && string(initResp.AgentCapabilities.SessionCapabilities.SystemPrompt) != "null",
-		Steering:     initResp.Meta.Steering.Supported,
+
+	protoVer := 1
+	if initResp.ProtocolVersion >= 2 {
+		protoVer = 2
+	}
+	c.setProtocolVersion(protoVer)
+
+	var caps Capabilities
+	if protoVer >= 2 {
+		caps = Capabilities{
+			Load:         true,
+			Resume:       true, // session/resume is baseline in ACP v2
+			SystemPrompt: hasJSONObject(initResp.Capabilities.Session.SystemPrompt),
+			Steering:     initResp.Meta.Steering.Supported,
+		}
+	} else {
+		caps = Capabilities{
+			Load:         initResp.AgentCapabilities.LoadSession,
+			Resume:       hasJSONObject(initResp.AgentCapabilities.SessionCapabilities.Resume),
+			SystemPrompt: hasJSONObject(initResp.AgentCapabilities.SessionCapabilities.SystemPrompt),
+			Steering:     initResp.Meta.Steering.Supported,
+		}
 	}
 	c.caps = caps
 
@@ -253,6 +376,11 @@ func (c *Client) Start(ctx context.Context, opts StartOptions) (SessionInfo, err
 	params := make(map[string]any, len(opts.Params)+2)
 	for k, v := range opts.Params {
 		params[k] = v
+	}
+	if protoVer >= 2 {
+		if normalized, ok := normalizeV2MCPServers(params["mcpServers"]); ok {
+			params["mcpServers"] = normalized
+		}
 	}
 	var fallbackPrefix string
 	if opts.SystemPrompt != "" {
@@ -282,6 +410,7 @@ func (c *Client) Start(ctx context.Context, opts StartOptions) (SessionInfo, err
 		ID            string `json:"sessionId"`
 		ConfigOptions []struct {
 			ID       string `json:"id"`
+			ConfigID string `json:"configId"`
 			Category string `json:"category"`
 		} `json:"configOptions"`
 	}
@@ -299,9 +428,13 @@ func (c *Client) Start(ctx context.Context, opts StartOptions) (SessionInfo, err
 	}
 	byCat := map[string]string{}
 	for _, opt := range sess.ConfigOptions {
-		if opt.Category != "" && opt.ID != "" {
+		optID := opt.ConfigID
+		if optID == "" {
+			optID = opt.ID
+		}
+		if opt.Category != "" && optID != "" {
 			if _, exists := byCat[opt.Category]; !exists {
-				byCat[opt.Category] = opt.ID
+				byCat[opt.Category] = optID
 			}
 		}
 	}
@@ -310,13 +443,13 @@ func (c *Client) Start(ctx context.Context, opts StartOptions) (SessionInfo, err
 		if id == "" {
 			id = "mode"
 		}
-		if _, err := c.Call(ctx, "session/set_config_option", map[string]any{"sessionId": sid, "configId": id, "value": opts.Mode}); err != nil {
+		if err := c.setConfigOption(ctx, protoVer, sid, id, opts.Mode); err != nil {
 			return SessionInfo{}, err
 		}
 	}
 	if opts.Model != "" {
 		if id := byCat["model"]; id != "" {
-			if _, err := c.Call(ctx, "session/set_config_option", map[string]any{"sessionId": sid, "configId": id, "value": opts.Model}); err != nil {
+			if err := c.setConfigOption(ctx, protoVer, sid, id, opts.Model); err != nil {
 				return SessionInfo{}, err
 			}
 		} else if _, err := c.Call(ctx, "session/set_model", map[string]any{"sessionId": sid, "modelId": opts.Model}); err != nil {
@@ -328,11 +461,54 @@ func (c *Client) Start(ctx context.Context, opts StartOptions) (SessionInfo, err
 		if id == "" {
 			id = "thought_level"
 		}
-		if _, err := c.Call(ctx, "session/set_config_option", map[string]any{"sessionId": sid, "configId": id, "value": opts.Effort}); err != nil {
+		if err := c.setConfigOption(ctx, protoVer, sid, id, opts.Effort); err != nil {
 			return SessionInfo{}, err
 		}
 	}
-	return SessionInfo{SessionID: sid, Capabilities: caps, PromptPrefix: fallbackPrefix, ConfigByCat: byCat}, nil
+	return SessionInfo{
+		SessionID:       sid,
+		ProtocolVersion: protoVer,
+		Capabilities:    caps,
+		PromptPrefix:    fallbackPrefix,
+		ConfigByCat:     byCat,
+	}, nil
+}
+
+func hasJSONObject(raw json.RawMessage) bool {
+	return len(raw) > 0 && string(raw) != "null"
+}
+
+func normalizeV2MCPServers(raw any) ([]map[string]any, bool) {
+	if raw == nil {
+		return nil, false
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, false
+	}
+	var list []map[string]any
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, false
+	}
+	for _, entry := range list {
+		if _, hasType := entry["type"]; !hasType {
+			entry["type"] = "stdio"
+		}
+	}
+	return list, true
+}
+
+func (c *Client) setConfigOption(ctx context.Context, protoVer int, sessionID, configID, value string) error {
+	params := map[string]any{
+		"sessionId": sessionID,
+		"configId":  configID,
+		"value":     value,
+	}
+	if protoVer >= 2 {
+		params["type"] = "id"
+	}
+	_, err := c.Call(ctx, "session/set_config_option", params)
+	return err
 }
 
 func (c *Client) trustCodexHooks(ctx context.Context, cwd string) error {
@@ -365,11 +541,27 @@ func (c *Client) trustCodexHooks(ctx context.Context, cwd string) error {
 
 func (c *Client) setLive(v bool) { c.rpcMu.Lock(); c.live = v; c.rpcMu.Unlock() }
 
+func (c *Client) emitTurnEnd(res PromptResult) {
+	c.enqueueNote(noteItem{fn: func() {
+		if c.handlers.OnTurnEnd != nil {
+			c.handlers.OnTurnEnd(res)
+		}
+	}})
+}
+
+// ResetTurn clears turn-level state before starting a new turn via SendPrompt.
+func (c *Client) ResetTurn(sessionID string) {
+	c.getTurn().Reset(sessionID, c.emitTurnEnd)
+}
+
 func (c *Client) SendPrompt(sessionID, text string) (int, error) {
 	c.setLive(true)
 	id, _, err := c.request("session/prompt", map[string]any{
 		"sessionId": sessionID, "prompt": []map[string]any{{"type": "text", "text": text}},
 	}, false)
+	if err == nil {
+		c.getTurn().OnPromptSent(id)
+	}
 	return id, err
 }
 
@@ -402,30 +594,29 @@ func (c *Client) Steer(ctx context.Context, sessionID, text string) (disposition
 }
 
 func (c *Client) PromptSync(ctx context.Context, sessionID, text string) (PromptResult, error) {
+	turn := c.getTurn()
+	doneCh := turn.Reset(sessionID, nil)
 	c.setLive(true)
-	id, ch, err := c.request("session/prompt", map[string]any{
+	id, _, err := c.request("session/prompt", map[string]any{
 		"sessionId": sessionID, "prompt": []map[string]any{{"type": "text", "text": text}},
-	}, true)
+	}, false)
 	if err != nil {
 		return PromptResult{}, err
 	}
-	defer func() { c.rpcMu.Lock(); delete(c.pending, id); c.rpcMu.Unlock() }()
+	turn.OnPromptSent(id)
+
 	select {
-	case rep := <-ch:
-		if rep.err != nil {
-			return PromptResult{ID: id, Err: rep.err}, fmt.Errorf("%s session/prompt failed %s", c.agent, rep.err.Error())
+	case <-doneCh:
+		c.drainNotes()
+		res := turn.Result()
+		if res.Err != nil {
+			return res, fmt.Errorf("%s session/prompt failed %s", c.agent, res.Err.Error())
 		}
-		var body struct {
-			StopReason string          `json:"stopReason"`
-			Usage      json.RawMessage `json:"usage"`
-		}
-		if err := json.Unmarshal(rep.result, &body); err != nil {
-			return PromptResult{}, fmt.Errorf("invalid %s prompt result: %w", c.agent, err)
-		}
-		return PromptResult{ID: id, StopReason: body.StopReason, Usage: body.Usage}, nil
+		return res, nil
 	case <-c.closed:
 		return PromptResult{}, fmt.Errorf("%s exited without completing the turn; stderr: %s", c.agent, runtime.RedactSecrets(strings.TrimSpace(c.stream.Stderr())))
 	case <-ctx.Done():
+		turn.Close()
 		raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sessionID}})
 		_ = c.stream.WriteLine(string(raw))
 		c.stream.Kill()
@@ -433,7 +624,7 @@ func (c *Client) PromptSync(ctx context.Context, sessionID, text string) (Prompt
 	}
 }
 
-// ParseLine extracts either an agent text chunk from session/update or a prompt response.
+// ParseLine extracts either an agent text chunk from session/update or a v1 prompt response.
 func ParseLine(line string) (sessionID, textChunk string, prompt *PromptResult, ok bool) {
 	var ev struct {
 		ID     int    `json:"id"`
