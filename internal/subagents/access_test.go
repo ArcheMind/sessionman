@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/presets"
 )
 
@@ -47,16 +46,9 @@ func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 	s := testServer(t, nil)
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "read", "prompt": "review", "model": "review", "mode": "normal", "run_in_background": false})
 	records := readFakeRecords(t, record)
-	modeCfg := fakeRequest(t, records, "session/set_config_option")
-	if modeCfg["configId"] != "mode" || modeCfg["value"] != "workspace-write" || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth source for this turn: CODEX_HOME="`+os.Getenv("CODEX_HOME")+`"`+"\n") {
-		t.Fatal(modeCfg, text)
-	}
-	plan, err := agentparams.Build("claude", agentparams.ACP, agentparams.Request{Cwd: "/cwd", Model: "opus", Mode: ModeNormal})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.Mode != "default" || plan.Executable != "claude-agent-acp" {
-		t.Fatalf("%#v", plan)
+	thread := fakeRequest(t, records, "thread/start")
+	if thread["approvalPolicy"] != nil || thread["sandbox"] != nil || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth source for this turn: CODEX_HOME="`+os.Getenv("CODEX_HOME")+`"`+"\n") {
+		t.Fatal(thread, text)
 	}
 	if records[0].Env["CODEX_HOME"] != os.Getenv("CODEX_HOME") {
 		t.Fatalf("auth environment not explicit: %#v", records[0].Env)
@@ -67,16 +59,9 @@ func TestYoloModeBypassesNativePermissions(t *testing.T) {
 	record := installFakeNative(t, "codex", nil)
 	s := testServer(t, nil)
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "mode": "yolo", "run_in_background": false})
-	modeCfg := fakeRequest(t, readFakeRecords(t, record), "session/set_config_option")
-	if modeCfg["configId"] != "mode" || modeCfg["value"] != "agent-full-access" || !strings.Contains(text, "Mode: yolo\n") {
-		t.Fatal(modeCfg, text)
-	}
-	plan, err := agentparams.Build("claude", agentparams.ACP, agentparams.Request{Cwd: "/cwd", Model: "opus", Mode: ModeYolo})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.Mode != "bypassPermissions" {
-		t.Fatal(plan)
+	thread := fakeRequest(t, readFakeRecords(t, record), "thread/start")
+	if thread["approvalPolicy"] != "never" || thread["sandbox"] != "danger-full-access" || !strings.Contains(text, "Mode: yolo\n") {
+		t.Fatal(thread, text)
 	}
 }
 
@@ -93,23 +78,23 @@ func TestModeIsFixedForContinuation(t *testing.T) {
 		t.Fatal("continuation accepted a mode change")
 	}
 	records := readFakeRecords(t, record)
-	if countFakeRequests(t, records, "session/new") != 2 || countFakeRequests(t, records, "session/prompt") != 4 {
+	if countFakeRequests(t, records, "thread/start") != 2 || countFakeRequests(t, records, "turn/start") != 4 {
 		t.Fatal("continuation restarted a session or lost a turn", records)
 	}
-	var modeValues []string
+	var policies []string
 	for _, entry := range records {
-		if entry.Kind == "request" && strings.Contains(string(entry.Line), `"configId":"mode"`) {
+		if entry.Kind == "request" && strings.Contains(string(entry.Line), `"method":"thread/start"`) {
 			var req struct {
 				Params struct {
-					Value string `json:"value"`
+					ApprovalPolicy string `json:"approvalPolicy"`
 				} `json:"params"`
 			}
 			_ = json.Unmarshal(entry.Line, &req)
-			modeValues = append(modeValues, req.Params.Value)
+			policies = append(policies, req.Params.ApprovalPolicy)
 		}
 	}
-	if len(modeValues) != 2 || modeValues[0] != "agent-full-access" || modeValues[1] != "workspace-write" {
-		t.Fatal("continuation changed mode", modeValues)
+	if len(policies) != 2 || policies[0] != "never" || policies[1] != "" {
+		t.Fatal("continuation changed mode", policies)
 	}
 }
 

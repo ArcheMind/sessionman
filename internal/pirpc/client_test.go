@@ -8,8 +8,29 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ArcheMind/agentx/internal/headless"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
+
+type turnControl struct {
+	Steer  func(ctx context.Context, message string) (string, error)
+	Cancel func() error
+}
+
+// runTurn runs one turn on a fresh client, mirroring how a caller drives a Session.
+func runTurn(ctx context.Context, stream *runtime.Stream, prompt, model string, onLine func(string) error, onReady func(turnControl)) (headless.TurnResult, error) {
+	var client *Client
+	client = New(stream, model, headless.Handlers{OnLine: func(line string) {
+		if onLine != nil {
+			_ = onLine(line)
+		}
+	}})
+	var ready func()
+	if onReady != nil {
+		ready = func() { onReady(turnControl{Steer: client.Steer, Cancel: client.Cancel}) }
+	}
+	return client.Turn(ctx, prompt, ready)
+}
 
 func TestRunTurnSucceedsAndChecksModel(t *testing.T) {
 	inR, inW := io.Pipe()
@@ -33,10 +54,10 @@ func TestRunTurnSucceedsAndChecksModel(t *testing.T) {
 	}()
 	stream := runtime.NewPipeStream(inW, outR, func() string { return "" }, func() { _ = inW.Close(); _ = outW.Close() }, func() error { return nil })
 	var seen []string
-	res, err := RunTurn(context.Background(), stream, "hi", "anthropic/claude-x", func(line string) error {
+	res, err := runTurn(context.Background(), stream, "hi", "anthropic/claude-x", func(line string) error {
 		seen = append(seen, line)
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +82,7 @@ func TestRunTurnDetectsModelMismatchAndAbort(t *testing.T) {
 		}
 	}()
 	stream := runtime.NewPipeStream(inW, outR, func() string { return "" }, func() { _ = inW.Close(); _ = outW.Close() }, func() error { return nil })
-	res, err := RunTurn(context.Background(), stream, "hi", "anthropic/claude-x", nil)
+	res, err := runTurn(context.Background(), stream, "hi", "anthropic/claude-x", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,10 +127,10 @@ func TestRunTurnWithControlSteerAndIdleAfterSettle(t *testing.T) {
 	}()
 	stream := runtime.NewPipeStream(inW, outR, func() string { return "" }, func() { _ = inW.Close(); _ = outW.Close() }, func() error { return nil })
 
-	ctrlCh := make(chan TurnControl, 1)
-	doneCh := make(chan TurnResult, 1)
+	ctrlCh := make(chan turnControl, 1)
+	doneCh := make(chan headless.TurnResult, 1)
 	go func() {
-		res, err := RunTurnWithControl(context.Background(), stream, "hi", "anthropic/claude-x", nil, func(tc TurnControl) {
+		res, err := runTurn(context.Background(), stream, "hi", "anthropic/claude-x", nil, func(tc turnControl) {
 			ctrlCh <- tc
 		})
 		if err != nil {
@@ -161,10 +182,10 @@ func TestRunTurnWithControlCancelAbortsTurn(t *testing.T) {
 	}()
 	stream := runtime.NewPipeStream(inW, outR, func() string { return "" }, func() { _ = inW.Close(); _ = outW.Close() }, func() error { return nil })
 
-	ctrlCh := make(chan TurnControl, 1)
-	resCh := make(chan TurnResult, 1)
+	ctrlCh := make(chan turnControl, 1)
+	resCh := make(chan headless.TurnResult, 1)
 	go func() {
-		res, err := RunTurnWithControl(context.Background(), stream, "hi", "anthropic/claude-x", nil, func(tc TurnControl) {
+		res, err := runTurn(context.Background(), stream, "hi", "anthropic/claude-x", nil, func(tc turnControl) {
 			ctrlCh <- tc
 		})
 		if err != nil {

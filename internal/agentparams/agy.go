@@ -18,14 +18,11 @@ func buildAgy(t Transport, r Request) (Plan, error) {
 			args = append(args, "--include-default-customizations=false")
 		}
 		args = append(args, r.Flags...)
-		params := map[string]any{"cwd": r.Cwd, "mcpServers": AgyMCPServers(r.MCP)}
-		if r.Session != "" {
-			params["sessionId"] = r.Session
-		}
 		return Plan{
 			Executable:   "agy",
 			Args:         args,
-			Params:       params,
+			Params:       map[string]any{"cwd": r.Cwd, "mcpServers": AgyMCPServers(r.MCP)},
+			Session:      r.Session,
 			Model:        r.Model,
 			Effort:       r.Effort,
 			SystemPrompt: r.SystemPrompt,

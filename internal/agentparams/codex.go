@@ -2,13 +2,11 @@ package agentparams
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 )
 
 func buildCodex(t Transport, r Request) (Plan, error) {
-	if t != Interactive && t != ACP {
+	if t != Interactive && t != AppServer {
 		return unsupported("codex", t, "transport")
 	}
 	if err := requireUUID("Codex resume", r.Session); err != nil {
@@ -17,39 +15,32 @@ func buildCodex(t Transport, r Request) (Plan, error) {
 	if r.UserConfig != nil && !*r.UserConfig {
 		return unsupported("codex", t, "user_config=false")
 	}
-	if t == ACP {
-		exe := os.Getenv("SM_CODEX_ACP_BIN")
-		if exe == "" {
-			exe = "codex-acp"
+	if t == AppServer {
+		config := map[string]any{}
+		if r.Effort != "" {
+			config["model_reasoning_effort"] = r.Effort
 		}
-		env := map[string]string{}
-		if os.Getenv("CODEX_PATH") == "" {
-			if codexBin, err := exec.LookPath("codex"); err == nil {
-				env["CODEX_PATH"] = codexBin
-			}
+		if len(r.MCP.Servers) > 0 {
+			config["mcp_servers"] = codexMCPConfig(r.MCP)
 		}
-		mode := ""
+		params := map[string]any{}
+		if r.Cwd != "" {
+			params["cwd"] = r.Cwd
+		}
+		if r.Model != "" {
+			params["model"] = r.Model
+		}
+		if r.SystemPrompt != "" {
+			params["developerInstructions"] = r.SystemPrompt
+		}
+		if len(config) > 0 {
+			params["config"] = config
+		}
 		if r.Mode == ModeYolo {
-			mode = "agent-full-access"
-			env["INITIAL_AGENT_MODE"] = mode
-		} else if r.Mode == ModeNormal {
-			mode = "workspace-write"
-			env["INITIAL_AGENT_MODE"] = mode
+			params["approvalPolicy"] = "never"
+			params["sandbox"] = "danger-full-access"
 		}
-		params := map[string]any{"cwd": r.Cwd, "mcpServers": AgyMCPServers(r.MCP)}
-		if r.Session != "" {
-			params["sessionId"] = r.Session
-		}
-		return Plan{
-			Executable:   exe,
-			Args:         append([]string{}, r.Flags...),
-			Env:          env,
-			Params:       params,
-			Model:        r.Model,
-			Effort:       r.Effort,
-			Mode:         mode,
-			SystemPrompt: r.SystemPrompt,
-		}, nil
+		return Plan{Executable: "codex", Args: append([]string{"app-server"}, r.Flags...), Params: params, Session: r.Session}, nil
 	}
 	args := []string{}
 	if r.Session != "" {

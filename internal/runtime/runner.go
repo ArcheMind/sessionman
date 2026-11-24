@@ -38,10 +38,7 @@ func prepareAgent(plan *CommandPlan) error {
 		return err
 	}
 	// ResolvedArgs are native CLI flags (e.g. agy --gemini_dir, codex --dangerously-bypass-hook-trust).
-	// External ACP wrappers (e.g. codex-acp, claude-agent-acp) inherit S/C via env instead.
-	if plan.Executable == plan.Agent {
-		plan.Args = prependResolvedArgs(nativedirs.ResolvedArgs(plan.Agent), plan.Args)
-	}
+	plan.Args = prependResolvedArgs(nativedirs.ResolvedArgs(plan.Agent), plan.Args)
 	return nil
 }
 

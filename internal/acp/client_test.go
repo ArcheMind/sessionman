@@ -54,9 +54,8 @@ func pipeACP(t *testing.T, handler func(req map[string]any, send func(any))) (*C
 	return pipeACPWithHandlers(t, nil, handler)
 }
 
-func TestV1StartNegotiatesResumeSystemPromptConfigAndSteer(t *testing.T) {
+func TestStartNegotiatesResumeSystemPromptAndConfig(t *testing.T) {
 	var setConfigs []string
-	var trusted bool
 	c, live := pipeACP(t, func(req map[string]any, send func(any)) {
 		method, _ := req["method"].(string)
 		id := req["id"]
@@ -73,35 +72,18 @@ func TestV1StartNegotiatesResumeSystemPromptConfigAndSteer(t *testing.T) {
 				},
 				"_meta": map[string]any{"steering": map[string]any{"supported": true}},
 			}})
-		case "_codex/hooks/list":
-			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"hooks": []map[string]any{{"key": "k1", "currentHash": "h1", "trustStatus": "untrusted"}}}})
-		case "_codex/hooks/trust":
-			trusted = true
-			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
 		case "session/resume":
 			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
 				"sessionId": "s1",
 				"configOptions": []map[string]any{
 					{"id": "model", "category": "model"},
 					{"id": "reasoning_effort", "category": "thought_level"},
-					{"id": "mode", "category": "mode"},
 				},
 			}})
 		case "session/set_config_option":
 			p := req["params"].(map[string]any)
-			if _, hasType := p["type"]; hasType {
-				t.Errorf("v1 set_config_option must not send type field: %v", p)
-			}
 			setConfigs = append(setConfigs, p["configId"].(string)+"="+p["value"].(string))
 			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
-		case "_session/steering":
-			p := req["params"].(map[string]any)
-			txt := p["prompt"].([]any)[0].(map[string]any)["text"].(string)
-			if strings.Contains(txt, "IDLE") {
-				send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"outcome": "promptRequired"}})
-			} else {
-				send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"outcome": "injected"}})
-			}
 		case "session/prompt":
 			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "s1", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "OK"}}}})
 			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"stopReason": "end_turn"}})
@@ -109,147 +91,22 @@ func TestV1StartNegotiatesResumeSystemPromptConfigAndSteer(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	info, err := c.Start(ctx, StartOptions{
-		ClientVersion: "1.0", SessionID: "s1", Params: map[string]any{"cwd": "/ws"},
-		SystemPrompt: "role", Model: "m1", Effort: "high", Mode: "agent-full-access",
-		TrustCodexHooks: true, Cwd: "/ws",
-	})
+	info, err := c.Start(ctx, StartOptions{SessionID: "s1", Params: map[string]any{"cwd": "/ws"}, SystemPrompt: "role", Model: "m1", Effort: "high"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !trusted || info.ProtocolVersion != 1 || info.SessionID != "s1" || info.PromptPrefix != "" || !info.Capabilities.Steering {
-		t.Fatalf("info=%+v trusted=%v", info, trusted)
+	if info.SessionID != "s1" || info.PromptPrefix != "" || !info.Capabilities.Steering {
+		t.Fatalf("info=%+v", info)
 	}
-	if got := strings.Join(setConfigs, ","); got != "mode=agent-full-access,model=m1,reasoning_effort=high" {
+	if got := strings.Join(setConfigs, ","); got != "model=m1,reasoning_effort=high" {
 		t.Fatalf("configs=%s", got)
 	}
-	if disp, _, err := c.Steer(ctx, "s1", "adjust"); err != nil || disp != "steered" {
-		t.Fatalf("steer=%s err=%v", disp, err)
-	}
-	if disp, _, err := c.Steer(ctx, "s1", "IDLE"); err != nil || disp != "queued" {
-		t.Fatalf("idle steer=%s err=%v", disp, err)
-	}
-	res, err := c.PromptSync(ctx, "s1", "hi")
+	res, err := c.Prompt(ctx, "s1", "hi", nil)
 	if err != nil || res.StopReason != "end_turn" {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	if !strings.Contains(strings.Join(*live, "\n"), "OK") {
 		t.Fatalf("missing live update: %v", *live)
-	}
-}
-
-func TestV2StartConfigOptionsAndStateUpdateBackgroundLifecycle(t *testing.T) {
-	var setConfigs []string
-	turnDone := make(chan PromptResult, 1)
-	c, live := pipeACPWithHandlers(t, func(h *Handlers) {
-		h.Agent = "claude"
-		h.OnTurnEnd = func(res PromptResult) {
-			turnDone <- res
-		}
-	}, func(req map[string]any, send func(any)) {
-		method, _ := req["method"].(string)
-		id := req["id"]
-		switch method {
-		case "initialize":
-			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
-				"protocolVersion": 2,
-				"capabilities": map[string]any{
-					"session": map[string]any{
-						"systemPrompt": map[string]any{"mode": map[string]any{"override": map[string]any{}}},
-					},
-				},
-			}})
-		case "session/resume":
-			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
-				"sessionId": "s2",
-				"configOptions": []map[string]any{
-					{"configId": "model", "type": "select", "category": "model"},
-					{"configId": "effort", "type": "select", "category": "thought_level"},
-					{"configId": "mode", "type": "select", "category": "mode"},
-				},
-			}})
-		case "session/set_config_option":
-			p := req["params"].(map[string]any)
-			if p["type"] != "id" {
-				t.Errorf("v2 set_config_option must send type=id: %v", p)
-			}
-			setConfigs = append(setConfigs, p["configId"].(string)+"="+p["value"].(string))
-			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
-		case "session/prompt":
-			// v2 session/prompt returns messageId immediately.
-			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"messageId": "m1"}})
-			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-				"sessionId": "s2",
-				"update":    map[string]any{"sessionUpdate": "state_update", "state": "running"},
-			}})
-			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-				"sessionId": "s2",
-				"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "WAIT;"}},
-			}})
-			// Foreground goes idle while background task is still running -> must NOT settle yet.
-			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-				"sessionId": "s2",
-				"update": map[string]any{
-					"sessionUpdate": "state_update",
-					"state":         "idle",
-					"stopReason":    "end_turn",
-					"background":    []map[string]any{{"type": "tool_call", "toolCallId": "bg1"}},
-				},
-			}})
-			go func() {
-				time.Sleep(30 * time.Millisecond)
-				send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-					"sessionId": "s2",
-					"update":    map[string]any{"sessionUpdate": "state_update", "state": "running", "background": []map[string]any{}},
-				}})
-				send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-					"sessionId": "s2",
-					"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "DONE"}},
-				}})
-				send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-					"sessionId": "s2",
-					"update":    map[string]any{"sessionUpdate": "state_update", "state": "idle", "stopReason": "end_turn", "background": []any{}},
-				}})
-			}()
-		}
-	})
-
-	ctx := context.Background()
-	info, err := c.Start(ctx, StartOptions{
-		ClientVersion: "1.0", SessionID: "s2", Params: map[string]any{"cwd": "/ws"},
-		SystemPrompt: "role", Model: "claude-sonnet", Effort: "high", Mode: "bypassPermissions",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.ProtocolVersion != 2 || info.PromptPrefix != "" || !info.Capabilities.Resume {
-		t.Fatalf("unexpected v2 info=%+v", info)
-	}
-	if got := strings.Join(setConfigs, ","); got != "mode=bypassPermissions,model=claude-sonnet,effort=high" {
-		t.Fatalf("configs=%s", got)
-	}
-
-	res, err := c.PromptSync(ctx, "s2", "run")
-	if err != nil || res.StopReason != "end_turn" {
-		t.Fatalf("res=%+v err=%v", res, err)
-	}
-	joined := strings.Join(*live, "\n")
-	if !strings.Contains(joined, "DONE") {
-		t.Fatalf("PromptSync returned before background work completed: %s", joined)
-	}
-
-	// Also verify SendPrompt + OnTurnEnd works on v2.
-	c.ResetTurn("s2")
-	if _, err := c.SendPrompt("s2", "run2"); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case endRes := <-turnDone:
-		if endRes.StopReason != "end_turn" {
-			t.Fatalf("unexpected OnTurnEnd res=%+v", endRes)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for v2 OnTurnEnd")
 	}
 }
 
@@ -333,7 +190,7 @@ func TestV1AgyWaitsForBackgroundToolCallAndFollowUpSteps(t *testing.T) {
 		}()
 	})
 
-	res, err := c.PromptSync(context.Background(), "s1", "run tests")
+	res, err := c.Prompt(context.Background(), "s1", "run tests", nil)
 	if err != nil || res.StopReason != "end_turn" {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
@@ -366,14 +223,13 @@ func TestV1AgyDoesNotWaitForDaemonToolCall(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	res, err := c.PromptSync(ctx, "s1", "start server")
+	res, err := c.Prompt(ctx, "s1", "start server", nil)
 	if err != nil || res.StopReason != "end_turn" {
 		t.Fatalf("expected immediate return for daemon task, got res=%+v err=%v", res, err)
 	}
 }
 
-func TestV1SendPromptOnTurnEndOrderedAfterWakeupChunks(t *testing.T) {
-	endCh := make(chan PromptResult, 1)
+func TestPromptReturnsAfterWakeupChunks(t *testing.T) {
 	var mu sync.Mutex
 	var text strings.Builder
 	c, _ := pipeACPWithHandlers(t, func(h *Handlers) {
@@ -386,9 +242,6 @@ func TestV1SendPromptOnTurnEndOrderedAfterWakeupChunks(t *testing.T) {
 				text.WriteString(chunk)
 				mu.Unlock()
 			}
-		}
-		h.OnTurnEnd = func(res PromptResult) {
-			endCh <- res
 		}
 	}, func(req map[string]any, send func(any)) {
 		if req["method"] != "session/prompt" {
@@ -418,23 +271,15 @@ func TestV1SendPromptOnTurnEndOrderedAfterWakeupChunks(t *testing.T) {
 		}})
 	})
 
-	c.ResetTurn("s1")
-	if _, err := c.SendPrompt("s1", "go"); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case res := <-endCh:
-		if res.StopReason != "end_turn" {
-			t.Fatalf("unexpected res=%+v", res)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for OnTurnEnd")
+	res, err := c.Prompt(context.Background(), "s1", "go", nil)
+	if err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	mu.Lock()
 	got := text.String()
 	mu.Unlock()
 	if got != "WAIT;WOKE" {
-		t.Fatalf("expected WAIT;WOKE before OnTurnEnd, got %q", got)
+		t.Fatalf("expected WAIT;WOKE before Prompt returns, got %q", got)
 	}
 }
 
@@ -478,7 +323,7 @@ func TestV1SteerActiveDuringBackgroundWaitAndAfterSettle(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		res, err := c.PromptSync(context.Background(), "s1", "initial")
+		res, err := c.Prompt(context.Background(), "s1", "initial", nil)
 		if err != nil {
 			errCh <- err
 			return
@@ -515,30 +360,29 @@ func TestV1SteerActiveDuringBackgroundWaitAndAfterSettle(t *testing.T) {
 	}
 }
 
-func TestV2SteerActiveWithSteeringCapabilityAndCancel(t *testing.T) {
+func TestSteerActiveWithSteeringCapabilityAndCancel(t *testing.T) {
 	cancelSeen := make(chan struct{}, 1)
 	var steerCalls int
+	var promptID any
 	var mu sync.Mutex
 
 	c, _ := pipeACPWithHandlers(t, func(h *Handlers) {
-		h.Agent = "claude"
+		h.Agent = "agy"
 	}, func(req map[string]any, send func(any)) {
 		method, _ := req["method"].(string)
 		id := req["id"]
 		switch method {
 		case "initialize":
 			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
-				"protocolVersion": 2,
+				"protocolVersion": 1,
 				"_meta":           map[string]any{"steering": map[string]any{"supported": true}},
 			}})
 		case "session/new":
 			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"sessionId": "s2"}})
 		case "session/prompt":
-			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"messageId": "m1"}})
-			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-				"sessionId": "s2",
-				"update":    map[string]any{"sessionUpdate": "state_update", "state": "running"},
-			}})
+			mu.Lock()
+			promptID = id
+			mu.Unlock()
 		case "_session/steering":
 			mu.Lock()
 			steerCalls++
@@ -551,23 +395,23 @@ func TestV2SteerActiveWithSteeringCapabilityAndCancel(t *testing.T) {
 			}
 		case "session/cancel":
 			cancelSeen <- struct{}{}
-			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-				"sessionId": "s2",
-				"update":    map[string]any{"sessionUpdate": "state_update", "state": "idle", "stopReason": "cancelled", "background": []any{}},
-			}})
+			mu.Lock()
+			pid := promptID
+			mu.Unlock()
+			send(map[string]any{"jsonrpc": "2.0", "id": pid, "result": map[string]any{"stopReason": "cancelled"}})
 		}
 	})
 
 	ctx := context.Background()
-	info, err := c.Start(ctx, StartOptions{ClientVersion: "1.0", Params: map[string]any{"cwd": "/ws"}})
-	if err != nil || info.ProtocolVersion != 2 || !info.Capabilities.Steering {
+	info, err := c.Start(ctx, StartOptions{Params: map[string]any{"cwd": "/ws"}})
+	if err != nil || !info.Capabilities.Steering {
 		t.Fatalf("start info=%+v err=%v", info, err)
 	}
 
 	ready := make(chan struct{})
 	resCh := make(chan PromptResult, 1)
 	go func() {
-		res, _ := c.PromptSyncWithReady(ctx, "s2", "go", func() { close(ready) })
+		res, _ := c.Prompt(ctx, "s2", "go", func() { close(ready) })
 		resCh <- res
 	}()
 	<-ready

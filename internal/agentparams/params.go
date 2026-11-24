@@ -41,17 +41,34 @@ const (
 	Interactive Transport = "interactive"
 	RPC         Transport = "rpc"
 	ACP         Transport = "acp"
+	Stream      Transport = "stream"
+	AppServer   Transport = "app-server"
 	Exec        Transport = "exec"
 )
+
+// HeadlessTransport is the one protocol an agent's `session continue` and
+// ExternalSubagent execution both run over.
+func HeadlessTransport(agent string) (Transport, bool) {
+	switch agent {
+	case "claude":
+		return Stream, true
+	case "codex":
+		return AppServer, true
+	case "agy":
+		return ACP, true
+	case "pi":
+		return RPC, true
+	}
+	return "", false
+}
 
 type Plan struct {
 	Executable   string
 	Args         []string
-	Env          map[string]string
 	Params       map[string]any
+	Session      string
 	Model        string
 	Effort       string
-	Mode         string
 	SystemPrompt string
 }
 

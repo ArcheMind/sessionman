@@ -35,5 +35,9 @@ func buildPi(t Transport, r Request) (Plan, error) {
 		args = append(args, "--model", r.Model)
 	}
 	args = append(args, r.Flags...)
-	return Plan{Args: args}, nil
+	plan := Plan{Args: args, Model: r.Model}
+	if t == RPC {
+		plan.Executable = "pi"
+	}
+	return plan, nil
 }

@@ -1,43 +1,16 @@
 package agentparams
 
-import "os"
-
 func buildClaude(t Transport, r Request) (Plan, error) {
-	if t != Interactive && t != ACP {
+	if t != Interactive && t != Stream {
 		return unsupported("claude", t, "transport")
 	}
 	if err := requireUUID("Claude resume", r.Session); err != nil {
 		return Plan{}, err
 	}
-	if t == ACP {
-		if r.UserConfig != nil && !*r.UserConfig {
-			return unsupported("claude", t, "user_config=false (use --config-dir isolation)")
-		}
-		exe := os.Getenv("SM_CLAUDE_ACP_BIN")
-		if exe == "" {
-			exe = "claude-agent-acp"
-		}
-		mode := ""
-		if r.Mode == ModeYolo {
-			mode = "bypassPermissions"
-		} else if r.Mode == ModeNormal {
-			mode = "default"
-		}
-		params := map[string]any{"cwd": r.Cwd, "mcpServers": AgyMCPServers(r.MCP)}
-		if r.Session != "" {
-			params["sessionId"] = r.Session
-		}
-		return Plan{
-			Executable:   exe,
-			Args:         append([]string{}, r.Flags...),
-			Params:       params,
-			Model:        r.Model,
-			Effort:       r.Effort,
-			Mode:         mode,
-			SystemPrompt: r.SystemPrompt,
-		}, nil
-	}
 	args := []string{}
+	if t == Stream {
+		args = append(args, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose")
+	}
 	if r.Session != "" {
 		args = append(args, "--resume", r.Session)
 	}
@@ -64,5 +37,11 @@ func buildClaude(t Transport, r Request) (Plan, error) {
 		args = append(args, "--model", r.Model)
 	}
 	args = append(args, r.Flags...)
+	if t == Stream {
+		if _, ok := r.MCP.Servers["sessionman"]; ok {
+			args = append(args, "--allowedTools", "mcp__sessionman__StartExternalSubagent", "mcp__sessionman__SendExternalSubagentMessage", "mcp__sessionman__StopExternalSubagent", "mcp__sessionman__ListExternalSubagentSessions", "mcp__sessionman__MessageHost")
+		}
+		return Plan{Executable: "claude", Args: args, Session: r.Session}, nil
+	}
 	return Plan{Args: args}, nil
 }

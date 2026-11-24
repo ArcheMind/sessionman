@@ -46,7 +46,7 @@ func (c *continueStreamCapture) snapshot() string {
 
 type continueStreamTestRunner struct {
 	*continueRunner
-	acpHook      func(emit func(any), sessionID string) error
+	nativeHook   func(emit func(any), sessionID string) error
 	piBeforeEmit func(emit func(string)) error
 	piHook       func(emit func(string)) error
 }
@@ -55,7 +55,10 @@ func (r continueStreamTestRunner) StartStream(plan runtime.CommandPlan) (*runtim
 	if r.agent == "pi" {
 		return r.continueRunner.startPiStream(plan, r.piBeforeEmit, r.piHook)
 	}
-	return r.continueRunner.startACPStream(plan, r.acpHook)
+	if r.agent == "codex" {
+		return r.continueRunner.startCodexStream(plan, r.nativeHook)
+	}
+	return r.continueRunner.startClaudeStream(plan, r.nativeHook)
 }
 
 func decodeContinueEvents(t *testing.T, output string) ([]sessions.Message, *sessions.Session) {
@@ -120,7 +123,7 @@ func TestContinueStreamMessagesBeforeRunnerFinishes(t *testing.T) {
 			}
 			application.Runner = continueStreamTestRunner{
 				continueRunner: runner,
-				acpHook:        func(_ func(any), _ string) error { return waitRealtime() },
+				nativeHook:     func(_ func(any), _ string) error { return waitRealtime() },
 				piHook:         func(_ func(string)) error { return waitRealtime() },
 			}
 			if err := application.Run(context.Background(), []string{"session", "continue", agent, "--model", "provider/model", "--stream"}); err != nil {
@@ -162,7 +165,7 @@ func TestContinueStreamFreshClaudeSkipsPrompt(t *testing.T) {
 	capture := &continueStreamCapture{}
 	application.Stdout = capture
 	runner.reply = []sessions.Message{{ID: "reply", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "fresh answer"}}}}
-	application.Runner = continueStreamTestRunner{continueRunner: runner, acpHook: func(_ func(any), _ string) error {
+	application.Runner = continueStreamTestRunner{continueRunner: runner, nativeHook: func(_ func(any), _ string) error {
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
 			messages, _ := decodeContinueEvents(t, capture.snapshot())
@@ -192,7 +195,7 @@ func TestContinueStreamFailuresHaveNoResult(t *testing.T) {
 			runner.reply = []sessions.Message{{ID: "reply", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "answer"}}}}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			application.Runner = continueStreamTestRunner{continueRunner: runner, acpHook: func(_ func(any), _ string) error {
+			application.Runner = continueStreamTestRunner{continueRunner: runner, nativeHook: func(_ func(any), _ string) error {
 				if failure == "cancel" {
 					cancel()
 					time.Sleep(50 * time.Millisecond)

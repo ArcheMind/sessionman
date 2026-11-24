@@ -51,28 +51,33 @@ func TestTransportBehavior(t *testing.T) {
 	}
 }
 
-func TestACPTransportsCarryUnifiedFields(t *testing.T) {
+func TestHeadlessTransportsCarryUnifiedFields(t *testing.T) {
 	mcp := MCPConfig{Servers: map[string]MCPServer{"bridge": {Command: "node", Args: []string{"bridge.mjs"}, Env: map[string]string{"A": "1"}}}}
 	agy, err := Build("agy", ACP, Request{Cwd: "/ws", Model: "gemini", Effort: "high", Mode: ModeYolo, Session: "native", SystemPrompt: "role", MCP: mcp})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agy.Executable != "agy" || !reflect.DeepEqual(agy.Args, []string{"acp", "--stdio", "--dangerously-skip-permissions"}) || agy.Params["sessionId"] != "native" || agy.Model != "gemini" || agy.Effort != "high" || agy.SystemPrompt != "role" {
+	if agy.Executable != "agy" || !reflect.DeepEqual(agy.Args, []string{"acp", "--stdio", "--dangerously-skip-permissions"}) || agy.Session != "native" || agy.Model != "gemini" || agy.Effort != "high" || agy.SystemPrompt != "role" {
 		t.Fatalf("agy ACP %#v", agy)
 	}
-	claude, err := Build("claude", ACP, Request{Cwd: "/ws", Model: "opus", Effort: "high", Mode: ModeYolo, Session: testUUID, SystemPrompt: "role", MCP: mcp})
+	claude, err := Build("claude", Stream, Request{Cwd: "/ws", Model: "opus", Effort: "high", Mode: ModeYolo, Session: testUUID, SystemPrompt: "role", UserConfig: boolPtr(false), MCP: mcp})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claude.Executable != "claude-agent-acp" || claude.Params["sessionId"] != testUUID || claude.Model != "opus" || claude.Effort != "high" || claude.Mode != "bypassPermissions" || claude.SystemPrompt != "role" {
-		t.Fatalf("claude ACP %#v", claude)
+	wantClaude := []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--resume", testUUID, "--dangerously-skip-permissions", "--setting-sources", "project,local", "--effort", "high", "--append-system-prompt", "role", "--mcp-config", `{"mcpServers":{"bridge":{"args":["bridge.mjs"],"command":"node","env":{"A":"1"},"type":"stdio"}}}`, "--model", "opus"}
+	if claude.Executable != "claude" || claude.Session != testUUID || !reflect.DeepEqual(claude.Args, wantClaude) {
+		t.Fatalf("claude stream %#v", claude)
 	}
-	codex, err := Build("codex", ACP, Request{Cwd: "/ws", Model: "gpt-6", Effort: "high", Mode: ModeYolo, Session: testUUID, SystemPrompt: "role", MCP: mcp, Flags: []string{"--verbose"}})
+	codex, err := Build("codex", AppServer, Request{Cwd: "/ws", Model: "gpt-6", Effort: "high", Mode: ModeYolo, Session: testUUID, SystemPrompt: "role", MCP: mcp, Flags: []string{"--verbose"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if codex.Executable != "codex-acp" || !reflect.DeepEqual(codex.Args, []string{"--verbose"}) || codex.Params["sessionId"] != testUUID || codex.Model != "gpt-6" || codex.Effort != "high" || codex.Mode != "agent-full-access" || codex.Env["INITIAL_AGENT_MODE"] != "agent-full-access" || codex.SystemPrompt != "role" {
-		t.Fatalf("codex ACP %#v", codex)
+	wantParams := map[string]any{
+		"cwd": "/ws", "model": "gpt-6", "developerInstructions": "role", "approvalPolicy": "never", "sandbox": "danger-full-access",
+		"config": map[string]any{"model_reasoning_effort": "high", "mcp_servers": map[string]any{"bridge": map[string]any{"command": "node", "args": []string{"bridge.mjs"}, "env": map[string]string{"A": "1"}}}},
+	}
+	if codex.Executable != "codex" || !reflect.DeepEqual(codex.Args, []string{"app-server", "--verbose"}) || codex.Session != testUUID || !reflect.DeepEqual(codex.Params, wantParams) {
+		t.Fatalf("codex app-server %#v", codex)
 	}
 }
 
@@ -83,8 +88,7 @@ func TestRejectsUnsupportedAndConflictingParameters(t *testing.T) {
 		r     Request
 	}{
 		{"codex", Interactive, Request{UserConfig: boolPtr(false)}},
-		{"codex", ACP, Request{UserConfig: boolPtr(false)}},
-		{"claude", ACP, Request{UserConfig: boolPtr(false)}},
+		{"codex", AppServer, Request{UserConfig: boolPtr(false)}},
 		{"pi", RPC, Request{MCP: MCPConfig{Servers: map[string]MCPServer{"x": {Command: "node"}}}}},
 		{"agy", Exec, Request{SystemPrompt: "role"}},
 		{"opencode", Interactive, Request{Mode: ModeYolo}},
@@ -92,8 +96,8 @@ func TestRejectsUnsupportedAndConflictingParameters(t *testing.T) {
 		{"claude", Interactive, Request{Model: "opus", Flags: []string{"--model=sonnet"}}},
 		{"codex", Interactive, Request{Effort: "high", Flags: []string{"--config=model_reasoning_effort=low"}}},
 		{"claude", Interactive, Request{Session: "bad"}},
-		{"claude", ACP, Request{Session: "bad"}},
-		{"codex", ACP, Request{Session: "bad"}},
+		{"claude", Stream, Request{Session: "bad"}},
+		{"codex", AppServer, Request{Session: "bad"}},
 		{"claude", Interactive, Request{Effort: "ultra"}},
 	}
 	for _, tc := range cases {
@@ -153,34 +157,27 @@ func TestAgyACPMCPInheritsExplicitEnvironment(t *testing.T) {
 	}
 }
 
-// TestSingleHeadlessExecutionPathGuard enforces that every headless-capable
-// agent uses exactly one shared protocol transport (ACP preferred; Pi on RPC).
+// TestSingleHeadlessExecutionPathGuard enforces that every agent has exactly one headless
+// transport that both `session continue` and ExternalSubagents run over.
 func TestSingleHeadlessExecutionPathGuard(t *testing.T) {
+	want := map[string]Transport{"claude": Stream, "codex": AppServer, "agy": ACP, "pi": RPC}
+	headless := []Transport{Stream, AppServer, ACP, RPC}
 	for _, agent := range AgentOrder {
-		_, supportsACP := Build(agent, ACP, Request{Cwd: "/ws"})
-		_, supportsRPC := Build(agent, RPC, Request{Cwd: "/ws"})
-		if supportsACP == nil && supportsRPC == nil {
-			t.Fatalf("%s supports both ACP and RPC; keep one shared transport", agent)
+		transport, ok := HeadlessTransport(agent)
+		if wantTransport, has := want[agent]; has != ok || transport != wantTransport {
+			t.Fatalf("%s headless transport %q (ok=%v), want %q", agent, transport, ok, wantTransport)
 		}
-		if agent == "pi" {
-			if supportsRPC != nil {
-				t.Fatalf("pi must support RPC: %v", supportsRPC)
-			}
-		} else if agent != "opencode" {
-			if supportsACP != nil {
-				t.Fatalf("%s must support ACP: %v", agent, supportsACP)
+		var supported []Transport
+		for _, candidate := range headless {
+			if _, err := Build(agent, candidate, Request{Cwd: "/ws"}); err == nil {
+				supported = append(supported, candidate)
 			}
 		}
-	}
-}
-
-func TestCodexACPNormalAndYoloModes(t *testing.T) {
-	normal, err := Build("codex", ACP, Request{Cwd: "/ws", Mode: ModeNormal})
-	if err != nil || normal.Mode != "workspace-write" || normal.Env["INITIAL_AGENT_MODE"] != "workspace-write" {
-		t.Fatalf("normal=%#v err=%v", normal, err)
-	}
-	yolo, err := Build("codex", ACP, Request{Cwd: "/ws", Mode: ModeYolo})
-	if err != nil || yolo.Mode != "agent-full-access" || yolo.Env["INITIAL_AGENT_MODE"] != "agent-full-access" {
-		t.Fatalf("yolo=%#v err=%v", yolo, err)
+		if ok && !reflect.DeepEqual(supported, []Transport{transport}) {
+			t.Fatalf("%s supports headless transports %v, want only %s", agent, supported, transport)
+		}
+		if !ok && len(supported) != 0 {
+			t.Fatalf("%s has no headless path but supports %v", agent, supported)
+		}
 	}
 }

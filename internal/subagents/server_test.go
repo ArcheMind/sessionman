@@ -38,7 +38,7 @@ func testServer(t *testing.T, r runtime.Runner) *Server {
 		r = runtime.ExecRunner{}
 	}
 	bin := t.TempDir()
-	for _, agent := range []string{"claude", "codex", "pi", "claude-agent-acp", "codex-acp"} {
+	for _, agent := range []string{"claude", "codex", "pi"} {
 		script := []byte("#!/bin/sh\nexit 0\n")
 		if existing, err := exec.LookPath(agent); err == nil {
 			if data, err := os.ReadFile(existing); err == nil && len(data) < 4096 && strings.Contains(string(data), "SM_FAKE_NATIVE=") {
@@ -157,10 +157,10 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 		t.Fatal("queued message not delivered as a new round", second.Report)
 	}
 	records := readFakeRecords(t, record)
-	if countFakeRequests(t, records, "session/new") != 1 || countFakeRequests(t, records, "session/resume") != 0 {
+	if countFakeRequests(t, records, "thread/start") != 1 || countFakeRequests(t, records, "thread/resume") != 0 {
 		t.Fatal("warm continuation respawned the native session")
 	}
-	if countFakeRequests(t, records, "session/prompt") != 2 {
+	if countFakeRequests(t, records, "turn/start") != 2 {
 		t.Fatal("queued delivery did not open a second round")
 	}
 	s.mu.Lock()
@@ -174,7 +174,7 @@ func TestLifecycleQueueNamesResumeAndDisable(t *testing.T) {
 	if current == old || err != nil {
 		t.Fatal("name alias lost old ID")
 	}
-	if countFakeRequests(t, readFakeRecords(t, record), "session/new") != 2 {
+	if countFakeRequests(t, readFakeRecords(t, record), "thread/start") != 2 {
 		t.Fatal("new agent reused the previous native session")
 	}
 	changed := reviewPreset
@@ -203,8 +203,8 @@ func TestCodexSteerDeliveredInsideTheSameTurn(t *testing.T) {
 		t.Fatal("steer produced a second turn")
 	}
 	records := readFakeRecords(t, record)
-	steer := fakeRequest(t, records, "_session/steering")
-	if steer["sessionId"] != "01a15000-1111-7222-8333-944455556666" {
+	steer := fakeRequest(t, records, "turn/steer")
+	if steer["threadId"] != "01a15000-1111-7222-8333-944455556666" {
 		t.Fatal("steer did not carry the active session id", steer)
 	}
 	if string(report.Usage) == "" || !strings.Contains(string(report.Usage), "totalTokens") {
@@ -240,8 +240,8 @@ func TestCodexColdResumeUsesThreadResume(t *testing.T) {
 		t.Fatal(report)
 	}
 	records := readFakeRecords(t, record)
-	resume := fakeRequest(t, records, "session/resume")
-	if resume["sessionId"] != "01a15000-1111-7222-8333-944455556666" {
+	resume := fakeRequest(t, records, "thread/resume")
+	if resume["threadId"] != "01a15000-1111-7222-8333-944455556666" {
 		t.Fatal("cold resume did not resume the native session", resume)
 	}
 }
@@ -271,7 +271,7 @@ func TestCancelTargetsOnlyOneNativeExecution(t *testing.T) {
 	if text := callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "two"}); !strings.Contains(text, "already ended") {
 		t.Fatal(text)
 	}
-	if countFakeRequests(t, readFakeRecords(t, record), "session/prompt") != 2 {
+	if countFakeRequests(t, readFakeRecords(t, record), "turn/start") != 2 {
 		t.Fatal("cancelled queue reached the backend")
 	}
 }
@@ -290,7 +290,7 @@ func TestStopCancelsQueuedWorkWithOneCancelledReport(t *testing.T) {
 	if countReports(a.Dir) != 1 {
 		t.Fatal("expected exactly one cancelled report")
 	}
-	if countFakeRequests(t, readFakeRecords(t, record), "session/prompt") != 1 {
+	if countFakeRequests(t, readFakeRecords(t, record), "turn/start") != 1 {
 		t.Fatal("queued message reached the backend after stop")
 	}
 	if state := s.runState(a); state != "cancelled" {
@@ -357,17 +357,10 @@ func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
 	if !strings.Contains(text, "preset=review; agent=codex; actual model=test-model; effort=low") || strings.Contains(text, "changed after this MCP connection") {
 		t.Fatal(text)
 	}
-	records := readFakeRecords(t, record)
-	hasConfig := func(recs []fakeRecord, id, val string) bool {
-		for _, r := range recs {
-			if r.Kind == "request" && strings.Contains(string(r.Line), `"configId":"`+id+`"`) && (val == "" || strings.Contains(string(r.Line), `"value":"`+val+`"`)) {
-				return true
-			}
-		}
-		return false
-	}
-	if !hasConfig(records, "model", "test-model") || !hasConfig(records, "reasoning_effort", "low") {
-		t.Fatal("preset model/effort not configured via ACP", records)
+	thread := fakeRequest(t, readFakeRecords(t, record), "thread/start")
+	config, _ := thread["config"].(map[string]any)
+	if thread["model"] != "test-model" || config["model_reasoning_effort"] != "low" {
+		t.Fatal("preset model/effort not carried by thread/start", thread)
 	}
 	native := reviewPreset
 	native.Name, native.Effort = "native", ""
@@ -376,13 +369,13 @@ func TestPresetFixesEffortAndStaleSnapshotIsReported(t *testing.T) {
 	if !strings.Contains(text, "effort=native default") || !strings.Contains(text, "reconnect SessionMan MCP to refresh") {
 		t.Fatal(text)
 	}
-	records = readFakeRecords(t, record)
-	if countFakeRequests(t, records, "session/new") != 2 {
+	records := readFakeRecords(t, record)
+	if countFakeRequests(t, records, "thread/start") != 2 {
 		t.Fatal("expected two session starts", records)
 	}
 	effortSets := 0
 	for _, r := range records {
-		if r.Kind == "request" && strings.Contains(string(r.Line), `"configId":"reasoning_effort"`) {
+		if r.Kind == "request" && strings.Contains(string(r.Line), `"model_reasoning_effort"`) {
 			effortSets++
 		}
 	}
@@ -773,19 +766,19 @@ func TestDelegationInjectedIntoCodexThreadConfig(t *testing.T) {
 	s.axBinary = "/usr/local/bin/ax"
 	t.Setenv("SM_SUBAGENT_HOME", "/custom/home")
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
-	start := fakeRequest(t, readFakeRecords(t, record), "session/new")
-	servers, _ := start["mcpServers"].([]any)
+	start := fakeRequest(t, readFakeRecords(t, record), "thread/start")
+	config, _ := start["config"].(map[string]any)
+	servers, _ := config["mcp_servers"].(map[string]any)
 	if len(servers) != 1 {
-		t.Fatal("delegation not injected into ACP mcpServers", start)
+		t.Fatal("delegation not injected into thread config", start)
 	}
-	entry, _ := servers[0].(map[string]any)
-	if entry["name"] != "sessionman" || entry["command"] != "/usr/local/bin/ax" || fmt.Sprint(entry["args"]) != "[mcp serve]" {
+	entry, _ := servers["sessionman"].(map[string]any)
+	if entry["command"] != "/usr/local/bin/ax" || fmt.Sprint(entry["args"]) != "[mcp serve]" {
 		t.Fatal("delegation entry mismatch", entry)
 	}
 	envMap := map[string]string{}
-	for _, item := range entry["env"].([]any) {
-		kv := item.(map[string]any)
-		envMap[kv["name"].(string)] = kv["value"].(string)
+	for key, value := range entry["env"].(map[string]any) {
+		envMap[key] = value.(string)
 	}
 	if envMap["SM_DELEGATION_DEPTH"] != "1" || envMap["SM_HOST_AGENT_DIR"] == "" || envMap["SM_SUBAGENT_HOME"] != "/custom/home" {
 		t.Fatal("delegation env incomplete", envMap)
@@ -798,8 +791,9 @@ func TestDelegationStopsAtMaxDepth(t *testing.T) {
 	s.axBinary = "/usr/local/bin/ax"
 	s.delegationDepth = MaxDelegationDepth
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
-	start := fakeRequest(t, readFakeRecords(t, record), "session/new")
-	if servers, _ := start["mcpServers"].([]any); len(servers) > 0 {
+	start := fakeRequest(t, readFakeRecords(t, record), "thread/start")
+	config, _ := start["config"].(map[string]any)
+	if servers, _ := config["mcp_servers"].(map[string]any); len(servers) > 0 {
 		t.Fatal("delegation injected beyond max depth", start)
 	}
 }
@@ -809,8 +803,9 @@ func TestDelegationNotInjectedWithoutBinary(t *testing.T) {
 	s := testServer(t, nil)
 	s.axBinary = ""
 	callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
-	start := fakeRequest(t, readFakeRecords(t, record), "session/new")
-	if servers, _ := start["mcpServers"].([]any); len(servers) > 0 {
+	start := fakeRequest(t, readFakeRecords(t, record), "thread/start")
+	config, _ := start["config"].(map[string]any)
+	if servers, _ := config["mcp_servers"].(map[string]any); len(servers) > 0 {
 		t.Fatal("delegation injected without binary", start)
 	}
 }
@@ -941,7 +936,7 @@ func TestNativeSteerRejectionIsReturnedWithoutQueuing(t *testing.T) {
 				t.Fatal(err)
 			}
 			callTest(t, s, "StopExternalSubagent", map[string]any{"task_id": "worker"})
-			method := "session/prompt"
+			method := "turn/start"
 			if native == "pi" {
 				method = "prompt"
 			}

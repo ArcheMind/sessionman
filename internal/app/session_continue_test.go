@@ -38,33 +38,108 @@ func (r *continueRunner) Execute(_ context.Context, _ runtime.CommandPlan, _ run
 }
 
 func (r *continueRunner) StartStream(plan runtime.CommandPlan) (*runtime.Stream, error) {
-	if r.agent == "pi" {
+	switch r.agent {
+	case "pi":
 		return r.startPiStream(plan, nil, nil)
+	case "codex":
+		return r.startCodexStream(plan, nil)
 	}
-	return r.startACPStream(plan, nil)
+	return r.startClaudeStream(plan, nil)
 }
 
-func (r *continueRunner) startACPStream(plan runtime.CommandPlan, hook func(emit func(any), sessionID string) error) (*runtime.Stream, error) {
-	r.plans = append(r.plans, plan)
-	inR, inW := io.Pipe()
-	outR, outW := io.Pipe()
-	emit := func(v any) {
+// storeTurn appends one turn to the agent's native session store the way the real CLI would.
+func (r *continueRunner) storeTurn(plan runtime.CommandPlan, sessionID, prompt string) error {
+	if r.agent == "claude" {
+		path := sessions.ClaudeProjectFile(r.home, plan.Cwd, sessionID)
+		return r.appendTurn(path, "claude", prompt, func(detail sessions.Session) []map[string]any {
+			detail.ID = sessionID
+			return sessions.SerializeClaude(detail)
+		})
+	}
+	codexHome := plan.Env["CODEX_HOME"]
+	if codexHome == "" {
+		codexHome = os.Getenv("CODEX_HOME")
+	}
+	path, err := sessions.FindCodexRollout(codexHome, sessionID)
+	if err != nil {
+		return err
+	}
+	return r.appendTurn(path, "codex", prompt, sessions.SerializeCodex)
+}
+
+func pipeJSON(outW *io.PipeWriter) func(any) {
+	return func(v any) {
 		raw, _ := json.Marshal(v)
 		_, _ = io.WriteString(outW, string(raw)+"\n")
 	}
+}
+
+// startClaudeStream fakes `claude -p --input-format stream-json`: one result per user message.
+func (r *continueRunner) startClaudeStream(plan runtime.CommandPlan, hook func(emit func(any), sessionID string) error) (*runtime.Stream, error) {
+	r.plans = append(r.plans, plan)
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	emit := pipeJSON(outW)
+	sessionID := flagValue(plan.Args, "--resume")
+	if sessionID == "" {
+		sessionID = r.fresh
+	}
+	r.resumedIDs = append(r.resumedIDs, flagValue(plan.Args, "--resume"))
 	go func() {
 		defer outW.Close()
-		var sessionID string
+		scanner := bufio.NewScanner(inR)
+		scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+		for scanner.Scan() {
+			var msg struct {
+				Type    string `json:"type"`
+				Message struct {
+					Content []struct {
+						Text string `json:"text"`
+					} `json:"content"`
+				} `json:"message"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &msg) != nil || msg.Type != "user" || len(msg.Message.Content) == 0 {
+				continue
+			}
+			prompt := msg.Message.Content[0].Text
+			r.prompts = append(r.prompts, prompt)
+			emit(map[string]any{"type": "system", "subtype": "init", "session_id": sessionID})
+			if err := r.storeTurn(plan, sessionID, prompt); err != nil {
+				emit(map[string]any{"type": "result", "subtype": "error_during_execution", "is_error": true, "result": err.Error(), "session_id": sessionID})
+				continue
+			}
+			emit(map[string]any{"type": "assistant", "session_id": sessionID, "message": map[string]any{"role": "assistant", "content": []map[string]any{{"type": "text", "text": "done"}}}})
+			if hook != nil {
+				if err := hook(emit, sessionID); err != nil {
+					emit(map[string]any{"type": "result", "subtype": "error_during_execution", "is_error": true, "result": err.Error(), "session_id": sessionID})
+					continue
+				}
+			}
+			emit(map[string]any{"type": "result", "subtype": "success", "is_error": false, "result": "done", "session_id": sessionID})
+		}
+	}()
+	return runtime.NewPipeStream(inW, outR, func() string { return "" }, func() { _ = inW.Close(); _ = outW.Close() }, func() error { return nil }), nil
+}
+
+// startCodexStream fakes `codex app-server`.
+func (r *continueRunner) startCodexStream(plan runtime.CommandPlan, hook func(emit func(any), sessionID string) error) (*runtime.Stream, error) {
+	r.plans = append(r.plans, plan)
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	emit := pipeJSON(outW)
+	go func() {
+		defer outW.Close()
+		var threadID string
 		scanner := bufio.NewScanner(inR)
 		for scanner.Scan() {
 			var req struct {
 				ID     json.RawMessage `json:"id"`
 				Method string          `json:"method"`
 				Params struct {
-					SessionID string `json:"sessionId"`
-					Prompt    []struct {
+					ThreadID string `json:"threadId"`
+					Input    []struct {
 						Text string `json:"text"`
-					} `json:"prompt"`
+					} `json:"input"`
 				} `json:"params"`
 			}
 			if json.Unmarshal(scanner.Bytes(), &req) != nil {
@@ -72,70 +147,37 @@ func (r *continueRunner) startACPStream(plan runtime.CommandPlan, hook func(emit
 			}
 			switch req.Method {
 			case "initialize":
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
-					"agentCapabilities": map[string]any{
-						"loadSession": true,
-						"sessionCapabilities": map[string]any{
-							"resume":       map[string]any{},
-							"systemPrompt": map[string]any{},
-						},
-					},
-				}})
-			case "_codex/hooks/list":
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"hooks": []any{}}})
-			case "session/new", "session/resume", "session/load":
-				sessionID = req.Params.SessionID
-				r.resumedIDs = append(r.resumedIDs, sessionID)
-				if sessionID == "" {
-					sessionID = r.fresh
+				emit(map[string]any{"id": req.ID, "result": map[string]any{"userAgent": "fake"}})
+			case "thread/start", "thread/resume":
+				threadID = req.Params.ThreadID
+				r.resumedIDs = append(r.resumedIDs, threadID)
+				if threadID == "" {
+					threadID = r.fresh
 				}
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
-					"sessionId": sessionID,
-					"configOptions": []map[string]any{
-						{"id": "model", "category": "model"},
-						{"id": "effort", "category": "thought_level"},
-						{"id": "mode", "category": "mode"},
-					},
-				}})
-			case "session/set_config_option", "session/set_model":
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
-			case "session/prompt":
+				emit(map[string]any{"id": req.ID, "result": map[string]any{"thread": map[string]any{"id": threadID}}})
+			case "turn/start":
 				prompt := ""
-				if len(req.Params.Prompt) > 0 {
-					prompt = req.Params.Prompt[0].Text
+				if len(req.Params.Input) > 0 {
+					prompt = req.Params.Input[0].Text
 				}
 				r.prompts = append(r.prompts, prompt)
-				var err error
-				if r.agent == "claude" {
-					path := sessions.ClaudeProjectFile(r.home, plan.Cwd, sessionID)
-					err = r.appendTurn(path, "claude", prompt, func(detail sessions.Session) []map[string]any {
-						detail.ID = sessionID
-						return sessions.SerializeClaude(detail)
-					})
-				} else if r.agent == "codex" {
-					codexHome := plan.Env["CODEX_HOME"]
-					if codexHome == "" {
-						codexHome = os.Getenv("CODEX_HOME")
-					}
-					path, findErr := sessions.FindCodexRollout(codexHome, sessionID)
-					if findErr != nil {
-						err = findErr
-					} else {
-						err = r.appendTurn(path, "codex", prompt, sessions.SerializeCodex)
-					}
+				fail := func(message string) {
+					emit(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": threadID, "turn": map[string]any{"id": "t1", "status": "failed", "error": map[string]any{"message": message}}}})
 				}
-				if err != nil {
-					emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": err.Error()}})
+				emit(map[string]any{"id": req.ID, "result": map[string]any{"turn": map[string]any{"id": "t1"}}})
+				emit(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": threadID, "turn": map[string]any{"id": "t1"}}})
+				if err := r.storeTurn(plan, threadID, prompt); err != nil {
+					fail(err.Error())
 					continue
 				}
-				emit(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": sessionID, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "done"}}}})
+				emit(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": threadID, "turnId": "t1", "item": map[string]any{"type": "agentMessage", "text": "done"}}})
 				if hook != nil {
-					if herr := hook(emit, sessionID); herr != nil {
-						emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": herr.Error()}})
+					if err := hook(emit, threadID); err != nil {
+						fail(err.Error())
 						continue
 					}
 				}
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
+				emit(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": threadID, "turn": map[string]any{"id": "t1", "status": "completed"}}})
 			}
 		}
 	}()

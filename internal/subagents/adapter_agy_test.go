@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ArcheMind/agentx/internal/acp"
 	"github.com/ArcheMind/agentx/internal/presets"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
@@ -120,6 +121,8 @@ func startAgyTest(t *testing.T, s *Server, prompt string, background bool) *Exte
 	return a
 }
 
+type agyPromptResult = acp.PromptResult
+
 func TestAgySteerWaitsForAllInflightAndThenDeliversQueue(t *testing.T) {
 	s, record := agyServer(t, nil)
 	a := startAgyTest(t, s, "HOLD", true)
@@ -163,7 +166,7 @@ func TestAgySteerWaitsForAllInflightAndThenDeliversQueue(t *testing.T) {
 		t.Fatal("fabricated client version")
 	}
 	firstPrompt := fakeRequest(t, records, "session/prompt")["prompt"].([]any)[0].(map[string]any)["text"].(string)
-	if !strings.HasPrefix(firstPrompt, "[sm:subagent]\nRole: agy-test\nreview\n\nHOLD") {
+	if !strings.HasPrefix(firstPrompt, "[sm:subagent]\n<system-prompt>\nRole: agy-test\nreview\n</system-prompt>\n\nHOLD") {
 		t.Fatal("first native prompt lost its first-line subagent marker", firstPrompt)
 	}
 	if fakeRequest(t, records, "session/set_config_option")["value"] != "low" {

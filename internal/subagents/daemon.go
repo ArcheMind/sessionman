@@ -22,7 +22,7 @@ import (
 const DefaultLinger = 60 * time.Second
 
 // nativeProc is the one live native-protocol process a daemon owns; adapter-specific state
-// (codexState, piState) hangs off the Daemon beside it.
+// (headlessState) hangs off the Daemon beside it.
 type nativeProc struct {
 	stream *runtime.Stream
 	done   chan struct{}
@@ -41,8 +41,7 @@ type Daemon struct {
 	meta       AgentMeta
 	agent      *ExternalSubagentState
 	proc       *nativeProc
-	acp        *acpState
-	pi         *piState
+	exec       *headlessState
 	procAuth   Auth
 	running    bool
 	stopping   bool
@@ -230,14 +229,7 @@ func (d *Daemon) sendAdapterLocked(message, delivery string) controlResponse {
 			return controlResponse{Error: err.Error()}
 		}
 	}
-	switch d.agent.Option.Agent {
-	case "agy", "claude", "codex":
-		return d.sendACPLocked(message, delivery)
-	case "pi":
-		return d.sendPiLocked(message, delivery)
-	default:
-		return controlResponse{Error: fmt.Sprintf("%s has no native subagent execution adapter", d.agent.Option.Agent)}
-	}
+	return d.sendHeadlessLocked(message, delivery)
 }
 
 func (d *Daemon) stop() controlResponse {
@@ -379,7 +371,7 @@ func (d *Daemon) procExit(proc *nativeProc, label string) {
 	remaining := d.worktreeState()
 	d.mu.Lock()
 	wasRunning, stopping := d.running, d.stopping
-	d.proc, d.acp, d.pi = nil, nil, nil
+	d.proc, d.exec = nil, nil
 	d.running = false
 	if wasRunning {
 		if stopping {

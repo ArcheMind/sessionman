@@ -18,7 +18,7 @@ func TestMain(m *testing.M) {
 	case "agy":
 		fakeAgyMain()
 		return
-	case "claude", "codex":
+	case "codex":
 		fakeCodexMain()
 		return
 	case "pi":
@@ -92,18 +92,21 @@ func argValueOf(args []string, flag string) string {
 	return ""
 }
 
-// ---- fake ACP server (codex-acp / claude-agent-acp) -----------------------------------------
+// ---- fake codex app-server -------------------------------------------------------------------
 
 func fakeCodexMain() {
 	rec := fakeRecorder()
 	fakeSpawnRecord(rec)
 	lines := stdinLines()
-	const sessionFallback = "01a15000-1111-7222-8333-944455556666"
-	var cwd, prompt, sessionID, effortConfigured string
-	var promptID any
+	const threadFallback = "01a15000-1111-7222-8333-944455556666"
+	var cwd, prompt, threadID, effortConfigured string
 	var steers []string
-	turnActive := false
+	turnSeq := 0
+	turnID := ""
 	var deadline <-chan time.Time
+	notify := func(method string, params map[string]any) {
+		emitJSON(map[string]any{"method": method, "params": params})
+	}
 	completeTurn := func(failed bool) {
 		if name := promptDirective(prompt, "WRITE="); name != "" {
 			os.WriteFile(filepath.Join(cwd, name), []byte("agent output\n"), 0600)
@@ -115,8 +118,10 @@ func fakeCodexMain() {
 			}
 			fmt.Fprintf(os.Stderr, "2026-11-12T12:00:00Z  INFO codex_otel.trace_safe: event.name=\"codex.sse_event\" event.kind=response.completed input_token_count=1 model_reasoning_effort=%q model=test-model\n", executed)
 		}
+		turn := map[string]any{"id": turnID, "status": "completed"}
 		if failed {
-			emitJSON(map[string]any{"jsonrpc": "2.0", "id": promptID, "error": map[string]any{"code": -32000, "message": envOr("SM_FAKE_FAILMSG", "native failure")}})
+			turn["status"] = "failed"
+			turn["error"] = map[string]any{"message": envOr("SM_FAKE_FAILMSG", "native failure")}
 		} else {
 			text := "ECHO:" + prompt
 			if len(steers) > 0 {
@@ -124,11 +129,13 @@ func fakeCodexMain() {
 			} else if strings.Contains(prompt, "WAIT") {
 				text += "+none"
 			}
-			emitJSON(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": sessionID, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": text}}}})
-			emitJSON(map[string]any{"jsonrpc": "2.0", "id": promptID, "result": map[string]any{"stopReason": "end_turn", "usage": map[string]any{"totalTokens": 5, "inputTokens": 4}}})
+			notify("item/completed", map[string]any{"threadId": threadID, "turnId": turnID, "item": map[string]any{"type": "agentMessage", "text": text}})
+			notify("thread/tokenUsage/updated", map[string]any{"threadId": threadID, "turnId": turnID, "tokenUsage": map[string]any{"last": map[string]any{"totalTokens": 5, "inputTokens": 4}}})
 		}
-		turnActive, steers, deadline, promptID = false, nil, nil, nil
+		notify("turn/completed", map[string]any{"threadId": threadID, "turn": turn})
+		turnID, steers, deadline = "", nil, nil
 	}
+	reply := func(id int, result any) { emitJSON(map[string]any{"id": id, "result": result}) }
 	for {
 		select {
 		case line, ok := <-lines:
@@ -146,56 +153,34 @@ func fakeCodexMain() {
 			rec(fakeRecord{Kind: "request", Line: json.RawMessage(line)})
 			switch request.Method {
 			case "initialize":
-				emitJSON(map[string]any{"jsonrpc": "2.0", "id": *request.ID, "result": map[string]any{
-					"protocolVersion": 1,
-					"agentCapabilities": map[string]any{
-						"loadSession": true,
-						"sessionCapabilities": map[string]any{
-							"resume":       map[string]any{},
-							"systemPrompt": map[string]any{},
-						},
-					},
-					"_meta": map[string]any{"steering": map[string]any{"supported": true}},
-				}})
-			case "_codex/hooks/list":
-				emitJSON(map[string]any{"jsonrpc": "2.0", "id": *request.ID, "result": map[string]any{"hooks": []any{}}})
-			case "session/new", "session/resume", "session/load":
+				reply(*request.ID, map[string]any{"userAgent": "fake"})
+			case "thread/start", "thread/resume":
 				var params struct {
-					SessionID string `json:"sessionId"`
-					Cwd       string `json:"cwd"`
+					ThreadID string `json:"threadId"`
+					Cwd      string `json:"cwd"`
+					Config   struct {
+						Effort string `json:"model_reasoning_effort"`
+					} `json:"config"`
 				}
 				json.Unmarshal(request.Params, &params)
-				cwd = params.Cwd
-				sessionID = params.SessionID
-				if sessionID == "" {
-					sessionID = sessionFallback
+				cwd, effortConfigured = params.Cwd, params.Config.Effort
+				threadID = params.ThreadID
+				if threadID == "" {
+					threadID = threadFallback
 				}
-				emitJSON(map[string]any{"jsonrpc": "2.0", "id": *request.ID, "result": map[string]any{
-					"sessionId": sessionID,
-					"configOptions": []map[string]any{
-						{"id": "model", "category": "model"},
-						{"id": "reasoning_effort", "category": "thought_level"},
-						{"id": "mode", "category": "mode"},
-					},
-				}})
-			case "session/set_config_option":
+				reply(*request.ID, map[string]any{"thread": map[string]any{"id": threadID}})
+			case "turn/start":
 				var params struct {
-					ConfigID string `json:"configId"`
-					Value    string `json:"value"`
-				}
-				json.Unmarshal(request.Params, &params)
-				if params.ConfigID == "reasoning_effort" {
-					effortConfigured = params.Value
-				}
-				emitJSON(map[string]any{"jsonrpc": "2.0", "id": *request.ID, "result": map[string]any{}})
-			case "session/prompt":
-				var params struct {
-					Prompt []struct {
+					Input []struct {
 						Text string `json:"text"`
-					} `json:"prompt"`
+					} `json:"input"`
 				}
 				json.Unmarshal(request.Params, &params)
-				prompt, steers, turnActive, promptID = params.Prompt[0].Text, nil, true, *request.ID
+				prompt, steers = params.Input[0].Text, nil
+				turnSeq++
+				turnID = fmt.Sprintf("turn-%d", turnSeq)
+				reply(*request.ID, map[string]any{"turn": map[string]any{"id": turnID, "status": "inProgress"}})
+				notify("turn/started", map[string]any{"threadId": threadID, "turn": map[string]any{"id": turnID}})
 				switch {
 				case strings.Contains(prompt, "HOLD"):
 				case strings.Contains(prompt, "WAIT"):
@@ -205,28 +190,28 @@ func fakeCodexMain() {
 				default:
 					completeTurn(false)
 				}
-			case "_session/steering":
+			case "turn/steer":
 				if message := os.Getenv("SM_FAKE_STEER_ERROR"); message != "" {
-					emitJSON(map[string]any{"jsonrpc": "2.0", "id": *request.ID, "error": map[string]any{"code": -32602, "message": message}})
+					emitJSON(map[string]any{"id": *request.ID, "error": map[string]any{"code": -32602, "message": message}})
 					continue
 				}
-				if !turnActive {
-					emitJSON(map[string]any{"jsonrpc": "2.0", "id": *request.ID, "result": map[string]any{"outcome": "promptRequired"}})
+				if turnID == "" {
+					emitJSON(map[string]any{"id": *request.ID, "error": map[string]any{"code": -32600, "message": "no active turn to steer"}})
 					continue
 				}
 				var params struct {
-					Prompt []struct {
+					Input []struct {
 						Text string `json:"text"`
-					} `json:"prompt"`
+					} `json:"input"`
 				}
 				json.Unmarshal(request.Params, &params)
-				steers = append(steers, params.Prompt[0].Text)
-				emitJSON(map[string]any{"jsonrpc": "2.0", "id": *request.ID, "result": map[string]any{"outcome": "injected"}})
+				steers = append(steers, params.Input[0].Text)
+				reply(*request.ID, map[string]any{"turnId": turnID})
 				if strings.Contains(prompt, "WAIT") {
 					completeTurn(false)
 				}
 			default:
-				emitJSON(map[string]any{"jsonrpc": "2.0", "id": *request.ID, "result": map[string]any{}})
+				reply(*request.ID, map[string]any{})
 			}
 		case <-deadline:
 			completeTurn(false)
@@ -389,16 +374,8 @@ func installFakeNative(t *testing.T, agent string, extraEnv map[string]string) s
 		env += fmt.Sprintf(" %s=%q", key, value)
 	}
 	script := fmt.Sprintf("#!/bin/sh\n%s exec %q \"$@\"\n", env, self)
-	binNames := []string{agent}
-	if agent == "codex" {
-		binNames = append(binNames, "codex-acp")
-	} else if agent == "claude" {
-		binNames = append(binNames, "claude-agent-acp")
-	}
-	for _, name := range binNames {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0700); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.WriteFile(filepath.Join(bin, agent), []byte(script), 0700); err != nil {
+		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return record

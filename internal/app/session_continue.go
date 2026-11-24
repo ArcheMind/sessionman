@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,12 +13,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/acp"
 	"github.com/ArcheMind/agentx/internal/agentparams"
 	"github.com/ArcheMind/agentx/internal/drivers"
+	"github.com/ArcheMind/agentx/internal/execution"
+	"github.com/ArcheMind/agentx/internal/headless"
 	"github.com/ArcheMind/agentx/internal/hooks"
 	"github.com/ArcheMind/agentx/internal/nativedirs"
-	"github.com/ArcheMind/agentx/internal/pirpc"
 	"github.com/ArcheMind/agentx/internal/runtime"
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
@@ -75,10 +76,11 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	model := request.Model
 
-	if agent.ID != "agy" && agent.ID != "claude" && agent.ID != "codex" && agent.ID != "pi" {
+	transport, ok := agentparams.HeadlessTransport(agent.ID)
+	if !ok {
 		return fmt.Errorf("%s has no headless continue adapter", agent.ID)
 	}
-	if _, err := agentparams.Build(agent.ID, continueTransport(agent.ID), request); err != nil {
+	if _, err := agentparams.Build(agent.ID, transport, request); err != nil {
 		return err
 	}
 	// The caller owns this process (a host harness); SIGTERM/SIGINT must cancel
@@ -164,13 +166,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		transcriptStream = newContinueTranscriptStream(a, streamWriter, agent.ID, model, workspace, token, prefix, cancelExecution)
 	}
 
-	var run continueRun
-	switch agent.ID {
-	case "pi":
-		run, err = a.runContinuePiRPC(execCtx, request, model, prompt, transcriptStream, duplexCtrl)
-	default:
-		run, err = a.runContinueACP(execCtx, agent.ID, request, prompt, transcriptStream, duplexCtrl)
-	}
+	run, err := a.runContinue(execCtx, agent.ID, transport, request, prompt, transcriptStream, duplexCtrl)
 	if transcriptStream != nil {
 		if stopErr := transcriptStream.stop(); stopErr != nil {
 			return stopErr
@@ -416,13 +412,6 @@ type continueRun struct {
 	failure   string
 }
 
-func continueTransport(agentID string) agentparams.Transport {
-	if agentID == "pi" {
-		return agentparams.RPC
-	}
-	return agentparams.ACP
-}
-
 func shutdownStream(stream *runtime.Stream) {
 	if stream == nil {
 		return
@@ -441,11 +430,11 @@ func shutdownStream(stream *runtime.Stream) {
 	}
 }
 
-func (a App) runContinueACP(ctx context.Context, agentID string, request runtime.RunRequest, prompt string, transcriptStream *continueTranscriptStream, duplexCtrl *duplexController) (continueRun, error) {
+func (a App) runContinue(ctx context.Context, agentID string, transport agentparams.Transport, request runtime.RunRequest, prompt string, transcriptStream *continueTranscriptStream, duplexCtrl *duplexController) (continueRun, error) {
 	if err := nativedirs.CachedError(agentID); err != nil {
 		return continueRun{}, err
 	}
-	mapped, err := agentparams.Build(agentID, agentparams.ACP, request)
+	mapped, err := agentparams.Build(agentID, transport, request)
 	if err != nil {
 		return continueRun{}, err
 	}
@@ -453,23 +442,9 @@ func (a App) runContinueACP(ctx context.Context, agentID string, request runtime
 	if !ok {
 		return continueRun{}, fmt.Errorf("%s continue requires a stream runner", agentID)
 	}
-	env := map[string]string{}
-	for k, v := range mapped.Env {
-		env[k] = v
-	}
-	var unset []string
+	plan := runtime.CommandPlan{Executable: mapped.Executable, Args: mapped.Args, Cwd: request.Cwd, Agent: agentID}
 	if agentID == "agy" {
-		unset = []string{hooks.SessionReportEnv}
-	}
-	plan := runtime.CommandPlan{
-		Executable: mapped.Executable,
-		Args:       mapped.Args,
-		Cwd:        request.Cwd,
-		Env:        env,
-		UnsetEnv:   unset,
-		Agent:      agentID,
-	}
-	if agentID == "agy" {
+		plan.UnsetEnv = []string{hooks.SessionReportEnv}
 		prepareAgyNativePlan("agy", &plan)
 	}
 	stream, err := starter.StartStream(plan)
@@ -478,113 +453,46 @@ func (a App) runContinueACP(ctx context.Context, agentID string, request runtime
 	}
 	defer shutdownStream(stream)
 
-	var onLine func(string)
+	var handlers headless.Handlers
 	if transcriptStream != nil {
-		onLine = func(line string) {
-			if sid, _, _, ok := acp.ParseLine(line); ok {
-				transcriptStream.Wake(sid)
-			}
-		}
+		handlers.OnLine = func(line string) { _, _ = transcriptStream.Write([]byte(line + "\n")) }
+		handlers.OnSession = transcriptStream.Wake
 	}
-	client := acp.New(stream, acp.Handlers{Agent: agentID, OnLine: onLine})
-	clientVer := ""
-	if agentID != "agy" {
-		clientVer = "1.0"
-	}
-	info, err := client.Start(ctx, acp.StartOptions{
-		ClientVersion:   clientVer,
-		SessionID:       request.Session,
-		Params:          mapped.Params,
-		SystemPrompt:    mapped.SystemPrompt,
-		Model:           mapped.Model,
-		Effort:          mapped.Effort,
-		Mode:            mapped.Mode,
-		TrustCodexHooks: agentID == "codex",
-		Cwd:             request.Cwd,
-	})
-	if err != nil {
-		return continueRun{}, fmt.Errorf("%s execution failed: %s; stderr: %s", agentID, runtime.RedactSecrets(err.Error()), runtime.RedactSecrets(strings.TrimSpace(stream.Stderr())))
-	}
-	if transcriptStream != nil {
-		transcriptStream.Wake(info.SessionID)
-	}
-	if info.PromptPrefix != "" {
-		prompt = "<system-prompt>\n" + info.PromptPrefix + "\n</system-prompt>\n\n" + prompt
-	}
-	var onReady func()
-	if duplexCtrl != nil {
-		onReady = func() {
-			duplexCtrl.activate(
-				func(steerCtx context.Context, msg string) (string, error) {
-					return client.SteerActive(steerCtx, info.SessionID, msg)
-				},
-				func() error {
-					return client.Cancel(info.SessionID)
-				},
-			)
-		}
-	}
-	result, err := client.PromptSyncWithReady(ctx, info.SessionID, prompt, onReady)
-	if duplexCtrl != nil {
-		duplexCtrl.deactivate()
-	}
-	if err != nil {
-		if result.Err != nil {
-			return continueRun{sessionID: info.SessionID, failure: err.Error()}, nil
-		}
-		return continueRun{sessionID: info.SessionID}, err
-	}
-	switch result.StopReason {
-	case "end_turn":
-		return continueRun{sessionID: info.SessionID, completed: true}, nil
-	case "cancelled":
-		return continueRun{sessionID: info.SessionID, failure: "native turn cancelled"}, nil
-	default:
-		return continueRun{sessionID: info.SessionID, failure: fmt.Sprintf("stopReason=%s", result.StopReason)}, nil
-	}
-}
-
-func (a App) runContinuePiRPC(ctx context.Context, request runtime.RunRequest, model, prompt string, transcriptStream *continueTranscriptStream, duplexCtrl *duplexController) (continueRun, error) {
-	plan, err := drivers.Plan("pi", agentparams.RPC, request)
+	session, err := execution.Open(agentID, stream, mapped, handlers)
 	if err != nil {
 		return continueRun{}, err
 	}
-	starter, ok := a.Runner.(runtime.StreamStarter)
-	if !ok {
-		return continueRun{}, fmt.Errorf("pi continue requires a stream runner")
+	failed := func(err error) error {
+		if ctx.Err() != nil {
+			return err
+		}
+		message := fmt.Sprintf("%s execution failed: %s", agentID, runtime.RedactSecrets(err.Error()))
+		if stderr := runtime.RedactSecrets(strings.TrimSpace(stream.Stderr())); stderr != "" && !strings.Contains(err.Error(), "stderr:") {
+			message += "; stderr: " + stderr
+		}
+		return errors.New(message)
 	}
-	stream, err := starter.StartStream(plan)
+	sessionID, err := session.Start(ctx)
 	if err != nil {
-		return continueRun{}, fmt.Errorf("pi execution failed: %s", runtime.RedactSecrets(err.Error()))
+		return continueRun{}, failed(err)
 	}
-	defer shutdownStream(stream)
-
-	var onLine func(string) error
-	if transcriptStream != nil {
-		onLine = func(line string) error {
-			_, writeErr := transcriptStream.Write([]byte(line + "\n"))
-			return writeErr
-		}
+	if transcriptStream != nil && sessionID != "" {
+		transcriptStream.Wake(sessionID)
 	}
-	var onReady func(pirpc.TurnControl)
+	var onReady func()
 	if duplexCtrl != nil {
-		onReady = func(tc pirpc.TurnControl) {
-			duplexCtrl.activate(tc.Steer, tc.Cancel)
-		}
+		onReady = func() { duplexCtrl.activate(session.Steer, session.Cancel) }
 	}
-	turn, err := pirpc.RunTurnWithControl(ctx, stream, prompt, model, onLine, onReady)
+	res, err := session.Turn(ctx, prompt, onReady)
 	if duplexCtrl != nil {
 		duplexCtrl.deactivate()
 	}
 	if err != nil {
-		if ctx.Err() != nil {
-			return continueRun{}, err
-		}
-		stderr := runtime.RedactSecrets(strings.TrimSpace(stream.Stderr()))
-		if stderr != "" {
-			return continueRun{}, fmt.Errorf("pi execution failed: %s; stderr: %s", runtime.RedactSecrets(err.Error()), stderr)
-		}
-		return continueRun{}, fmt.Errorf("pi execution failed: %s", runtime.RedactSecrets(err.Error()))
+		return continueRun{}, failed(err)
 	}
-	return continueRun{sessionID: turn.SessionID, completed: turn.Completed, failure: turn.Failure}, nil
+	run := continueRun{sessionID: res.SessionID, completed: res.Completed, failure: res.Failure}
+	if res.Cancelled {
+		run.failure = "native turn cancelled"
+	}
+	return run, nil
 }

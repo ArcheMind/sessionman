@@ -90,221 +90,29 @@ func TestSessionContinueDuplexFlagValidation(t *testing.T) {
 	})
 }
 
-// duplexACPRunner simulates an ACP v1 or v2 agent that supports mid-turn steer
-// and cancel while writing canonical records to the native session store.
-type duplexACPRunner struct {
-	*continueRunner
-	protocolVersion int
-	steeringCap     bool
-	cancelCh        chan struct{}
-	promptStarted   chan struct{}
-	releaseTurn     chan struct{}
-	onSteer         func(sessionID, text string, plan runtime.CommandPlan) (outcome string)
-}
-
-func (r *duplexACPRunner) StartStream(plan runtime.CommandPlan) (*runtime.Stream, error) {
-	r.plans = append(r.plans, plan)
-	inR, inW := io.Pipe()
-	outR, outW := io.Pipe()
-	var writeMu sync.Mutex
-	emit := func(v any) {
-		raw, _ := json.Marshal(v)
-		writeMu.Lock()
-		_, _ = io.WriteString(outW, string(raw)+"\n")
-		writeMu.Unlock()
-	}
-
-	go func() {
-		defer outW.Close()
-		var sessionID string
-		var promptID json.RawMessage
-		scanner := bufio.NewScanner(inR)
-		for scanner.Scan() {
-			var req struct {
-				ID     json.RawMessage `json:"id"`
-				Method string          `json:"method"`
-				Params struct {
-					SessionID string `json:"sessionId"`
-					Prompt    []struct {
-						Text string `json:"text"`
-					} `json:"prompt"`
-				} `json:"params"`
-			}
-			if json.Unmarshal(scanner.Bytes(), &req) != nil {
-				continue
-			}
-			switch req.Method {
-			case "initialize":
-				res := map[string]any{
-					"protocolVersion": r.protocolVersion,
-					"agentCapabilities": map[string]any{
-						"loadSession": true,
-						"sessionCapabilities": map[string]any{
-							"resume":       map[string]any{},
-							"systemPrompt": map[string]any{},
-						},
-					},
-				}
-				if r.steeringCap {
-					res["_meta"] = map[string]any{"steering": map[string]any{"supported": true}}
-				}
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": res})
-			case "_codex/hooks/list":
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"hooks": []any{}}})
-			case "session/new", "session/resume", "session/load":
-				sessionID = req.Params.SessionID
-				if sessionID == "" {
-					sessionID = r.fresh
-				}
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"sessionId": sessionID}})
-			case "session/set_config_option", "session/set_model":
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
-			case "session/prompt":
-				promptText := ""
-				if len(req.Params.Prompt) > 0 {
-					promptText = req.Params.Prompt[0].Text
-				}
-				if len(promptID) == 0 {
-					promptID = req.ID
-					r.writeInitialStore(plan, sessionID, promptText)
-					if r.protocolVersion >= 2 {
-						emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"messageId": "m1"}})
-						emit(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-							"sessionId": sessionID,
-							"update":    map[string]any{"sessionUpdate": "state_update", "state": "running", "background": []map[string]any{{"type": "tool_call", "toolCallId": "bg1"}}},
-						}})
-					} else {
-						emit(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-							"sessionId": sessionID,
-							"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "working"}},
-						}})
-					}
-					if r.promptStarted != nil {
-						select {
-						case r.promptStarted <- struct{}{}:
-						default:
-						}
-					}
-					go func(sid string, pid json.RawMessage) {
-						select {
-						case <-r.releaseTurn:
-							if r.protocolVersion >= 2 {
-								emit(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-									"sessionId": sid,
-									"update":    map[string]any{"sessionUpdate": "state_update", "state": "idle", "stopReason": "end_turn", "background": []any{}},
-								}})
-							} else {
-								emit(map[string]any{"jsonrpc": "2.0", "id": pid, "result": map[string]any{"stopReason": "end_turn"}})
-							}
-						case <-r.cancelCh:
-							if r.protocolVersion >= 2 {
-								emit(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-									"sessionId": sid,
-									"update":    map[string]any{"sessionUpdate": "state_update", "state": "idle", "stopReason": "cancelled", "background": []any{}},
-								}})
-							} else {
-								emit(map[string]any{"jsonrpc": "2.0", "id": pid, "result": map[string]any{"stopReason": "cancelled"}})
-							}
-						}
-					}(sessionID, promptID)
-				} else {
-					// Concurrent session/prompt steer (no _meta.steering).
-					if r.onSteer != nil {
-						r.onSteer(sessionID, promptText, plan)
-					}
-					if r.protocolVersion >= 2 {
-						emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"messageId": "m2"}})
-					} else {
-						emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
-					}
-				}
-			case "_session/steering":
-				txt := ""
-				if len(req.Params.Prompt) > 0 {
-					txt = req.Params.Prompt[0].Text
-				}
-				outcome := "injected"
-				if r.onSteer != nil {
-					outcome = r.onSteer(sessionID, txt, plan)
-				}
-				emit(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"outcome": outcome}})
-			case "session/cancel":
-				select {
-				case r.cancelCh <- struct{}{}:
-				default:
-				}
-			}
-		}
-	}()
-	return runtime.NewPipeStream(inW, outR, func() string { return "" }, func() { _ = inW.Close(); _ = outW.Close() }, func() error { return nil }), nil
-}
-
-func (r *duplexACPRunner) writeInitialStore(plan runtime.CommandPlan, sessionID, prompt string) {
-	if r.agent == "claude" {
-		path := sessions.ClaudeProjectFile(r.home, plan.Cwd, sessionID)
-		_ = r.appendTurn(path, "claude", prompt, func(detail sessions.Session) []map[string]any {
-			detail.ID = sessionID
-			return sessions.SerializeClaude(detail)
-		})
-	} else if r.agent == "codex" {
-		codexHome := plan.Env["CODEX_HOME"]
-		if codexHome == "" {
-			codexHome = os.Getenv("CODEX_HOME")
-		}
-		if path, err := sessions.FindCodexRollout(codexHome, sessionID); err == nil {
-			_ = r.appendTurn(path, "codex", prompt, sessions.SerializeCodex)
-		}
-	}
-}
-
-func appendClaudeMessages(t *testing.T, home, cwd, sessionID string, msgs ...sessions.Message) {
-	t.Helper()
-	path := sessions.ClaudeProjectFile(home, cwd, sessionID)
-	parsed, err := sessions.ParseNativeSessionFile("claude", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	parsed.ID = sessionID
-	parsed.Messages = append(parsed.Messages, msgs...)
-	records := sessions.SerializeClaude(parsed)
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	for _, rec := range records {
-		if err := enc.Encode(rec); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestSessionContinueDuplexStartsOnLine1AndIgnoresStdinEOF(t *testing.T) {
 	workspace := testWorkspace(t)
 	inR, inW := io.Pipe()
-	application, _, baseRunner := continueApp(t, "claude", "", "")
+	application, _, baseRunner := continueApp(t, "pi", "anthropic/claude-x", "")
 	application.Stdin = inR
 	capture := &continueStreamCapture{}
 	application.Stdout = capture
 	baseRunner.reply = []sessions.Message{
 		{ID: "a1", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "done"}}},
 	}
-	runner := &duplexACPRunner{
-		continueRunner:  baseRunner,
-		protocolVersion: 1,
-		steeringCap:     true,
-		cancelCh:        make(chan struct{}, 1),
-		promptStarted:   make(chan struct{}, 1),
-		releaseTurn:     make(chan struct{}),
+	runner := &duplexPiRunner{
+		continueRunner: baseRunner,
+		promptStarted:  make(chan struct{}, 1),
+		releaseTurn:    make(chan struct{}),
 	}
 	application.Runner = runner
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- application.Run(context.Background(), []string{"session", "continue", "claude", "--stream", "--duplex"})
+		errCh <- application.Run(context.Background(), []string{"session", "continue", "pi", "--model", "anthropic/claude-x", "--stream", "--duplex"})
 	}()
 
-	// Write line 1 WITHOUT closing stdin — turn must start immediately.
+	// Write line 1 WITHOUT closing stdin: the turn must start immediately.
 	if _, err := io.WriteString(inW, continueTranscript(t, workspace)+"\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -319,11 +127,6 @@ func TestSessionContinueDuplexStartsOnLine1AndIgnoresStdinEOF(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(30 * time.Millisecond)
-	select {
-	case <-runner.cancelCh:
-		t.Fatal("stdin EOF unexpectedly cancelled the turn")
-	default:
-	}
 
 	close(runner.releaseTurn)
 	if err := <-errCh; err != nil {
@@ -332,152 +135,6 @@ func TestSessionContinueDuplexStartsOnLine1AndIgnoresStdinEOF(t *testing.T) {
 	msgs, _, final := decodeDuplexEvents(t, capture.snapshot())
 	if final == nil || len(msgs) != 1 || sessions.MessageText(msgs[0]) != "done" {
 		t.Fatalf("unexpected output: %s", capture.snapshot())
-	}
-}
-
-func TestSessionContinueDuplexACPv1SteerIdleAndChronologicalDelta(t *testing.T) {
-	workspace := testWorkspace(t)
-	inR, inW := io.Pipe()
-	defer inW.Close()
-	application, _, baseRunner := continueApp(t, "claude", "", "")
-	application.Stdin = inR
-	capture := &continueStreamCapture{}
-	application.Stdout = capture
-	baseRunner.reply = []sessions.Message{
-		{ID: "call", Role: "assistant", Content: []sessions.ContentBlock{{Type: "tool_use", ID: "t1", Name: "read", Input: map[string]any{"path": "a"}}}},
-		{ID: "tool", ParentID: "call", Role: "tool", ToolUseID: "t1", ToolName: "read", Result: []any{map[string]any{"type": "text", "text": "ok"}}},
-	}
-
-	runner := &duplexACPRunner{
-		continueRunner:  baseRunner,
-		protocolVersion: 1,
-		steeringCap:     true,
-		cancelCh:        make(chan struct{}, 1),
-		promptStarted:   make(chan struct{}, 1),
-		releaseTurn:     make(chan struct{}),
-		onSteer: func(sessionID, text string, plan runtime.CommandPlan) string {
-			if text == "late-msg" {
-				return "promptRequired"
-			}
-			appendClaudeMessages(t, baseRunner.home, plan.Cwd, sessionID,
-				sessions.Message{ID: "steer-u", ParentID: "tool", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: text}}},
-				sessions.Message{ID: "steer-a", ParentID: "steer-u", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "acknowledged: " + text}}},
-			)
-			return "injected"
-		},
-	}
-	application.Runner = runner
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- application.Run(context.Background(), []string{"session", "continue", "claude", "--stream", "--duplex"})
-	}()
-
-	_, _ = io.WriteString(inW, continueTranscript(t, workspace)+"\n")
-	<-runner.promptStarted
-
-	// Send mid-turn steer + idle steer.
-	_, _ = io.WriteString(inW, `{"type":"steer","id":"req-1","message":"focus on tests"}`+"\n")
-	_, _ = io.WriteString(inW, `{"type":"steer","id":"req-2","message":"late-msg"}`+"\n")
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		_, acks, _ := decodeDuplexEvents(t, capture.snapshot())
-		if len(acks) == 2 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	close(runner.releaseTurn)
-	if err := <-errCh; err != nil {
-		t.Fatalf("duplex run failed: %v", err)
-	}
-
-	msgs, acks, final := decodeDuplexEvents(t, capture.snapshot())
-	if len(acks) != 2 {
-		t.Fatalf("expected 2 steer_acks, got %+v\nraw:\n%s", acks, capture.snapshot())
-	}
-	if acks[0].ID != "req-1" || acks[0].Disposition != "steered" || acks[0].Error != "" {
-		t.Fatalf("unexpected ack[0]: %+v", acks[0])
-	}
-	if acks[1].ID != "req-2" || acks[1].Disposition != "idle" || acks[1].Error != "" {
-		t.Fatalf("unexpected ack[1]: %+v", acks[1])
-	}
-	// Verify error field is omitted on wire when empty.
-	if strings.Contains(capture.snapshot(), `"error":""`) {
-		t.Fatalf("empty error field must be omitted on wire: %s", capture.snapshot())
-	}
-	if final == nil || !reflect.DeepEqual(msgs, final.Messages) || len(msgs) != 4 {
-		t.Fatalf("expected 4 chronological canonical messages (assistant, tool, user-steer, assistant-final), got %d: %+v", len(msgs), msgs)
-	}
-	if msgs[2].Role != "user" || sessions.MessageText(msgs[2]) != "focus on tests" {
-		t.Fatalf("expected steered user message at index 2, got %+v", msgs[2])
-	}
-	if msgs[3].Role != "assistant" || sessions.MessageText(msgs[3]) != "acknowledged: focus on tests" {
-		t.Fatalf("expected final assistant message at index 3, got %+v", msgs[3])
-	}
-}
-
-func TestSessionContinueDuplexACPv2SteerAndCancel(t *testing.T) {
-	workspace := testWorkspace(t)
-	inR, inW := io.Pipe()
-	defer inW.Close()
-	application, _, baseRunner := continueApp(t, "codex", "", "")
-	application.Stdin = inR
-	capture := &continueStreamCapture{}
-	application.Stdout = capture
-	baseRunner.reply = []sessions.Message{
-		{ID: "a1", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "working"}}},
-	}
-
-	steered := make(chan string, 1)
-	runner := &duplexACPRunner{
-		continueRunner:  baseRunner,
-		protocolVersion: 2,
-		steeringCap:     true,
-		cancelCh:        make(chan struct{}, 1),
-		promptStarted:   make(chan struct{}, 1),
-		releaseTurn:     make(chan struct{}),
-		onSteer: func(_ string, text string, _ runtime.CommandPlan) string {
-			steered <- text
-			return "injected"
-		},
-	}
-	application.Runner = runner
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- application.Run(context.Background(), []string{"session", "continue", "codex", "--stream", "--duplex"})
-	}()
-
-	_, _ = io.WriteString(inW, continueTranscript(t, workspace)+"\n")
-	<-runner.promptStarted
-
-	_, _ = io.WriteString(inW, `{"type":"steer","id":"v2-1","message":"pivot"}`+"\n")
-	if got := <-steered; got != "pivot" {
-		t.Fatalf("expected pivot, got %q", got)
-	}
-	// Wait for steer_ack before sending cancel.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		_, acks, _ := decodeDuplexEvents(t, capture.snapshot())
-		if len(acks) == 1 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	_, _ = io.WriteString(inW, `{"type":"cancel"}`+"\n")
-
-	err := <-errCh
-	if err == nil || !strings.Contains(err.Error(), "cancelled") {
-		t.Fatalf("expected cancelled error, got %v", err)
-	}
-	_, acks, final := decodeDuplexEvents(t, capture.snapshot())
-	if final != nil {
-		t.Fatalf("cancelled turn must not emit result: %s", capture.snapshot())
-	}
-	if len(acks) != 1 || acks[0].Disposition != "steered" {
-		t.Fatalf("unexpected acks: %+v", acks)
 	}
 }
 

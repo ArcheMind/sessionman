@@ -327,9 +327,9 @@ func (s *Server) callStart(raw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("%w; no task started", err)
 	}
 	in.Mode = resolved.Mode
-	transport := agentparams.ACP
-	if o.Agent == "pi" {
-		transport = agentparams.RPC
+	transport, ok := agentparams.HeadlessTransport(o.Agent)
+	if !ok {
+		return "", fmt.Errorf("%s has no native subagent execution adapter; no task started", o.Agent)
 	}
 	if _, err := agentparams.Build(o.Agent, transport, resolved); err != nil {
 		return "", fmt.Errorf("%w; no task started", err)
