@@ -153,7 +153,17 @@ func TestForegroundCommandMovedToBackgroundDoesNotHoldTheTurn(t *testing.T) {
 
 func TestSteerRacingSettlementIsIdle(t *testing.T) {
 	p := newFakeProc(t, "")
-	c := newClient(p, "", headless.Handlers{})
+	resultPending := make(chan struct{})
+	observeResult := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseResult := func() { releaseOnce.Do(func() { close(observeResult) }) }
+	t.Cleanup(releaseResult)
+	c := newClient(p, "", headless.Handlers{OnLine: func(line string) {
+		if line == resultLine {
+			close(resultPending)
+			<-observeResult
+		}
+	}})
 	out, ready := startTurn(c, "go")
 	<-ready
 	p.nextStdin(t)
@@ -165,10 +175,15 @@ func TestSteerRacingSettlementIsIdle(t *testing.T) {
 		t.Fatalf("steer line %s", line)
 	}
 	p.emit(resultLine)
+	<-resultPending
 	// Steers that beat the result reaching the client are accepted; once it has been seen,
 	// the grace window before settling must refuse them.
 	deadline := time.Now().Add(2 * time.Second)
-	for {
+	for attempts := 0; ; attempts++ {
+		// Delay result observation past the fake stdin buffer's capacity.
+		if attempts == cap(p.stdin)+1 {
+			releaseResult()
+		}
 		disp, err := c.Steer(context.Background(), "racing")
 		if err != nil {
 			t.Fatal(err)
@@ -176,12 +191,10 @@ func TestSteerRacingSettlementIsIdle(t *testing.T) {
 		if disp == headless.Idle {
 			break
 		}
+		p.nextStdin(t)
 		if time.Now().After(deadline) {
 			t.Fatal("steer after result was still accepted")
 		}
-	}
-	for len(p.stdin) > 0 {
-		<-p.stdin
 	}
 	if disp, _ := c.Steer(context.Background(), "too late"); disp != headless.Idle {
 		t.Fatalf("steer in the settle window=%q", disp)
