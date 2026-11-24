@@ -100,5 +100,5 @@ A change starts with evidence of a stable native source or command. Add the smal
 
 For headless execution (`sm session continue` and `ExternalSubagent`):
 - **Single path per agent**: do not add a separate OneShot/print-mode transport. Both paths share one client implementing `headless.Session` (`internal/headless`): `internal/claudestream` (Claude stream-json), `internal/codexrpc` (Codex app-server), `internal/acp` (AGY ACP v1) or `internal/pirpc` (Pi RPC), opened by `internal/execution`.
-- **Native protocol first**: use the agent's own headless protocol; never depend on a third-party wrapper binary.
+- **No extra user dependencies first, ACP second**: require only `sm` and the agent's CLI, never a wrapper binary; among those options prefer ACP when the CLI speaks it, otherwise the CLI's own headless protocol.
 - **SM prepares native sessions; the protocol loads them**: SessionMan writes and reads the native session store (`internal/sessions`); the client resumes the prepared session and executes turns.
