@@ -20,6 +20,7 @@ import (
 type continueTranscriptStream struct {
 	mu                             sync.Mutex
 	app                            App
+	writer                         *continueStreamWriter
 	agent, model, workspace, token string
 	prefix                         int
 	cancel                         func()
@@ -34,8 +35,11 @@ type continueTranscriptStream struct {
 	emitted                        []json.RawMessage
 }
 
-func newContinueTranscriptStream(a App, agent, model, workspace, token string, prefix int, cancel func()) *continueTranscriptStream {
-	s := &continueTranscriptStream{app: a, agent: agent, model: model, workspace: workspace, token: token, prefix: prefix, cancel: cancel, done: make(chan struct{}), stopped: make(chan struct{})}
+func newContinueTranscriptStream(a App, writer *continueStreamWriter, agent, model, workspace, token string, prefix int, cancel func()) *continueTranscriptStream {
+	if writer == nil {
+		writer = newContinueStreamWriter(a.Stdout)
+	}
+	s := &continueTranscriptStream{app: a, writer: writer, agent: agent, model: model, workspace: workspace, token: token, prefix: prefix, cancel: cancel, done: make(chan struct{}), stopped: make(chan struct{})}
 	go func() {
 		defer close(s.stopped)
 		ticker := time.NewTicker(100 * time.Millisecond)
@@ -250,6 +254,13 @@ func (s *continueTranscriptStream) readStore() error {
 	return s.emit(namespaceDelta(delta, continueRunID(s.agent, s.token, full.ID)))
 }
 
+func (s *continueTranscriptStream) streamWriter() *continueStreamWriter {
+	if s.writer == nil {
+		s.writer = newContinueStreamWriter(s.app.Stdout)
+	}
+	return s.writer
+}
+
 func (s *continueTranscriptStream) emit(messages []sessions.Message) error {
 	if len(messages) < len(s.emitted) {
 		return fmt.Errorf("%s streaming transcript lost previously emitted messages", s.agent)
@@ -265,7 +276,7 @@ func (s *continueTranscriptStream) emit(messages []sessions.Message) error {
 			}
 			continue
 		}
-		if err := json.NewEncoder(s.app.Stdout).Encode(struct {
+		if err := s.streamWriter().WriteEvent(struct {
 			Type    string           `json:"type"`
 			Message sessions.Message `json:"message"`
 		}{"message", message}); err != nil {
@@ -291,7 +302,7 @@ func (s *continueTranscriptStream) finish(out sessions.Session) error {
 	if err := s.emit(out.Messages); err != nil {
 		return err
 	}
-	return json.NewEncoder(s.app.Stdout).Encode(struct {
+	return s.streamWriter().WriteTerminal(struct {
 		Type    string           `json:"type"`
 		Session sessions.Session `json:"session"`
 	}{"result", out})

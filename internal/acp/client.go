@@ -76,8 +76,12 @@ type noteItem struct {
 
 type turnBackend interface {
 	Reset(sessionID string, onEnd func(PromptResult)) <-chan struct{}
+	IsActive() bool
 	OnPromptSent(id int)
+	OnSteerPrompt(id int) bool
+	CancelPrompt(id int)
 	OnPromptResponse(id int, result json.RawMessage, rpcErr *Error)
+	OnCancel()
 	Observe(line string)
 	Result() PromptResult
 	Close()
@@ -593,7 +597,86 @@ func (c *Client) Steer(ctx context.Context, sessionID, text string) (disposition
 	return "steered", id, nil
 }
 
+func (c *Client) isClosed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Cancel sends a session/cancel notification to abort the active turn.
+func (c *Client) Cancel(sessionID string) error {
+	raw, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "session/cancel",
+		"params":  map[string]any{"sessionId": sessionID},
+	})
+	if err != nil {
+		return err
+	}
+	err = c.stream.WriteLine(string(raw))
+	c.getTurn().OnCancel()
+	return err
+}
+
+// SteerActive delivers mid-turn input only while a turn is active, returning
+// disposition "steered" or "idle" without starting a new turn after settlement.
+func (c *Client) SteerActive(ctx context.Context, sessionID, text string) (disposition string, err error) {
+	if c.caps.Steering {
+		if !c.getTurn().IsActive() || c.isClosed() {
+			return "idle", nil
+		}
+		disp, _, err := c.Steer(ctx, sessionID, text)
+		if err != nil {
+			if !c.getTurn().IsActive() || c.isClosed() {
+				return "idle", nil
+			}
+			return "", err
+		}
+		if disp == "queued" {
+			return "idle", nil
+		}
+		return "steered", nil
+	}
+	c.rpcMu.Lock()
+	c.nextID++
+	id := c.nextID
+	c.rpcMu.Unlock()
+
+	turn := c.getTurn()
+	if !turn.OnSteerPrompt(id) {
+		return "idle", nil
+	}
+	c.setLive(true)
+	raw, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"method":  "session/prompt",
+		"params": map[string]any{
+			"sessionId": sessionID,
+			"prompt":    []map[string]any{{"type": "text", "text": text}},
+		},
+	})
+	if err == nil {
+		err = c.stream.WriteLine(string(raw))
+	}
+	if err != nil {
+		turn.CancelPrompt(id)
+		if !turn.IsActive() || c.isClosed() {
+			return "idle", nil
+		}
+		return "", err
+	}
+	return "steered", nil
+}
+
 func (c *Client) PromptSync(ctx context.Context, sessionID, text string) (PromptResult, error) {
+	return c.PromptSyncWithReady(ctx, sessionID, text, nil)
+}
+
+func (c *Client) PromptSyncWithReady(ctx context.Context, sessionID, text string, onReady func()) (PromptResult, error) {
 	turn := c.getTurn()
 	doneCh := turn.Reset(sessionID, nil)
 	c.setLive(true)
@@ -601,9 +684,13 @@ func (c *Client) PromptSync(ctx context.Context, sessionID, text string) (Prompt
 		"sessionId": sessionID, "prompt": []map[string]any{{"type": "text", "text": text}},
 	}, false)
 	if err != nil {
+		turn.Close()
 		return PromptResult{}, err
 	}
 	turn.OnPromptSent(id)
+	if onReady != nil {
+		onReady()
+	}
 
 	select {
 	case <-doneCh:

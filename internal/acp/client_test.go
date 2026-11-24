@@ -437,3 +437,167 @@ func TestV1SendPromptOnTurnEndOrderedAfterWakeupChunks(t *testing.T) {
 		t.Fatalf("expected WAIT;WOKE before OnTurnEnd, got %q", got)
 	}
 }
+
+func TestV1SteerActiveDuringBackgroundWaitAndAfterSettle(t *testing.T) {
+	var promptMu sync.Mutex
+	var prompts []string
+	bgEntered := make(chan struct{}, 1)
+	steerReceived := make(chan struct{}, 1)
+
+	c, _ := pipeACPWithHandlers(t, func(h *Handlers) {
+		h.Agent = "agy"
+		h.BackgroundSettleWindow = 40 * time.Millisecond
+	}, func(req map[string]any, send func(any)) {
+		if req["method"] != "session/prompt" {
+			return
+		}
+		id := req["id"]
+		txt := req["params"].(map[string]any)["prompt"].([]any)[0].(map[string]any)["text"].(string)
+		promptMu.Lock()
+		prompts = append(prompts, txt)
+		n := len(prompts)
+		promptMu.Unlock()
+
+		if n == 1 {
+			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+				"sessionId": "s1",
+				"update":    map[string]any{"sessionUpdate": "tool_call", "toolCallId": "bg1", "status": "in_progress"},
+			}})
+			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"stopReason": "end_turn"}})
+			bgEntered <- struct{}{}
+			return
+		}
+		// Second prompt is the mid-turn steer arriving during background wait.
+		steerReceived <- struct{}{}
+		send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+			"sessionId": "s1",
+			"update":    map[string]any{"sessionUpdate": "tool_call_update", "toolCallId": "bg1", "status": "completed"},
+		}})
+		send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"stopReason": "end_turn"}})
+	})
+
+	errCh := make(chan error, 1)
+	go func() {
+		res, err := c.PromptSync(context.Background(), "s1", "initial")
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if res.StopReason != "end_turn" {
+			errCh <- context.DeadlineExceeded
+			return
+		}
+		errCh <- nil
+	}()
+
+	<-bgEntered
+	// Wait briefly to ensure v1Turn has processed end_turn and entered waiting state.
+	time.Sleep(15 * time.Millisecond)
+
+	disp, err := c.SteerActive(context.Background(), "s1", "mid-turn steer")
+	if err != nil || disp != "steered" {
+		t.Fatalf("expected steered during background wait, got disp=%q err=%v", disp, err)
+	}
+	<-steerReceived
+	if err := <-errCh; err != nil {
+		t.Fatalf("PromptSync failed: %v", err)
+	}
+
+	// After settlement, SteerActive must report idle and NOT send another prompt.
+	disp, err = c.SteerActive(context.Background(), "s1", "too late")
+	if err != nil || disp != "idle" {
+		t.Fatalf("expected idle after settlement, got disp=%q err=%v", disp, err)
+	}
+	promptMu.Lock()
+	defer promptMu.Unlock()
+	if len(prompts) != 2 {
+		t.Fatalf("expected exactly 2 prompts, got %v", prompts)
+	}
+}
+
+func TestV2SteerActiveWithSteeringCapabilityAndCancel(t *testing.T) {
+	cancelSeen := make(chan struct{}, 1)
+	var steerCalls int
+	var mu sync.Mutex
+
+	c, _ := pipeACPWithHandlers(t, func(h *Handlers) {
+		h.Agent = "claude"
+	}, func(req map[string]any, send func(any)) {
+		method, _ := req["method"].(string)
+		id := req["id"]
+		switch method {
+		case "initialize":
+			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
+				"protocolVersion": 2,
+				"_meta":           map[string]any{"steering": map[string]any{"supported": true}},
+			}})
+		case "session/new":
+			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"sessionId": "s2"}})
+		case "session/prompt":
+			send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"messageId": "m1"}})
+			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+				"sessionId": "s2",
+				"update":    map[string]any{"sessionUpdate": "state_update", "state": "running"},
+			}})
+		case "_session/steering":
+			mu.Lock()
+			steerCalls++
+			mu.Unlock()
+			txt := req["params"].(map[string]any)["prompt"].([]any)[0].(map[string]any)["text"].(string)
+			if txt == "idle-case" {
+				send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"outcome": "promptRequired"}})
+			} else {
+				send(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"outcome": "injected"}})
+			}
+		case "session/cancel":
+			cancelSeen <- struct{}{}
+			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+				"sessionId": "s2",
+				"update":    map[string]any{"sessionUpdate": "state_update", "state": "idle", "stopReason": "cancelled", "background": []any{}},
+			}})
+		}
+	})
+
+	ctx := context.Background()
+	info, err := c.Start(ctx, StartOptions{ClientVersion: "1.0", Params: map[string]any{"cwd": "/ws"}})
+	if err != nil || info.ProtocolVersion != 2 || !info.Capabilities.Steering {
+		t.Fatalf("start info=%+v err=%v", info, err)
+	}
+
+	ready := make(chan struct{})
+	resCh := make(chan PromptResult, 1)
+	go func() {
+		res, _ := c.PromptSyncWithReady(ctx, "s2", "go", func() { close(ready) })
+		resCh <- res
+	}()
+	<-ready
+
+	if disp, err := c.SteerActive(ctx, "s2", "adjust"); err != nil || disp != "steered" {
+		t.Fatalf("steer=%q err=%v", disp, err)
+	}
+	if disp, err := c.SteerActive(ctx, "s2", "idle-case"); err != nil || disp != "idle" {
+		t.Fatalf("idle steer=%q err=%v", disp, err)
+	}
+	if err := c.Cancel("s2"); err != nil {
+		t.Fatalf("cancel err=%v", err)
+	}
+	<-cancelSeen
+	res := <-resCh
+	if res.StopReason != "cancelled" {
+		t.Fatalf("expected cancelled, got %+v", res)
+	}
+
+	// After settlement, SteerActive returns idle without sending another RPC.
+	mu.Lock()
+	before := steerCalls
+	mu.Unlock()
+	if disp, err := c.SteerActive(ctx, "s2", "after-settle"); err != nil || disp != "idle" {
+		t.Fatalf("after-settle steer=%q err=%v", disp, err)
+	}
+	mu.Lock()
+	after := steerCalls
+	mu.Unlock()
+	if after != before {
+		t.Fatalf("SteerActive sent RPC after turn settled")
+	}
+}

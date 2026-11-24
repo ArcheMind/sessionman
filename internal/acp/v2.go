@@ -50,11 +50,37 @@ func (t *v2Turn) Reset(sessionID string, onEnd func(PromptResult)) <-chan struct
 	return t.doneCh
 }
 
+func (t *v2Turn) IsActive() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.active
+}
+
 func (t *v2Turn) OnPromptSent(id int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.prompts[id] = true
+	t.sawStopReason = false
 }
+
+func (t *v2Turn) OnSteerPrompt(id int) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.active {
+		return false
+	}
+	t.prompts[id] = true
+	t.sawStopReason = false
+	return true
+}
+
+func (t *v2Turn) CancelPrompt(id int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.prompts, id)
+}
+
+func (t *v2Turn) OnCancel() {}
 
 func (t *v2Turn) OnPromptResponse(id int, _ json.RawMessage, rpcErr *Error) {
 	t.mu.Lock()

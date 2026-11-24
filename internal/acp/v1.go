@@ -66,6 +66,12 @@ func (t *v1Turn) Reset(sessionID string, onEnd func(PromptResult)) <-chan struct
 	return t.doneCh
 }
 
+func (t *v1Turn) IsActive() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.active
+}
+
 func (t *v1Turn) OnPromptSent(id int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -74,6 +80,38 @@ func (t *v1Turn) OnPromptSent(id int) {
 	// still-running background tools.
 	t.stopSettleLocked()
 	t.waiting = false
+}
+
+func (t *v1Turn) OnSteerPrompt(id int) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.active {
+		return false
+	}
+	t.prompts[id] = true
+	t.stopSettleLocked()
+	t.waiting = false
+	return true
+}
+
+func (t *v1Turn) CancelPrompt(id int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.prompts, id)
+}
+
+func (t *v1Turn) OnCancel() {
+	t.mu.Lock()
+	if !t.active || !t.waiting || len(t.prompts) > 0 {
+		t.mu.Unlock()
+		return
+	}
+	res := PromptResult{StopReason: "cancelled"}
+	cb := t.settleLocked(res)
+	t.mu.Unlock()
+	if cb != nil {
+		cb(res)
+	}
 }
 
 func (t *v1Turn) OnPromptResponse(id int, result json.RawMessage, rpcErr *Error) {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,7 +22,7 @@ import (
 	"github.com/ArcheMind/agentx/internal/sessions"
 )
 
-const sessionContinueUsage = "usage: sm [--json|--yaml] session continue <target-agent> [file] [--stream] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>] [-- <native args...>]"
+const sessionContinueUsage = "usage: sm [--json|--yaml] session continue <target-agent> [file] [--stream] [--duplex] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>] [-- <native args...>]"
 
 // sessionContinue runs one headless turn on a unified transcript: import the
 // history into the target agent's native store, resume it with the trailing
@@ -36,7 +37,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		return err
 	}
 	var file, workspace string
-	var stream bool
+	var stream, duplex bool
 	request := runtime.RunRequest{}
 	for index := 1; index < len(args); index++ {
 		if handled, err := parseRunOption(args, &index, &request); handled || err != nil {
@@ -48,6 +49,8 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		switch args[index] {
 		case "--stream":
 			stream = true
+		case "--duplex":
+			duplex = true
 		case "--workspace":
 			index++
 			if index >= len(args) {
@@ -60,6 +63,14 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 				continue
 			}
 			return fmt.Errorf("unknown session continue option %q", args[index])
+		}
+	}
+	if duplex {
+		if !stream {
+			return fmt.Errorf("--duplex requires --stream")
+		}
+		if file != "" && file != "-" {
+			return fmt.Errorf("--duplex cannot be combined with a transcript file argument")
 		}
 	}
 	model := request.Model
@@ -77,7 +88,14 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if agent.ID == "pi" && model == "" {
 		return fmt.Errorf("--model is required for pi (provider/model)")
 	}
-	detail, err := a.readTranscript(file)
+	var detail sessions.Session
+	var duplexReader *bufio.Reader
+	if duplex {
+		duplexReader = bufio.NewReader(a.Stdin)
+		detail, err = readDuplexTranscript(duplexReader)
+	} else {
+		detail, err = a.readTranscript(file)
+	}
 	if err != nil {
 		return err
 	}
@@ -128,17 +146,30 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	request.Cwd, request.Session = workspace, token
 	execCtx, cancelExecution := context.WithCancel(ctx)
 	defer cancelExecution()
+
+	var streamWriter *continueStreamWriter
+	var duplexCtrl *duplexController
+	if stream {
+		streamWriter = newContinueStreamWriter(a.Stdout)
+		defer streamWriter.Close()
+	}
+	if duplex {
+		duplexCtrl = newDuplexController(execCtx, cancelExecution, streamWriter)
+		defer duplexCtrl.close()
+		duplexCtrl.start(duplexReader)
+	}
+
 	var transcriptStream *continueTranscriptStream
 	if stream && agent.ID != "agy" {
-		transcriptStream = newContinueTranscriptStream(a, agent.ID, model, workspace, token, prefix, cancelExecution)
+		transcriptStream = newContinueTranscriptStream(a, streamWriter, agent.ID, model, workspace, token, prefix, cancelExecution)
 	}
 
 	var run continueRun
 	switch agent.ID {
 	case "pi":
-		run, err = a.runContinuePiRPC(execCtx, request, model, prompt, transcriptStream)
+		run, err = a.runContinuePiRPC(execCtx, request, model, prompt, transcriptStream, duplexCtrl)
 	default:
-		run, err = a.runContinueACP(execCtx, agent.ID, request, prompt, transcriptStream)
+		run, err = a.runContinueACP(execCtx, agent.ID, request, prompt, transcriptStream, duplexCtrl)
 	}
 	if transcriptStream != nil {
 		if stopErr := transcriptStream.stop(); stopErr != nil {
@@ -201,7 +232,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if stream {
 		if transcriptStream == nil {
 			// AGY messages are emitted only after the final native transcript is available.
-			transcriptStream = &continueTranscriptStream{app: a, agent: agent.ID}
+			transcriptStream = &continueTranscriptStream{app: a, writer: streamWriter, agent: agent.ID}
 		}
 		return transcriptStream.finish(out)
 	}
@@ -410,7 +441,7 @@ func shutdownStream(stream *runtime.Stream) {
 	}
 }
 
-func (a App) runContinueACP(ctx context.Context, agentID string, request runtime.RunRequest, prompt string, transcriptStream *continueTranscriptStream) (continueRun, error) {
+func (a App) runContinueACP(ctx context.Context, agentID string, request runtime.RunRequest, prompt string, transcriptStream *continueTranscriptStream, duplexCtrl *duplexController) (continueRun, error) {
 	if err := nativedirs.CachedError(agentID); err != nil {
 		return continueRun{}, err
 	}
@@ -480,7 +511,23 @@ func (a App) runContinueACP(ctx context.Context, agentID string, request runtime
 	if info.PromptPrefix != "" {
 		prompt = "<system-prompt>\n" + info.PromptPrefix + "\n</system-prompt>\n\n" + prompt
 	}
-	result, err := client.PromptSync(ctx, info.SessionID, prompt)
+	var onReady func()
+	if duplexCtrl != nil {
+		onReady = func() {
+			duplexCtrl.activate(
+				func(steerCtx context.Context, msg string) (string, error) {
+					return client.SteerActive(steerCtx, info.SessionID, msg)
+				},
+				func() error {
+					return client.Cancel(info.SessionID)
+				},
+			)
+		}
+	}
+	result, err := client.PromptSyncWithReady(ctx, info.SessionID, prompt, onReady)
+	if duplexCtrl != nil {
+		duplexCtrl.deactivate()
+	}
 	if err != nil {
 		if result.Err != nil {
 			return continueRun{sessionID: info.SessionID, failure: err.Error()}, nil
@@ -497,7 +544,7 @@ func (a App) runContinueACP(ctx context.Context, agentID string, request runtime
 	}
 }
 
-func (a App) runContinuePiRPC(ctx context.Context, request runtime.RunRequest, model, prompt string, transcriptStream *continueTranscriptStream) (continueRun, error) {
+func (a App) runContinuePiRPC(ctx context.Context, request runtime.RunRequest, model, prompt string, transcriptStream *continueTranscriptStream, duplexCtrl *duplexController) (continueRun, error) {
 	plan, err := drivers.Plan("pi", agentparams.RPC, request)
 	if err != nil {
 		return continueRun{}, err
@@ -519,7 +566,16 @@ func (a App) runContinuePiRPC(ctx context.Context, request runtime.RunRequest, m
 			return writeErr
 		}
 	}
-	turn, err := pirpc.RunTurn(ctx, stream, prompt, model, onLine)
+	var onReady func(pirpc.TurnControl)
+	if duplexCtrl != nil {
+		onReady = func(tc pirpc.TurnControl) {
+			duplexCtrl.activate(tc.Steer, tc.Cancel)
+		}
+	}
+	turn, err := pirpc.RunTurnWithControl(ctx, stream, prompt, model, onLine, onReady)
+	if duplexCtrl != nil {
+		duplexCtrl.deactivate()
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return continueRun{}, err

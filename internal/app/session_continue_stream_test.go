@@ -275,7 +275,7 @@ func TestContinueStreamStoreRaces(t *testing.T) {
 			capture := &continueStreamCapture{message: make(chan struct{}, 10)}
 			application := New(false, strings.NewReader(""), capture, &bytes.Buffer{})
 			application.Sessions = sessions.Service{HomeDir: home}
-			s := newContinueTranscriptStream(application, "claude", "", workspace, "race-session", 0, func() {})
+			s := newContinueTranscriptStream(application, nil, "claude", "", workspace, "race-session", 0, func() {})
 			t.Cleanup(func() {
 				if err := s.stop(); err != nil {
 					t.Error(err)
@@ -343,7 +343,7 @@ func TestContinueStreamCodexWithholdsGrowingAssistant(t *testing.T) {
 	t.Setenv("CODEX_HOME", home)
 	capture := &continueStreamCapture{}
 	application := New(false, strings.NewReader(""), capture, &bytes.Buffer{})
-	s := newContinueTranscriptStream(application, "codex", "", "/workspace", "thread", 0, func() {})
+	s := newContinueTranscriptStream(application, nil, "codex", "", "/workspace", "thread", 0, func() {})
 	defer func() {
 		if err := s.stop(); err != nil {
 			t.Error(err)

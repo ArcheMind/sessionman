@@ -4,6 +4,15 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-23
+
+### Added
+
+- Mid-turn **Steer** and **Cancel** support for `sm session continue --stream --duplex`:
+  - Reads the initial canonical transcript from line 1 of stdin without waiting for EOF, then accepts NDJSON control frames (`{"type":"steer","id":"<reqId>","message":"<text>"}` and `{"type":"cancel"}`) while the turn runs; stdin EOF cleanly stops reading control frames without aborting the turn.
+  - Emits mutex-serialized NDJSON `{"type":"steer_ack","id":"<reqId>","disposition":"steered"|"idle"|"unsupported","error":"..."}` events alongside `message` and terminal `result` events, with a terminal barrier preventing any post-`result` output.
+  - Reuses the single shared execution clients (`internal/acp` `SteerActive`/`Cancel` across ACP v1 and v2 including background-wait windows, and `internal/pirpc` `Steer`/`Abort`/`RunTurnWithControl`) with race-safe settlement to `idle` and chronological canonical deltas for steered turns.
+
 ## [0.16.1] - 2026-11-23
 
 ### Changed
