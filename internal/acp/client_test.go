@@ -13,6 +13,53 @@ import (
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
+type immediateReplyWriter struct {
+	write func([]byte) (int, error)
+}
+
+func (w immediateReplyWriter) Write(p []byte) (int, error) { return w.write(p) }
+func (w immediateReplyWriter) Close() error                { return nil }
+
+func TestPromptResponseBeforeWriteReturns(t *testing.T) {
+	outR, outW := io.Pipe()
+	processed := make(chan struct{})
+	writer := immediateReplyWriter{write: func(p []byte) (int, error) {
+		var req struct {
+			ID     int    `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(p, &req); err != nil {
+			return 0, err
+		}
+		if req.Method != "session/prompt" {
+			return len(p), nil
+		}
+		raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
+		if _, err := outW.Write(append(raw, '\n')); err != nil {
+			return 0, err
+		}
+		// The marker is handled after readLoop consumes the preceding response.
+		if _, err := io.WriteString(outW, "{\"method\":\"test/response_processed\"}\n"); err != nil {
+			return 0, err
+		}
+		<-processed
+		return len(p), nil
+	}}
+	stream := runtime.NewPipeStream(writer, outR, nil, func() { _ = outW.Close() }, func() error { return nil })
+	t.Cleanup(func() { _ = outW.Close(); _ = outR.Close() })
+	c := New(stream, Handlers{OnLine: func(line string) {
+		if strings.Contains(line, "test/response_processed") {
+			close(processed)
+		}
+	}})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	res, err := c.Prompt(ctx, "s1", "hello", nil)
+	if err != nil || res.StopReason != "end_turn" {
+		t.Fatalf("fast prompt response lost: result=%+v err=%v", res, err)
+	}
+}
+
 func pipeACPWithHandlers(t *testing.T, modify func(*Handlers), handler func(req map[string]any, send func(any))) (*Client, *[]string) {
 	t.Helper()
 	inR, inW := io.Pipe()

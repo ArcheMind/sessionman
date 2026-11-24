@@ -209,6 +209,9 @@ func (c *Client) request(method string, params any, wait bool) (int, <-chan repl
 	if wait {
 		ch = make(chan reply, 1)
 		c.pending[id] = ch
+	} else {
+		// Register before writing: a fast agent can reply before WriteLine returns.
+		c.turn.OnPromptSent(id)
 	}
 	c.rpcMu.Unlock()
 	raw, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
@@ -219,6 +222,9 @@ func (c *Client) request(method string, params any, wait bool) (int, <-chan repl
 		c.rpcMu.Lock()
 		delete(c.pending, id)
 		c.rpcMu.Unlock()
+		if !wait {
+			c.turn.CancelPrompt(id)
+		}
 	}
 	return id, ch, err
 }
@@ -459,14 +465,13 @@ func (c *Client) Prompt(ctx context.Context, sessionID, text string, onReady fun
 	turn := c.turn
 	doneCh := turn.Reset(sessionID, nil)
 	c.setLive(true)
-	id, _, err := c.request("session/prompt", map[string]any{
+	_, _, err := c.request("session/prompt", map[string]any{
 		"sessionId": sessionID, "prompt": []map[string]any{{"type": "text", "text": text}},
 	}, false)
 	if err != nil {
 		turn.Close()
 		return PromptResult{}, err
 	}
-	turn.OnPromptSent(id)
 	if onReady != nil {
 		onReady()
 	}

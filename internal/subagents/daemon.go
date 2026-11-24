@@ -65,7 +65,18 @@ func RunDaemon(d *Daemon) error {
 	d.meta = meta
 	d.agent = &ExternalSubagentState{ID: meta.ID, Name: meta.Name, Option: meta.Preset, Mode: meta.Mode, Cwd: meta.Cwd, Session: meta.Session, NativeID: meta.NativeID, Worktree: meta.Worktree}
 	d.quit = make(chan struct{})
-	if err := os.WriteFile(filepath.Join(d.Dir, "daemon.pid"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+	pidPath := filepath.Join(d.Dir, "daemon.pid")
+	// File identity distinguishes replacements even when in-process daemons share a PID.
+	if err := writeFileAtomic(pidPath, []byte(strconv.Itoa(os.Getpid()))); err != nil {
+		return err
+	}
+	pidFile, err := os.Open(pidPath)
+	if err != nil {
+		return err
+	}
+	defer pidFile.Close()
+	pidInfo, err := pidFile.Stat()
+	if err != nil {
 		return err
 	}
 	_ = os.Remove(meta.Socket)
@@ -103,8 +114,9 @@ func RunDaemon(d *Daemon) error {
 			<-proc.done
 		}
 	}
-	os.Remove(meta.Socket)
-	os.Remove(filepath.Join(d.Dir, "daemon.pid"))
+	if current, err := os.Stat(pidPath); err == nil && os.SameFile(pidInfo, current) {
+		os.Remove(pidPath)
+	}
 	return nil
 }
 

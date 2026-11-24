@@ -4,6 +4,8 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-24
+
 ### Changed
 
 - Claude and Codex headless execution (`sm session continue` and `ExternalSubagent`) now runs on their own native protocols: Claude on one long-lived `claude -p --input-format stream-json --output-format stream-json` process (`internal/claudestream`) and Codex on `codex app-server` (`internal/codexrpc`).
@@ -20,6 +22,8 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 - Claude and Codex ExternalSubagents and `sm session continue` work with only `sm` and the native CLIs installed; Claude subagents run the user's installed `claude` instead of the CLI bundled with `claude-agent-acp`.
 - Codex executed-effort evidence is readable again: the app-server process runs with `NO_COLOR=1` so its telemetry lines are not wrapped in ANSI codes.
 - `make smoke-hooks-live` configures hooks through `SM_CONFIG_DIR`, and the live smokes run Claude and Codex (steer, cancel, resume and background-task cases) on a PATH without the ACP wrappers.
+- Register AGY prompt requests before writing them so immediate responses cannot be lost and leave the turn waiting forever.
+- Daemon shutdown no longer removes a replacement daemon's socket or PID file during cold resume.
 
 ## [0.17.0] - 2026-11-23
 
