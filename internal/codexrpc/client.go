@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,11 +31,19 @@ type reply struct {
 	err    *Error
 }
 
+// Options are the thread parameters (cwd, model, config, sandbox...) plus what Start needs
+// beyond them: the thread to reopen instead of starting one, and the SessionMan-generated
+// hooks file whose hooks must be trusted before the thread loads them.
+type Options struct {
+	Params    map[string]any
+	Resume    string
+	HooksFile string
+}
+
 type Client struct {
 	stream *runtime.Stream
 	h      headless.Handlers
-	params map[string]any
-	resume string
+	opts   Options
 	closed chan struct{}
 
 	rpcMu   sync.Mutex
@@ -51,14 +61,11 @@ type turn struct {
 	res  headless.TurnResult
 }
 
-// params are the thread/start fields (cwd, model, config, sandbox...); resume is the
-// thread to reopen instead of starting one.
-func New(stream *runtime.Stream, params map[string]any, resume string, h headless.Handlers) *Client {
+func New(stream *runtime.Stream, opts Options, h headless.Handlers) *Client {
 	c := &Client{
 		stream:  stream,
 		h:       h,
-		params:  params,
-		resume:  resume,
+		opts:    opts,
 		closed:  make(chan struct{}),
 		pending: map[int]chan reply{},
 	}
@@ -230,11 +237,14 @@ func (c *Client) Start(ctx context.Context) (string, error) {
 	if _, err := c.call(ctx, "initialize", map[string]any{"clientInfo": map[string]any{"name": "sessionman", "title": "SessionMan", "version": "1.0"}}); err != nil {
 		return "", err
 	}
-	method, params := "thread/start", c.params
-	if c.resume != "" {
+	if err := c.trustHooks(ctx); err != nil {
+		return "", err
+	}
+	method, params := "thread/start", c.opts.Params
+	if c.opts.Resume != "" {
 		method = "thread/resume"
-		params = map[string]any{"threadId": c.resume, "excludeTurns": true}
-		for k, v := range c.params {
+		params = map[string]any{"threadId": c.opts.Resume, "excludeTurns": true}
+		for k, v := range c.opts.Params {
 			params[k] = v
 		}
 	}
@@ -250,13 +260,52 @@ func (c *Client) Start(ctx context.Context) (string, error) {
 	if err := json.Unmarshal(raw, &res); err != nil {
 		return "", fmt.Errorf("invalid codex %s response: %w", method, err)
 	}
-	if res.Thread.ID == "" || (c.resume != "" && res.Thread.ID != c.resume) {
+	if res.Thread.ID == "" || (c.opts.Resume != "" && res.Thread.ID != c.opts.Resume) {
 		return "", fmt.Errorf("codex returned an unexpected native session; no replacement accepted")
 	}
 	c.mu.Lock()
 	c.threadID = res.Thread.ID
 	c.mu.Unlock()
 	return res.Thread.ID, nil
+}
+
+// The app-server ignores --dangerously-bypass-hook-trust, so hooks SessionMan generated into
+// the native home stay untrusted (and never run) until their hash is recorded as trusted.
+func (c *Client) trustHooks(ctx context.Context) error {
+	if c.opts.HooksFile == "" {
+		return nil
+	}
+	cwd, _ := c.opts.Params["cwd"].(string)
+	raw, err := c.call(ctx, "hooks/list", map[string]any{"cwds": []string{cwd}})
+	if err != nil {
+		return err
+	}
+	var list struct {
+		Data []struct {
+			Hooks []struct {
+				Key         string `json:"key"`
+				CurrentHash string `json:"currentHash"`
+				TrustStatus string `json:"trustStatus"`
+				SourcePath  string `json:"sourcePath"`
+			} `json:"hooks"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return fmt.Errorf("invalid codex hooks/list response: %w", err)
+	}
+	var edits []map[string]any
+	for _, entry := range list.Data {
+		for _, hook := range entry.Hooks {
+			if hook.TrustStatus != "trusted" && filepath.Clean(hook.SourcePath) == filepath.Clean(c.opts.HooksFile) {
+				edits = append(edits, map[string]any{"keyPath": "hooks.state." + strconv.Quote(hook.Key) + ".trusted_hash", "value": hook.CurrentHash, "mergeStrategy": "replace"})
+			}
+		}
+	}
+	if len(edits) == 0 {
+		return nil
+	}
+	_, err = c.call(ctx, "config/batchWrite", map[string]any{"edits": edits, "reloadUserConfig": true})
+	return err
 }
 
 func input(text string) []map[string]any {

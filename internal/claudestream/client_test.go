@@ -129,6 +129,28 @@ func TestTurnSettlesWhenFinishedTaskOpensNoFollowUp(t *testing.T) {
 	}
 }
 
+// A foreground command the CLI moved to the background announces itself with task_started and
+// ends with task_notification only, with no background_tasks_changed in between (recorded live).
+func TestForegroundCommandMovedToBackgroundDoesNotHoldTheTurn(t *testing.T) {
+	p := newFakeProc(t, "")
+	c := newClient(p, "", headless.Handlers{})
+	out, ready := startTurn(c, "go")
+	<-ready
+	p.emit(initLine,
+		`{"type":"system","subtype":"task_started","task_id":"b1","tool_use_id":"toolu_1"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"b1","status":"completed"}`,
+		`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"slept"}]}}`,
+		`{"type":"result","subtype":"success","is_error":false,"result":"DONE"}`)
+	select {
+	case got := <-out:
+		if got.err != nil || !got.res.Completed || got.res.Text != "DONE" {
+			t.Fatalf("got %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("turn stayed open for a task that already ended")
+	}
+}
+
 func TestSteerRacingSettlementIsIdle(t *testing.T) {
 	p := newFakeProc(t, "")
 	c := newClient(p, "", headless.Handlers{})

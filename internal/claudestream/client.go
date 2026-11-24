@@ -105,6 +105,9 @@ type event struct {
 		ID string `json:"task_id"`
 	} `json:"tasks"`
 	TaskID string `json:"task_id"`
+	Patch  struct {
+		Status string `json:"status"`
+	} `json:"patch"`
 }
 
 func (c *Client) observe(line string) {
@@ -135,12 +138,23 @@ func (c *Client) observe(line string) {
 				c.tasks[ev.TaskID] = true
 			}
 			c.mu.Unlock()
+		case "task_updated":
+			// A foreground command the CLI moved to the background ends without a
+			// background_tasks_changed, so task events alone must also clear the task.
+			switch ev.Patch.Status {
+			case "completed", "failed", "killed", "stopped":
+				c.mu.Lock()
+				delete(c.tasks, ev.TaskID)
+				c.rearmLocked()
+				c.mu.Unlock()
+			}
 		case "task_notification":
 			c.mu.Lock()
+			delete(c.tasks, ev.TaskID)
 			if c.turn != nil && c.turn.resultSeen {
 				c.notified = true
-				c.rearmLocked()
 			}
+			c.rearmLocked()
 			c.mu.Unlock()
 		}
 	case "result":

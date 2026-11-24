@@ -2,8 +2,9 @@ import {spawn, execFileSync} from 'node:child_process'
 import {mkdtemp, mkdir, writeFile, readFile, appendFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
+import {nativeOnlyEnv} from './native-path.mjs'
 
-for (const agent of (process.env.SM_MCP_DUPLEX_AGENT ? [process.env.SM_MCP_DUPLEX_AGENT] : ['codex','pi'])) {
+for (const agent of (process.env.SM_MCP_DUPLEX_AGENT ? [process.env.SM_MCP_DUPLEX_AGENT] : ['claude','codex','pi'])) {
 const evidenceDir=await mkdtemp(join(tmpdir(),`sessionman-duplex-live-${agent}-`))
 console.log(JSON.stringify({agent,evidence:evidenceDir,phase:'starting'}))
 await mkdir(evidenceDir,{recursive:true})
@@ -12,8 +13,8 @@ const binary=resolve(process.argv[2])
 const home=await mkdtemp(join(tmpdir(),'agentx-live-duplex-'))
 const work=await mkdtemp(join(tmpdir(),'agentx-live-cwd-'))
 const dir=join(home,'.sessionman','presets','duplex-live');await mkdir(dir,{recursive:true})
-await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${agent==='codex'?'gpt-6-luna':'deepseek/deepseek-v4-pro'}\n---\n\nDuplex live acceptance. Follow instructions exactly; keep replies to one short line.\n`)
-const env={...process.env,SM_SUBAGENT_HOME:home,SM_LOG:'debug'}
+await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${agent==='claude'?'haiku':agent==='codex'?'gpt-6-luna':'deepseek/deepseek-v4-pro'}\n---\n\nDuplex live acceptance. Follow instructions exactly; keep replies to one short line.\n`)
+const env={...nativeOnlyEnv(binary),SM_SUBAGENT_HOME:home,SM_LOG:'debug'}
 const child=spawn(binary,['mcp','serve'],{cwd:work,env,stdio:['pipe','pipe','pipe']})
 let pending='',counter=0
 const requests=new Map()

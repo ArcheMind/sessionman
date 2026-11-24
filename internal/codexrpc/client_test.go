@@ -111,7 +111,7 @@ func TestSteerRacingSettlementIsIdle(t *testing.T) {
 			s.send(map[string]any{"id": req["id"], "error": map[string]any{"code": -32600, "message": "no active turn to steer"}})
 		}
 	}))
-	c := New(stream, nil, "", headless.Handlers{})
+	c := New(stream, Options{}, headless.Handlers{})
 	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestInterruptedAndFailedTurnsMapToResults(t *testing.T) {
 					s.result(req, map[string]any{"turn": map[string]any{"id": "t1"}})
 				}
 			}))
-			c := New(stream, nil, "", headless.Handlers{})
+			c := New(stream, Options{}, headless.Handlers{})
 			if _, err := c.Start(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -175,7 +175,7 @@ func TestApprovalRequestsAreDeclined(t *testing.T) {
 			answered <- req
 		}
 	}))
-	c := New(stream, nil, "", headless.Handlers{})
+	c := New(stream, Options{}, headless.Handlers{})
 	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestProcessCrashMidTurnReportsExit(t *testing.T) {
 			s.result(req, map[string]any{"turn": map[string]any{"id": "t1"}})
 		}
 	}))
-	c := New(stream, nil, "", headless.Handlers{})
+	c := New(stream, Options{}, headless.Handlers{})
 	if _, err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestStartupFailureAndMalformedOutput(t *testing.T) {
 			s.send(map[string]any{"id": req["id"], "error": map[string]any{"code": -32603, "message": "boom"}})
 		}
 	})
-	c := New(stream, nil, "", headless.Handlers{OnDebug: func(format string, args ...any) {
+	c := New(stream, Options{}, headless.Handlers{OnDebug: func(format string, args ...any) {
 		mu.Lock()
 		debug = append(debug, fmt.Sprintf(format, args...))
 		mu.Unlock()
@@ -250,7 +250,7 @@ func TestResumeMustReturnTheRequestedThread(t *testing.T) {
 			s.result(req, map[string]any{"thread": map[string]any{"id": "other-thread"}})
 		}
 	})
-	c := New(stream, map[string]any{"cwd": "/ws"}, thread, headless.Handlers{})
+	c := New(stream, Options{Params: map[string]any{"cwd": "/ws"}, Resume: thread}, headless.Handlers{})
 	if _, err := c.Start(context.Background()); err == nil || !strings.Contains(err.Error(), "unexpected native session") {
 		t.Fatalf("err=%v", err)
 	}

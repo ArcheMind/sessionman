@@ -160,6 +160,8 @@ func (d *Daemon) launchPlan(req agentparams.Request, mapped agentparams.Plan) (r
 		plan.UnsetEnv = []string{hooks.SessionReportEnv}
 	case "codex":
 		plan.Env["RUST_LOG"] = codexTelemetryFilter
+		// Codex colors its log lines even into a pipe, which breaks the telemetry parser.
+		plan.Env["NO_COLOR"] = "1"
 		auth = Auth{Key: "CODEX_HOME", Dir: os.Getenv("CODEX_HOME")}
 	case "pi":
 		if err := d.injectPiDelegation(&plan); err != nil {
