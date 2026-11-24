@@ -4,6 +4,23 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- Claude and Codex headless execution (`sm session continue` and `ExternalSubagent`) now runs on their own native protocols: Claude on one long-lived `claude -p --input-format stream-json --output-format stream-json` process (`internal/claudestream`) and Codex on `codex app-server` (`internal/codexrpc`).
+- Added the `internal/headless` `Session` contract (`Start`, `Turn`, `Steer`, `Cancel`) that the Claude, Codex, AGY (ACP v1) and Pi (RPC) clients all implement, with `internal/execution` opening the right one. `session continue` (including `--duplex`) and the ExternalSubagent daemon each run one code path over it instead of branching per agent.
+- Claude turns settle only after the result, every background task and the follow-up turn the CLI opens by itself for a finished task. Codex hook trust is recorded through `hooks/list` and `config/batchWrite` because the app-server ignores `--dangerously-bypass-hook-trust`.
+
+### Removed
+
+- The `claude-agent-acp` and `codex-acp` wrapper dependencies and the `SM_CLAUDE_ACP_BIN`, `SM_CODEX_ACP_BIN`, `CODEX_PATH` and `INITIAL_AGENT_MODE` plumbing.
+- The ACP v2 path in `internal/acp` (v2 turn backend, `type: "id"` config options, v2 MCP normalization, Codex hook trust over ACP). `internal/acp` is now ACP v1 for AGY only.
+
+### Fixed
+
+- Claude and Codex ExternalSubagents and `sm session continue` work with only `sm` and the native CLIs installed; Claude subagents run the user's installed `claude` instead of the CLI bundled with `claude-agent-acp`.
+- Codex executed-effort evidence is readable again: the app-server process runs with `NO_COLOR=1` so its telemetry lines are not wrapped in ANSI codes.
+- `make smoke-hooks-live` configures hooks through `SM_CONFIG_DIR`, and the live smokes run Claude and Codex (steer, cancel, resume and background-task cases) on a PATH without the ACP wrappers.
+
 ## [0.17.0] - 2026-11-23
 
 ### Added

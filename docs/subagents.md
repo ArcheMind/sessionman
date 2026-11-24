@@ -496,16 +496,18 @@ make smoke-mcp-isolation-live
 ```
 
 The live backend suite uses existing native logins, isolated SessionMan configuration,
-and Codex `gpt-5.6-luna` / Pi `openai-codex/gpt-5.6-luna`. Override
-`SM_MCP_CODEX_MODEL` / `SM_MCP_PI_MODEL` with exact accessible models. It verifies
+Claude `haiku`, Codex `gpt-5.6-luna` / Pi `openai-codex/gpt-5.6-luna`. Override
+`SM_MCP_CLAUDE_MODEL` / `SM_MCP_CODEX_MODEL` / `SM_MCP_PI_MODEL` with exact accessible models. It verifies
 native inference, independent memory continuation and actual cancellation. The
 duplex smoke drives deterministic native streaming fakes over MCP stdio and
 asserts steer, MessageHost wakes, report events, re-armed waits and stop.
 `test-pi-bridge` verifies automatic event delivery, one waiter per agent,
 re-arming, foreground deduplication, nested host tools and shutdown cleanup.
 `smoke-mcp-duplex-live` covers same-turn steer, a second-round report and Stop
-against native Codex/Pi, plus mid-run MessageHost delivery. Its model defaults
-are Codex `gpt-6-luna` and Pi `deepseek/deepseek-v4-pro`.
+against native Claude/Codex/Pi, plus mid-run MessageHost delivery. Its model defaults
+are Claude `haiku`, Codex `gpt-6-luna` and Pi `deepseek/deepseek-v4-pro`. The live
+smokes run on a PATH holding only `sm` and the native CLIs, so a dependency on a
+third-party ACP wrapper fails them.
 
 OSC 7501 status consumption is gated off: the tested headless native processes
 emit no such status. This release adds neither a PTY nor a `blocked` state.

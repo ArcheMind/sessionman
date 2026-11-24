@@ -99,6 +99,6 @@ Installation accepts a local directory or a Git repository plus subpath, validat
 A change starts with evidence of a stable native source or command. Add the smallest orthogonal driver, register the capability, update the lifecycle audit, and extend the consistency checks. If agents do not share semantics, keep the feature native instead of forcing it into SessionMan.
 
 For headless execution (`sm session continue` and `ExternalSubagent`):
-- **Single path per agent**: do not add a separate OneShot/print-mode transport alongside ACP or RPC. Both paths share one execution client (`internal/acp` or `internal/pirpc`).
-- **ACP first**: prefer `internal/acp` whenever the agent provides native or official ACP support.
-- **SM prepares native sessions; ACP loads them**: SessionMan writes and reads the native session store (`internal/sessions`); ACP loads the prepared session via `session/load` or `session/resume` and executes turns.
+- **Single path per agent**: do not add a separate OneShot/print-mode transport. Both paths share one client implementing `headless.Session` (`internal/headless`): `internal/claudestream` (Claude stream-json), `internal/codexrpc` (Codex app-server), `internal/acp` (AGY ACP v1) or `internal/pirpc` (Pi RPC), opened by `internal/execution`.
+- **Native protocol first**: use the agent's own headless protocol; never depend on a third-party wrapper binary.
+- **SM prepares native sessions; the protocol loads them**: SessionMan writes and reads the native session store (`internal/sessions`); the client resumes the prepared session and executes turns.

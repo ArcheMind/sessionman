@@ -1,52 +1,36 @@
 #!/bin/sh
+# Live check that portable hooks from SM_CONFIG_DIR reach the real agents on the headless
+# execution path of `sm session continue` (Claude stream-json, Codex app-server, Pi RPC),
+# on a PATH holding only sm and the native CLIs.
 set -eu
 
 ax=${1:-./bin/sm}
+case $ax in /*) ;; *) ax=$(pwd)/$ax ;; esac
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 recorder=$root/test/smoke/record-hook.sh
-workspace=$(mktemp -d "${TMPDIR:-/tmp}/sessionman-hooks-smoke.XXXXXX")
+workspace=$(mktemp -d "${TMPDIR:-/tmp}/sessionman-hooks-smoke-XXXXXX")
 workspace=$(CDPATH= cd -- "$workspace" && pwd -P)
-backup=$workspace/backup
 project=$workspace/project
 results=$workspace/results
-mkdir -p "$backup" "$project/.agents" "$results"
-
-owned_paths="$HOME/.agents/.sessionman/hooks/claude
-$HOME/.agents/.sessionman/hooks/pi"
-
-cleanup() {
-	printf '%s\n' "$owned_paths" | while IFS= read -r path; do
-		[ -n "$path" ] || continue
-		key=$(printf '%s' "$path" | tr '/ ' '__')
-		if [ -d "$backup/$key" ]; then
-			rm -rf "$path"
-			mkdir -p "$(dirname "$path")"
-			cp -R "$backup/$key" "$path"
-		elif [ -f "$path/.sessionman-owned" ]; then
-			rm -rf "$path"
-		fi
-	done
-	printf 'Hook smoke evidence: %s\n' "$results"
-}
-trap cleanup EXIT HUP INT TERM
-
-printf '%s\n' "$owned_paths" | while IFS= read -r path; do
-	[ -n "$path" ] || continue
-	if [ -e "$path" ] && [ ! -f "$path/.sessionman-owned" ]; then
-		printf 'Refusing to touch non-SessionMan artifact: %s\n' "$path" >&2
-		exit 1
-	fi
-	if [ -d "$path" ]; then
-		key=$(printf '%s' "$path" | tr '/ ' '__')
-		cp -R "$path" "$backup/$key"
-	fi
-done
+native=$workspace/native-bin
+mkdir -p "$project" "$results" "$native"
+trap 'printf "Hook smoke evidence: %s\n" "$results"' EXIT HUP INT TERM
 
 for agent in claude codex pi; do
 	if ! command -v "$agent" >/dev/null 2>&1; then
 		"$ax" agent install "$agent"
 	fi
 done
+
+ln -s "$ax" "$native/sm"
+for tool in claude codex pi node; do
+	ln -s "$(command -v "$tool")" "$native/$tool"
+done
+native_path=$native:/usr/bin:/bin:/usr/sbin:/sbin
+if PATH=$native_path command -v claude-agent-acp >/dev/null 2>&1 || PATH=$native_path command -v codex-acp >/dev/null 2>&1; then
+	printf 'an ACP wrapper is still reachable on the native-only PATH\n' >&2
+	exit 1
+fi
 
 require_login() {
 	agent=$1
@@ -64,49 +48,27 @@ require_login claude
 require_login codex
 require_login pi
 
-pi_model=deepseek/deepseek-v4-flash
-
-run_agent() {
-	agent=$1
-	model=$2
-	shift 2
-	agent_results=$results/$agent
-	mkdir -p "$agent_results"
-	node "$root/test/smoke/make-hooks.mjs" "$project/.agents/hooks.json" "$recorder" "$agent_results"
-	"$ax" "$agent" --model "$model" --cwd "$project" --dry-run -- "$@" >"$agent_results/plan.json"
-	if [ "$agent" = claude ]; then
-		set -- --debug-file "$agent_results/agent-debug.log" "$@"
-	fi
-	if ! "$ax" "$agent" --model "$model" --cwd "$project" -- "$@" >"$agent_results/stdout.log" 2>"$agent_results/stderr.log"; then
-		return 1
-	fi
-	case "$agent" in
-		claude) artifact=$HOME/.agents/.sessionman/hooks/claude ;;
-		pi) artifact=$HOME/.agents/.sessionman/hooks/pi ;;
-		*) artifact= ;;
-	esac
-	if [ -n "$artifact" ] && [ -d "$artifact" ]; then
-		cp -R "$artifact" "$agent_results/projected-artifact"
-	fi
-	node "$root/test/smoke/assert-events.mjs" "$agent_results/events.jsonl" "$agent"
-}
-
-prompt='Reply with exactly OK.'
+transcript=$(printf '{"id":"hooks-smoke","provider":"smoke","workspace":"%s","messages":[{"id":"u1","role":"user","content":[{"type":"text","text":"Reply with exactly OK."}]}]}' "$project")
 failures=
 
 run_case() {
 	agent=$1
-	shift
-	if run_agent "$agent" "$@"; then
+	model=$2
+	agent_results=$results/$agent
+	config=$workspace/config-$agent
+	mkdir -p "$agent_results" "$config"
+	node "$root/test/smoke/make-hooks.mjs" "$config/hooks.json" "$recorder" "$agent_results"
+	if printf '%s\n' "$transcript" | env PATH="$native_path" SM_CONFIG_DIR="$config" "$ax" session continue "$agent" --model "$model" >"$agent_results/stdout.log" 2>"$agent_results/stderr.log" &&
+		node "$root/test/smoke/assert-events.mjs" "$agent_results/events.jsonl" "$agent"; then
 		return
 	fi
 	printf '%s smoke failed; continuing with the remaining agents.\n' "$agent" >&2
 	failures="${failures}${failures:+, }${agent}"
 }
 
-run_case claude haiku --print "$prompt"
-run_case codex gpt-6-luna --dangerously-bypass-hook-trust exec --skip-git-repo-check "$prompt"
-run_case pi "$pi_model" --print "$prompt"
+run_case claude haiku
+run_case codex gpt-6-luna
+run_case pi "${SM_HOOKS_PI_MODEL:-openai-codex/gpt-5.6-luna}"
 
 if [ -n "$failures" ]; then
 	printf 'Hook smoke failures: %s\n' "$failures" >&2
