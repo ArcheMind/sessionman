@@ -5,6 +5,8 @@
 [![Release](https://img.shields.io/github/v/release/ArcheMind/sessionMan?display_name=tag)](https://github.com/ArcheMind/sessionMan/releases)
 [![License](https://img.shields.io/github/license/ArcheMind/sessionMan)](LICENSE)
 
+[Website](https://sessionman.dev/)
+
 **SessionMan (`sm`) helps you keep working across coding agents.**
 
 ### **Load** your Claude Code session in Codex when your usage runs out, and keep working.
@@ -214,10 +216,10 @@ require this import step. Exact native versions and evidence: [lifecycle and pro
 sm
 sm --resume <transcript-file>
 sm <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
-sm [--json|--yaml] status
+sm [--json|--yaml] status [--usage]
 
 sm [--json|--yaml] agent <list|show|install|run|exec> [args...]
-sm [--json|--yaml] auth <list|show|login|logout> [args...]
+sm [--json|--yaml] auth <list|show|usage|login|logout> [args...]
 sm [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
 sm [--json|--yaml] skill <list|show|install> [args...]
 sm [--json|--yaml] hook list
@@ -232,6 +234,8 @@ sm version
 
 ```console
 sm status                            # readiness, account, and available models per agent
+sm status --usage                    # include subscription quota/rate-limit windows
+sm auth usage                        # query remaining quota across supported agents
 sm agent install codex --dry-run     # then without --dry-run to install
 sm auth login codex                  # native authentication
 sm agent show codex                  # binary path, capabilities, models

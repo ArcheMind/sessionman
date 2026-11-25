@@ -25,7 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.18.0"
+var Version = "0.19.0"
 
 type App struct {
 	Registry   drivers.Registry
@@ -430,9 +430,12 @@ func (a App) auth(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return authUsageError()
 	}
-	// "auth list" requires no agent argument
+	// "auth list" and "auth usage" do not require an agent argument
 	if args[0] == "list" {
 		return a.authList(ctx, args[1:])
+	}
+	if args[0] == "usage" {
+		return a.authUsage(ctx, args[1:])
 	}
 	if len(args) < 2 {
 		return authUsageError()
@@ -574,7 +577,7 @@ func (a App) authList(ctx context.Context, args []string) error {
 }
 
 func authUsageError() error {
-	return fmt.Errorf("usage: sm [--json|--yaml] auth <list|show|login|logout> [args...]")
+	return fmt.Errorf("usage: sm [--json|--yaml] auth <list|show|usage|login|logout> [args...]")
 }
 
 func (a App) writeAuthStatus(status runtime.AuthStatus) error {
@@ -1104,11 +1107,11 @@ COMMANDS
   sm session <list|show|resume|export|import|continue> [args...]
   sm agent <list|show|install|run|exec> [args...]
   sm preset <list|show> [args...]
-  sm auth <list|show|login|logout> [args...]
+  sm auth <list|show|usage|login|logout> [args...]
   sm skill <list|show|install> [args...]
   sm hook list
   sm mcp <list|show|serve> [args...]
-  sm [--json|--yaml] status    Show runtime status
+  sm [--json|--yaml] status [--usage]    Show runtime status (optionally with usage)
   sm wait <agent-id> --after <seq>
   sm update                  Update SessionMan to the latest release
   sm version                 Show version

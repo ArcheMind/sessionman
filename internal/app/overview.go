@@ -37,6 +37,7 @@ type agentOverview struct {
 	Status   overviewStatus         `json:"status" yaml:"status"`
 	Accounts []runtime.AuthProvider `json:"accounts,omitempty" yaml:"accounts,omitempty"`
 	Models   *modelsOverview        `json:"models,omitempty" yaml:"models,omitempty"`
+	Usage    *usageEntry            `json:"usage,omitempty" yaml:"usage,omitempty"`
 }
 
 type modelsOverview struct {
@@ -50,14 +51,24 @@ type overviewModel struct {
 }
 
 func (a App) overview(ctx context.Context, args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: sm [--json|--yaml] status")
+	includeUsage := false
+	for _, arg := range args {
+		if arg == "--usage" {
+			includeUsage = true
+			continue
+		}
+		return fmt.Errorf("usage: sm [--json|--yaml] status [--usage]")
 	}
 	agents := a.Registry.All()
 	result := overviewResult{Agents: make([]agentOverview, 0, len(agents))}
 	for _, agent := range agents {
 		detection := detectInstalled(agent)
-		result.Agents = append(result.Agents, a.queryAgentOverview(ctx, agent, detection))
+		item := a.queryAgentOverview(ctx, agent, detection)
+		if includeUsage && item.Status == overviewReady && hasCapability(agent.Capabilities, runtime.CapabilityUsage) && agent.Usage != nil {
+			entry := a.queryAgentUsageEntry(ctx, agent)
+			item.Usage = &entry
+		}
+		result.Agents = append(result.Agents, item)
 	}
 	if a.Output != OutputText {
 		return writeStructured(a.Stdout, result, a.Output)
@@ -165,8 +176,13 @@ func writeOverviewTree(writer io.Writer, result overviewResult, color bool) erro
 		if err := writeAccountsTree(writer, continuation, item.Accounts, color); err != nil {
 			return err
 		}
-		if err := writeModelsTree(writer, continuation, item.Models, color); err != nil {
+		if err := writeModelsTree(writer, continuation, item.Models, item.Usage == nil, color); err != nil {
 			return err
+		}
+		if item.Usage != nil {
+			if err := writeUsageTree(writer, continuation, item.Usage, color); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -220,8 +236,14 @@ func formatAccount(account runtime.AuthProvider) string {
 	return account.ID + " (" + strings.Join(details, ", ") + ")"
 }
 
-func writeModelsTree(writer io.Writer, prefix string, models *modelsOverview, color bool) error {
-	branch := colorize(color, ansiDim, prefix+"└──")
+func writeModelsTree(writer io.Writer, prefix string, models *modelsOverview, isLast bool, color bool) error {
+	branchChar := "├──"
+	childPrefix := prefix + "│   "
+	if isLast {
+		branchChar = "└──"
+		childPrefix = prefix + "    "
+	}
+	branch := colorize(color, ansiDim, prefix+branchChar)
 	if models == nil || models.Status == modelsUnknown {
 		_, err := fmt.Fprintf(writer, "%s models %s\n", branch, colorize(color, ansiRed, "(status unknown)"))
 		return err
@@ -242,7 +264,47 @@ func writeModelsTree(writer io.Writer, prefix string, models *modelsOverview, co
 		if model.DisplayName != "" && model.DisplayName != model.ID {
 			label += " — " + model.DisplayName
 		}
-		if _, err := fmt.Fprintf(writer, "%s %s\n", colorize(color, ansiDim, prefix+"    "+modelBranch), colorize(color, ansiCyan, label)); err != nil {
+		if _, err := fmt.Fprintf(writer, "%s %s\n", colorize(color, ansiDim, childPrefix+modelBranch), colorize(color, ansiCyan, label)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeUsageTree(writer io.Writer, prefix string, usage *usageEntry, color bool) error {
+	branch := colorize(color, ansiDim, prefix+"└──")
+	if usage.Status == "error" {
+		_, err := fmt.Fprintf(writer, "%s usage %s\n", branch, colorize(color, ansiRed, "(error: "+usage.Error+")"))
+		return err
+	}
+	if _, err := fmt.Fprintf(writer, "%s usage\n", branch); err != nil {
+		return err
+	}
+	var lines []string
+	for _, g := range usage.Groups {
+		for _, w := range g.Windows {
+			name := w.Name
+			if len(usage.Groups) > 1 {
+				name = g.Name + " · " + name
+			}
+			lines = append(lines, formatUsageWindowLine(runtime.UsageWindow{
+				Name:             name,
+				Window:           w.Window,
+				UsedPercent:      w.UsedPercent,
+				RemainingPercent: w.RemainingPercent,
+				ResetsAt:         w.ResetsAt,
+			}, color))
+		}
+	}
+	if usage.ResetCredits != nil {
+		lines = append(lines, fmt.Sprintf("reset credits: %d available", *usage.ResetCredits))
+	}
+	for idx, line := range lines {
+		leafBranch := "├──"
+		if idx == len(lines)-1 {
+			leafBranch = "└──"
+		}
+		if _, err := fmt.Fprintf(writer, "%s %s\n", colorize(color, ansiDim, prefix+"    "+leafBranch), line); err != nil {
 			return err
 		}
 	}

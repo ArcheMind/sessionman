@@ -17,6 +17,7 @@ const (
 	CapabilityAuthLogout  Capability = "auth_logout"
 	CapabilityModelList   Capability = "model_list"
 	CapabilityModelSelect Capability = "model_select"
+	CapabilityUsage       Capability = "usage"
 )
 
 type CommandPlan struct {
@@ -113,6 +114,33 @@ type AuthDriver interface {
 	Status(context.Context, Runner) (AuthStatus, error)
 }
 
+type UsageWindow struct {
+	ID               string  `json:"id,omitempty" yaml:"id,omitempty"`
+	Name             string  `json:"name" yaml:"name"`
+	Window           string  `json:"window,omitempty" yaml:"window,omitempty"`
+	UsedPercent      float64 `json:"used_percent" yaml:"used_percent"`
+	RemainingPercent float64 `json:"remaining_percent" yaml:"remaining_percent"`
+	ResetsAt         string  `json:"resets_at,omitempty" yaml:"resets_at,omitempty"`
+}
+
+type UsageGroup struct {
+	Name    string        `json:"name" yaml:"name"`
+	Windows []UsageWindow `json:"windows" yaml:"windows"`
+}
+
+type UsageReport struct {
+	Agent        string       `json:"agent" yaml:"agent"`
+	Supported    bool         `json:"supported" yaml:"supported"`
+	Subscription string       `json:"subscription,omitempty" yaml:"subscription,omitempty"`
+	Groups       []UsageGroup `json:"groups,omitempty" yaml:"groups,omitempty"`
+	ResetCredits *int         `json:"reset_credits,omitempty" yaml:"reset_credits,omitempty"`
+	Note         string       `json:"note,omitempty" yaml:"note,omitempty"`
+}
+
+type UsageDriver interface {
+	Usage(context.Context, Runner) (UsageReport, error)
+}
+
 type Agent struct {
 	ID           string
 	Name         string
@@ -120,6 +148,7 @@ type Agent struct {
 	Launch       LaunchDriver
 	Models       ModelDriver
 	Auth         AuthDriver
+	Usage        UsageDriver
 	Install      PackageDriver
 	Capabilities []Capability
 }

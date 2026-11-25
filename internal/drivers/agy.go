@@ -14,6 +14,7 @@ func agyAgent() runtime.Agent {
 		ID: "agy", Name: "Antigravity CLI", Binary: "agy",
 		Launch: NativeLaunch{Binary: "agy"},
 		Models: AGYModels{},
+		Usage:  AGYUsage{},
 		Auth: AGYAuth{NativeAuth: NativeAuth{
 			Command:           runtime.CommandPlan{Executable: "agy", Args: []string{"acp", "--login"}, Agent: "agy"},
 			Instruction:       "Sign in using Antigravity CLI's native login. Authentication is shared through the OS keyring.",
@@ -21,7 +22,7 @@ func agyAgent() runtime.Agent {
 			LogoutInstruction: "Run /logout in Antigravity CLI. This affects its shared native authentication.",
 		}},
 		Install:      AGYInstaller{},
-		Capabilities: []runtime.Capability{runtime.CapabilityLaunch, runtime.CapabilityAuthLogin, runtime.CapabilityAuthLogout, runtime.CapabilityAuthStatus, runtime.CapabilityModelList, runtime.CapabilityModelSelect},
+		Capabilities: []runtime.Capability{runtime.CapabilityLaunch, runtime.CapabilityAuthLogin, runtime.CapabilityAuthLogout, runtime.CapabilityAuthStatus, runtime.CapabilityModelList, runtime.CapabilityModelSelect, runtime.CapabilityUsage},
 	}
 }
 

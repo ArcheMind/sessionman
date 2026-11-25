@@ -4,6 +4,16 @@ All notable changes to SessionMan are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-25
+
+### Added
+
+- Unified subscription quota and rate-limit reporting via public agent interfaces (zero OS keychain prompts, zero dialogue token spend):
+  - Added `runtime.CapabilityUsage`, `runtime.UsageDriver`, and `runtime.UsageReport` / `UsageGroup` / `UsageWindow` types.
+  - Implemented `ClaudeUsage` (`claude -p --output-format json --max-turns 1 /usage`), `AGYUsage` (`agy -p=/usage --output-format json`), and `CodexUsage` (`codex app-server` `account/rateLimits/read` JSON-RPC).
+  - Added `sm [--json|--yaml] auth usage [agent]` to query remaining quota concurrently across supported agents or for a specific agent.
+  - Added `sm [--json|--yaml] status --usage` to attach live quota trees under ready agents in the status overview without slowing down default `sm status`.
+
 ## [0.18.0] - 2026-11-24
 
 ### Changed

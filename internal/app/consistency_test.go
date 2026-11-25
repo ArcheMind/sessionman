@@ -25,7 +25,7 @@ func TestCrossLayerConsistency(t *testing.T) {
 	for _, command := range []string{
 		"[--json|--yaml] status",
 		"agent <list|show|install|run|exec>",
-		"auth <list|show|login|logout>",
+		"auth <list|show|usage|login|logout>",
 		"session <list|show|resume|export|import|continue>",
 		"skill <list|show|install>",
 		"hook list",
@@ -46,6 +46,7 @@ func TestCrossLayerConsistency(t *testing.T) {
 		assertCapability(t, agent, runtime.CapabilityAuthLogin, agent.Auth != nil)
 		assertCapability(t, agent, runtime.CapabilityAuthStatus, agent.Auth != nil && agent.Auth.SupportsStatus())
 		assertCapability(t, agent, runtime.CapabilityAuthLogout, agent.Auth != nil && agent.Auth.SupportsLogout())
+		assertCapability(t, agent, runtime.CapabilityUsage, agent.Usage != nil)
 		if agent.Install == nil {
 			t.Errorf("%s is advertised as an Agent but has no install driver", agent.ID)
 		}
