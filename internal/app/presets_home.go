@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -276,7 +275,7 @@ func (a App) resumeSessionInteractiveMode(ctx context.Context, reader *bufio.Rea
 	presetList, _, _ := presets.Load(home)
 	agents := make([]runtime.Agent, 0)
 	for _, agent := range a.Registry.All() {
-		if _, err := exec.LookPath(agent.Binary); err == nil {
+		if _, err := a.agentPath(ctx, agent.Binary); err == nil {
 			agents = append(agents, agent)
 		}
 	}
@@ -345,7 +344,7 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 	case !hasCapability(agent.Capabilities, runtime.CapabilityModelSelect):
 		problem = fmt.Sprintf("%s does not support model selection; edit the preset to use another agent.", agent.Name)
 	default:
-		if _, err := exec.LookPath(agent.Binary); err != nil {
+		if _, err := a.agentPath(ctx, agent.Binary); err != nil {
 			problem = fmt.Sprintf("%s is not installed. Install it with sm agent install %s, or edit the preset to use another agent.", agent.Name, agent.ID)
 		}
 	}
@@ -560,7 +559,7 @@ func (a App) askAgent(reader *bufio.Reader, draft *presetDraft) error {
 			continue
 		}
 		status := "installed"
-		if _, err := exec.LookPath(agent.Binary); err != nil {
+		if _, err := a.agentPath(context.Background(), agent.Binary); err != nil {
 			status = "not installed"
 		}
 		if id == draft.preset.Agent {
@@ -587,7 +586,7 @@ func (a App) listModels(ctx context.Context, agent runtime.Agent) ([]runtime.Mod
 	if !hasCapability(agent.Capabilities, runtime.CapabilityModelList) {
 		return nil, fmt.Sprintf("%s has no reliable local model list.", agent.Name)
 	}
-	if _, err := exec.LookPath(agent.Binary); err != nil {
+	if _, err := a.agentPath(ctx, agent.Binary); err != nil {
 		return nil, fmt.Sprintf("%s is not installed, so its models cannot be listed.", agent.Name)
 	}
 	fmt.Fprintf(a.Stdout, "Loading %s models (model metadata only; no inference)...\n", agent.Name)
@@ -1038,7 +1037,7 @@ func (a App) printAvailability(p presets.Preset) {
 	label := func(name string) string { return colorize(a.Color, ansiDim, fmt.Sprintf("%-12s", name)) }
 	execution := "Execution not verified (login and model access are checked only when a session starts)"
 	if agent, err := a.Registry.Get(p.Agent); err == nil {
-		if _, err := exec.LookPath(agent.Binary); err != nil {
+		if _, err := a.agentPath(context.Background(), agent.Binary); err != nil {
 			execution = fmt.Sprintf("Execution not verified; %s is not installed (sm agent install %s)", agent.Name, agent.ID)
 		}
 	}

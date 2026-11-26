@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ArcheMind/agentx/internal/clibin"
 	"github.com/ArcheMind/agentx/internal/nativedirs"
 )
 
@@ -69,6 +70,9 @@ func hasFlagBeforeTerminator(args []string, target string) bool {
 }
 
 func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options ExecuteOptions) (CommandResult, error) {
+	if err := r.resolveAgent(ctx, &plan); err != nil {
+		return CommandResult{ExitCode: -1}, err
+	}
 	if err := prepareAgent(&plan); err != nil {
 		return CommandResult{ExitCode: -1}, err
 	}
@@ -121,6 +125,20 @@ func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options Execu
 		return result, fmt.Errorf("external command %s failed: %w", plan.Executable, err)
 	}
 	return result, nil
+}
+
+func (r ExecRunner) resolveAgent(ctx context.Context, plan *CommandPlan) error {
+	if plan.Agent == "" || plan.Executable != plan.Agent {
+		return nil
+	}
+	selected, err := clibin.Resolve(ctx, plan.Agent, plan.Env["SM_CLI_INSTALL_ROOT"], func(path, output string, err error) {
+		r.log(CommandPlan{Executable: path, Args: []string{"--version"}}, "", CommandResult{Stdout: output}, err)
+	})
+	if err != nil {
+		return err
+	}
+	plan.Executable = selected.Path
+	return nil
 }
 
 func (r ExecRunner) log(plan CommandPlan, stdin string, result CommandResult, err error) {

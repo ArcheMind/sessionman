@@ -3,8 +3,8 @@ package sessions
 import (
 	"errors"
 	"fmt"
+	"github.com/ArcheMind/agentx/internal/clibin"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/nativedirs"
@@ -103,7 +103,7 @@ type Service struct {
 
 func New() Service {
 	home, _ := os.UserHomeDir()
-	return Service{HomeDir: home, LookPath: exec.LookPath}
+	return Service{HomeDir: home, LookPath: clibin.LookPath}
 }
 
 func (s Service) Agents() []Agent {
@@ -204,7 +204,7 @@ func (s Service) Matches(id, source string) ([]Session, error) {
 
 func (s Service) lookPath(binary string) (string, error) {
 	if s.LookPath == nil {
-		return exec.LookPath(binary)
+		return clibin.LookPath(binary)
 	}
 	return s.LookPath(binary)
 }

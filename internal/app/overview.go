@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 
 	"github.com/ArcheMind/agentx/internal/runtime"
@@ -62,7 +61,7 @@ func (a App) overview(ctx context.Context, args []string) error {
 	agents := a.Registry.All()
 	result := overviewResult{Agents: make([]agentOverview, 0, len(agents))}
 	for _, agent := range agents {
-		detection := detectInstalled(agent)
+		detection := a.detectInstalled(ctx, agent)
 		item := a.queryAgentOverview(ctx, agent, detection)
 		if includeUsage && item.Status == overviewReady && hasCapability(agent.Capabilities, runtime.CapabilityUsage) && agent.Usage != nil {
 			entry := a.queryAgentUsageEntry(ctx, agent)
@@ -77,7 +76,7 @@ func (a App) overview(ctx context.Context, args []string) error {
 }
 
 func (a App) detectAgent(ctx context.Context, agent runtime.Agent) runtime.Detection {
-	detection := detectInstalled(agent)
+	detection := a.detectInstalled(ctx, agent)
 	if !detection.Installed {
 		return detection
 	}
@@ -88,9 +87,9 @@ func (a App) detectAgent(ctx context.Context, agent runtime.Agent) runtime.Detec
 	return detection
 }
 
-func detectInstalled(agent runtime.Agent) runtime.Detection {
+func (a App) detectInstalled(ctx context.Context, agent runtime.Agent) runtime.Detection {
 	detection := runtime.Detection{ID: agent.ID, Name: agent.Name, Capabilities: agent.Capabilities}
-	path, err := exec.LookPath(agent.Binary)
+	path, err := a.agentPath(ctx, agent.Binary)
 	if err != nil {
 		return detection
 	}

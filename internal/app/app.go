@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,7 +24,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.19.0"
+var Version = "0.20.0"
 
 type App struct {
 	Registry   drivers.Registry
@@ -153,6 +152,8 @@ func (a App) agent(ctx context.Context, args []string) error {
 		return a.agentShow(ctx, args[0], args[1:])
 	case "install":
 		return a.install(ctx, args[1:])
+	case "updates", "update":
+		return a.agentUpdates(ctx, args[1:], args[0] == "update")
 	case "run":
 		return a.runAgent(ctx, args[1:])
 	case "exec":
@@ -163,7 +164,7 @@ func (a App) agent(ctx context.Context, args []string) error {
 }
 
 func agentUsageError() error {
-	return fmt.Errorf("usage: sm [--json|--yaml] agent <list|show|install|run|exec> [args...]")
+	return fmt.Errorf("usage: sm [--json|--yaml] agent <list|show|install|updates|update|run|exec> [args...]")
 }
 
 func (a App) list(ctx context.Context, args []string) error {
@@ -215,7 +216,7 @@ func (a App) agentShow(ctx context.Context, verb string, args []string) error {
 		Capabilities: agent.Capabilities,
 	}
 
-	path, pathErr := exec.LookPath(agent.Binary)
+	path, pathErr := a.agentPath(ctx, agent.Binary)
 	if pathErr == nil {
 		result.Path = path
 	}
@@ -416,7 +417,7 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 	if err := a.rejectStructuredNative("agent run", dryRun); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath(agent.Binary); err != nil {
+	if _, err := a.agentPath(ctx, agent.Binary); err != nil {
 		return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 	}
 	result, err := a.executeTrackedSession(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr}, "")
@@ -454,7 +455,7 @@ func (a App) auth(ctx context.Context, args []string) error {
 		if !agent.Auth.SupportsStatus() {
 			return a.writeAuthStatus(runtime.AuthStatus{Agent: agent.ID, Supported: false, Providers: []runtime.AuthProvider{}})
 		}
-		if _, err := exec.LookPath(agent.Binary); err != nil {
+		if _, err := a.agentPath(ctx, agent.Binary); err != nil {
 			return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 		}
 		status, err := agent.Auth.Status(ctx, a.Runner)
@@ -489,7 +490,7 @@ func (a App) auth(ctx context.Context, args []string) error {
 	if err := a.rejectStructuredNative("auth "+args[0], dryRun); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath(agent.Binary); err != nil {
+	if _, err := a.agentPath(ctx, agent.Binary); err != nil {
 		return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 	}
 	if plan.Instruction != "" {
@@ -525,7 +526,7 @@ func (a App) authList(ctx context.Context, args []string) error {
 	var entries []authListEntry
 	for _, agent := range a.Registry.All() {
 		entry := authListEntry{Agent: agent.ID}
-		if _, err := exec.LookPath(agent.Binary); err != nil {
+		if _, err := a.agentPath(ctx, agent.Binary); err != nil {
 			entry.Status = "not_installed"
 			entries = append(entries, entry)
 			continue
@@ -1011,7 +1012,7 @@ func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, det
 	if err := a.rejectStructuredNative("session resume", dryRun); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath(agent.Binary); err != nil {
+	if _, err := a.agentPath(ctx, agent.Binary); err != nil {
 		return fmt.Errorf("%s is not installed; run sm agent install %s", agent.Name, agent.ID)
 	}
 	result, err := a.executeTrackedSession(ctx, plan, runtime.ExecuteOptions{Interactive: true, Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr}, resumeToken)
@@ -1105,7 +1106,9 @@ COMMON WORKFLOWS
 
 COMMANDS
   sm session <list|show|resume|export|import|continue> [args...]
-  sm agent <list|show|install|run|exec> [args...]
+  sm agent <list|show|install|updates|update|run|exec> [args...]
+    sm agent updates <agent> [--install-root <dir>]
+    sm agent update <agent> --install-root <dir>
   sm preset <list|show> [args...]
   sm auth <list|show|usage|login|logout> [args...]
   sm skill <list|show|install> [args...]

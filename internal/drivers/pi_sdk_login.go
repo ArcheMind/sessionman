@@ -5,9 +5,9 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
+	"github.com/ArcheMind/agentx/internal/clibin"
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
@@ -65,7 +65,7 @@ func (d PiSDKAuth) Status(ctx context.Context, runner runtime.Runner) (runtime.A
 }
 
 func piSDKPath() (string, error) {
-	binary, err := exec.LookPath("pi")
+	binary, err := clibin.LookPath("pi")
 	if err != nil {
 		return "", fmt.Errorf("locate Pi SDK: %w", err)
 	}

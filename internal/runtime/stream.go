@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -58,6 +59,9 @@ type StreamStarter interface {
 }
 
 func (r ExecRunner) StartStream(plan CommandPlan) (*Stream, error) {
+	if err := r.resolveAgent(context.Background(), &plan); err != nil {
+		return nil, err
+	}
 	if err := prepareAgent(&plan); err != nil {
 		return nil, err
 	}

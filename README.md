@@ -218,7 +218,9 @@ sm --resume <transcript-file>
 sm <agent> [--model <model>] [--cwd <path>] [--dry-run] [-- <native args...>]
 sm [--json|--yaml] status [--usage]
 
-sm [--json|--yaml] agent <list|show|install|run|exec> [args...]
+sm [--json|--yaml] agent <list|show|install|updates|update|run|exec> [args...]
+sm [--json|--yaml] agent updates <agent> [--install-root <dir>]
+sm [--json|--yaml] agent update <agent> --install-root <dir>
 sm [--json|--yaml] auth <list|show|usage|login|logout> [args...]
 sm [--json|--yaml] session <list|show|resume|export|import|continue> [args...]
 sm [--json|--yaml] skill <list|show|install> [args...]
@@ -231,6 +233,8 @@ sm version
 ```
 
 `--json` and `--yaml` apply to SessionMan-owned data and dry-run plans; native install, login, launch, and resume keep their own interactive output.
+
+On macOS and Linux, `agent updates` checks stable releases for Claude, Codex, Pi and AGY; `agent update` stages and verifies only the selected installed CLI before activating it. Set `SM_CLI_INSTALL_ROOT` for subsequent SessionMan commands to use the same managed directory. With this directory set, Codex selects the highest verified stable version in that directory or `PATH`; without it, SessionMan keeps normal `PATH` selection. Windows reports managed updates as unsupported.
 
 ```console
 sm status                            # readiness, account, and available models per agent

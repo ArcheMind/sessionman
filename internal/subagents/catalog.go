@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os/exec"
 	"reflect"
 	"strings"
 
+	"github.com/ArcheMind/agentx/internal/clibin"
 	"github.com/ArcheMind/agentx/internal/presets"
 )
 
@@ -51,7 +51,7 @@ func Ready(o presets.Preset) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath(o.Agent); err != nil {
+	if _, err := clibin.LookPath(o.Agent); err != nil {
 		return fmt.Errorf("%s executable unavailable: %w", o.Agent, err)
 	}
 	return nil

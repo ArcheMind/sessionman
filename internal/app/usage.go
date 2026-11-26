@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"sync"
 
@@ -63,7 +62,7 @@ func (a App) authUsage(ctx context.Context, args []string) error {
 
 func (a App) queryAgentUsageEntry(ctx context.Context, agent runtime.Agent) usageEntry {
 	entry := usageEntry{Agent: agent.ID}
-	if _, err := exec.LookPath(agent.Binary); err != nil {
+	if _, err := a.agentPath(ctx, agent.Binary); err != nil {
 		entry.Status = "not_installed"
 		return entry
 	}
