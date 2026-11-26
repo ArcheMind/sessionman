@@ -15,14 +15,16 @@ import (
 type Candidate struct{ Path, Version string }
 type ProbeLog func(path, output string, err error)
 
+const DiscoveryTimeout = 3 * time.Second
+
 var selections = struct {
 	sync.Mutex
 	items map[string]Candidate
 }{items: map[string]Candidate{}}
 var logMutex sync.Mutex
 
-func Probe(ctx context.Context, path string, log ProbeLog) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+func Probe(ctx context.Context, path string, timeout time.Duration, log ProbeLog) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "--version")
 	cmd.WaitDelay = 250 * time.Millisecond
@@ -130,7 +132,7 @@ func Resolve(ctx context.Context, agent, root string, log ProbeLog) (Candidate, 
 	observations := map[string]observed{}
 	var observationLock sync.Mutex
 	probe := func(ctx context.Context, path string) (string, error) {
-		raw, err := Probe(ctx, path, log)
+		raw, err := Probe(ctx, path, DiscoveryTimeout, log)
 		observationLock.Lock()
 		observations[path] = observed{raw, err}
 		observationLock.Unlock()

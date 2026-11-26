@@ -57,11 +57,13 @@ func (s Service) defaults() Service {
 	}
 	if s.Probe == nil {
 		s.Probe = func(ctx context.Context, path string) (string, error) {
-			return clibin.Probe(ctx, path, s.probeLog)
+			return clibin.Probe(ctx, path, 30*time.Second, s.probeLog)
 		}
 	}
 	if s.Detect == nil {
 		s.Detect = func(ctx context.Context, agent, root string) (Installed, error) {
+			ctx, cancel := context.WithTimeout(ctx, clibin.DiscoveryTimeout)
+			defer cancel()
 			candidate, err := clibin.Resolve(ctx, agent, root, s.probeLog)
 			if errors.Is(err, os.ErrNotExist) || errors.Is(err, exec.ErrNotFound) {
 				return Installed{}, nil
