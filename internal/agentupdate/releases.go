@@ -20,7 +20,7 @@ import (
 	"github.com/ArcheMind/agentx/internal/runtime"
 )
 
-var packages = map[string]string{"claude": "@anthropic-ai/claude-code", "codex": "@openai/codex", "pi": "@mariozechner/pi-coding-agent"}
+var packages = map[string]string{"claude": "@anthropic-ai/claude-code", "codex": "@openai/codex", "pi": "@earendil-works/pi-coding-agent"}
 
 func (s Service) latest(ctx context.Context, agent string) (Release, error) {
 	if name := packages[agent]; name != "" {

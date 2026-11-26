@@ -26,14 +26,18 @@ func Probe(ctx context.Context, path string, log ProbeLog) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "--version")
 	cmd.WaitDelay = 250 * time.Millisecond
+	started := time.Now()
 	output, err := cmd.CombinedOutput()
+	if err != nil {
+		err = fmt.Errorf("probe %s after %s (context=%v): %w", path, time.Since(started).Round(time.Millisecond), ctx.Err(), err)
+	}
 	if log != nil {
 		logMutex.Lock()
 		log(path, string(output), err)
 		logMutex.Unlock()
 	}
 	if err != nil {
-		return "", fmt.Errorf("probe %s: %w", path, err)
+		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
 }
