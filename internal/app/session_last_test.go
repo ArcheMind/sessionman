@@ -43,18 +43,19 @@ func TestLastSessionManualAndTrim(t *testing.T) {
 		{
 			name:       "manual",
 			args:       []string{"last", "-m"},
-			stdin:      "\r\r",
+			stdin:      "\r\r\r\r",
 			wantPrompt: "Manual session load · 8 turns",
 		},
 		{
 			name:       "trim",
 			args:       []string{"last", "-t"},
-			stdin:      "\r",
-			wantPrompt: "Choose an agent or preset",
+			stdin:      "\r\r\r",
+			wantPrompt: "Resume session as:",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			application, stdout, runner := presetApp(t, tc.stdin, "codex")
+			runner.response = `{"id":2,"result":{"data":[{"id":"gpt-5","model":"gpt-5"}]}}`
 			application.Output = OutputText
 			home := t.TempDir()
 			codexHome := t.TempDir()
