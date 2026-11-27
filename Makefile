@@ -117,7 +117,6 @@ smoke: build
 
 smoke-live: build
 	./bin/sm --json agent models codex >/dev/null
-	./bin/sm --json agent models opencode >/dev/null
 	./bin/sm --json agent models pi >/dev/null
 	SM_LOG=debug ./bin/sm --json agent list >/dev/null 2>&1
 	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/sm" --live

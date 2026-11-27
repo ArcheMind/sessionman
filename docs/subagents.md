@@ -39,10 +39,8 @@ effort: low
 Read-only research and code review. Not for large refactors.
 ```
 
-- `agent`: `agy`, `claude`, `codex`, `opencode` or `pi`.
+- `agent`: `agy`, `claude`, `codex` or `pi`.
   Native ExternalSubagent adapters exist for `agy`, `claude`, `codex` and `pi`.
-  OpenCode presets support ordinary launch; they have no native
-  ExternalSubagent execution adapter.
 - `model`: the exact native model ID, passed unchanged to `--model`. Pi needs
   `provider/model`. No fallback model is ever used.
 - `effort` (optional): omitted means the agent's native default and is shown as
@@ -51,7 +49,7 @@ Read-only research and code review. Not for large refactors.
   lists for the chosen model; a manually entered model shows them as
   unverified); Pi `low`, `medium`, `high`, `xhigh`, `max` (`--thinking`);
   agy and Claude `low`, `medium`, `high`, `xhigh`, `max` (`--effort`; per-model support
-  unverified). OpenCode accepts no explicit effort. Pi `off` and
+  unverified). Pi `off` and
   `minimal` are rejected: for Codex-backed models Pi sends no effort for `off`
   (the server default, medium for gpt-5.6-luna, applies) and sends `low` for
   `minimal`. ExternalSubagent reports compare explicit effort with available

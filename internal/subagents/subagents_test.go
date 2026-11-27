@@ -25,7 +25,7 @@ func TestExternalPlansUseNativeReadOnlyAndExactResume(t *testing.T) {
 			}
 		}
 	}
-	for _, unsupported := range []string{"dsh", "opencode", "unknown"} {
+	for _, unsupported := range []string{"dsh", "unknown"} {
 		if _, err := agentparams.Build(unsupported, agentparams.Exec, agentparams.Request{Cwd: "/child"}); err == nil {
 			t.Fatalf("accepted unsupported %s", unsupported)
 		}

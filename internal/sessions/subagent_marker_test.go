@@ -39,18 +39,10 @@ func TestSubagentMarkerDiscovery(t *testing.T) {
 				fmt.Sprintf(`{"type":"message","id":"first","message":{"role":"user","content":%q}}`, tc.first),
 				fmt.Sprintf(`{"type":"message","id":"second","parentId":"first","message":{"role":"user","content":%q}}`, tc.second),
 			}, "\n"))
-			root := filepath.Join(home, ".local", "share", "opencode", "project", "project", "storage", "session")
-			writeFixture(t, filepath.Join(root, "info", "opencode-child.json"), `{"id":"opencode-child","title":"Existing title"}`)
-			for i, text := range []string{tc.first, tc.second} {
-				id := fmt.Sprintf("message-%d", i)
-				writeFixture(t, filepath.Join(root, "message", "opencode-child", id+".json"),
-					fmt.Sprintf(`{"id":%q,"role":"user","path":{"cwd":%q},"time":{"created":%d}}`, id, workspace, i+1))
-				writeFixture(t, filepath.Join(root, "part", "opencode-child", id, "part.json"), fmt.Sprintf(`{"type":"text","text":%q}`, text))
-			}
 
 			service := Service{HomeDir: home}
 			for _, include := range []bool{false, true} {
-				want := 4
+				want := 3
 				if tc.child && !include {
 					want = 0
 				}

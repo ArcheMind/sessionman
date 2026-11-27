@@ -23,7 +23,6 @@ func TestDiscoveryF01F03F04F07F09F10(t *testing.T) {
 	put(t, filepath.Join(project, ".mcp.json"), `{"mcpServers":{"alpha":{"command":"x"}}}`)
 	put(t, filepath.Join(project, ".agents", "mcp_config.json"), `{"mcpServers":{}}`)
 	put(t, filepath.Join(home, ".codex", "config.toml"), "[mcp_servers.'alpha']\ncommand='x'\n")
-	put(t, filepath.Join(project, "opencode.jsonc"), "{ // comment\n \"mcp\": {\"open\": {\"type\":\"local\",\"command\":[\"x\"],},},}")
 	put(t, filepath.Join(home, ".gemini", "config", "mcp_config.json"), `{"mcpServers":`)
 	result := (Service{Home: home, Project: project}).List()
 	counts := map[string]int{}
@@ -39,7 +38,7 @@ func TestDiscoveryF01F03F04F07F09F10(t *testing.T) {
 			}
 		}
 	}
-	if counts["alpha"] != 3 || counts["foreign"] != 0 || counts["local"] != 1 || counts["open"] != 1 || !empty || !failed || !unsupported {
+	if counts["alpha"] != 3 || counts["foreign"] != 0 || counts["local"] != 1 || !empty || !failed || !unsupported {
 		t.Fatalf("counts=%v empty=%v failed=%v unsupported=%v sources=%+v", counts, empty, failed, unsupported, result)
 	}
 	if _, err := result.Show("alpha", inventory.Selection{}); err == nil {

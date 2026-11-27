@@ -1002,9 +1002,6 @@ func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, det
 	if _, err := agentparams.Build(agent.ID, agentparams.Interactive, request); err != nil {
 		return err
 	}
-	if agent.ID == "opencode" && (detail.Provider != agent.ID || fresh || forceImport) {
-		return fmt.Errorf("OpenCode transcript import has no verified native resume mechanism; a native OpenCode session ID is required")
-	}
 	if fresh {
 		if detail, err = a.freshSessionDetail(detail); err != nil {
 			return err
@@ -1192,7 +1189,7 @@ OUTPUT & DIAGNOSTICS
   SM_LOG=debug               Enable the same diagnostic logging
 
 SUPPORTED AGENTS
-  agy · claude · codex · dsh · opencode · pi
+  agy · claude · codex · dsh · pi
 
 DIRECTORY ISOLATION
 `+nativedirs.HelpText()+"\n")
@@ -1202,7 +1199,7 @@ func (a App) printSessionHelp() {
 	fmt.Fprintf(a.Stdout, "%s\n\nDIRECTORY ISOLATION\n%s\n", sessionUsageError(), nativedirs.HelpText())
 }
 
-var convertProviders = []string{"agy", "claude", "codex", "opencode", "pi"}
+var convertProviders = []string{"agy", "claude", "codex", "pi"}
 
 func isConvertProvider(id string) bool {
 	for _, p := range convertProviders {
@@ -1246,8 +1243,6 @@ func (a App) convertTo(provider string) error {
 			return writeJSONL(a.Stdout, sessions.SerializeCodexProtocol(ps))
 		case "pi":
 			return writeJSONL(a.Stdout, sessions.SerializePiProtocol(ps))
-		case "opencode":
-			return fmt.Errorf("opencode requires a directory target; use session resume instead")
 		}
 	}
 	var detail sessions.Session
@@ -1264,8 +1259,6 @@ func (a App) convertTo(provider string) error {
 		return writeJSONL(a.Stdout, sessions.SerializeCodex(detail))
 	case "pi":
 		return writeJSONL(a.Stdout, sessions.SerializePi(detail))
-	case "opencode":
-		return fmt.Errorf("opencode requires a directory target; use session resume instead")
 	}
 	return nil
 }

@@ -14,7 +14,6 @@ func TestSerializeRoundTrip(t *testing.T) {
 	t.Run("claude", testSerializeClaudeRoundTrip)
 	t.Run("codex", testSerializeCodexRoundTrip)
 	t.Run("pi", testSerializePiRoundTrip)
-	t.Run("opencode", testSerializeOpenCodeRoundTrip)
 }
 
 func testSerializeClaudeRoundTrip(t *testing.T) {
@@ -135,74 +134,6 @@ func testSerializePiRoundTrip(t *testing.T) {
 	}
 	if detail.Messages[3].ToolUseID != "pc-1" || detail.Messages[3].ToolName != "shell" {
 		t.Fatalf("tool message: useID=%q name=%q", detail.Messages[3].ToolUseID, detail.Messages[3].ToolName)
-	}
-}
-
-func testSerializeOpenCodeRoundTrip(t *testing.T) {
-	home := t.TempDir()
-	workspace := filepath.Join(home, "project")
-	os.MkdirAll(workspace, 0o755)
-
-	root := filepath.Join(home, ".local", "share", "opencode", "project", "project", "storage", "session")
-	writeFixture(t, filepath.Join(root, "info", "oc1.json"),
-		fmt.Sprintf(`{"id":"oc1","title":"fix it","time":{"created":"2026-09-01T15:00:00Z","updated":"2026-09-01T15:03:00Z"}}`))
-	writeFixture(t, filepath.Join(root, "message", "oc1", "msg-user.json"),
-		fmt.Sprintf(`{"id":"msg-user","sessionID":"oc1","role":"user","path":{"root":%q},"time":{"created":"2026-09-01T15:00:00Z"}}`, workspace))
-	writeFixture(t, filepath.Join(root, "part", "oc1", "msg-user", "p1.json"),
-		`{"id":"p1","messageID":"msg-user","sessionID":"oc1","type":"text","text":"fix the bug"}`)
-	writeFixture(t, filepath.Join(root, "message", "oc1", "msg-asst.json"),
-		fmt.Sprintf(`{"id":"msg-asst","sessionID":"oc1","role":"assistant","path":{"root":%q},"time":{"created":"2026-09-01T15:01:00Z"}}`, workspace))
-	writeFixture(t, filepath.Join(root, "part", "oc1", "msg-asst", "p2.json"),
-		`{"id":"p2","messageID":"msg-asst","sessionID":"oc1","type":"text","text":"fixing"}`)
-	writeFixture(t, filepath.Join(root, "part", "oc1", "msg-asst", "step-1.json"),
-		`{"id":"step-1","messageID":"msg-asst","sessionID":"oc1","type":"step-start"}`)
-	writeFixture(t, filepath.Join(root, "part", "oc1", "msg-asst", "step-1-finish.json"),
-		`{"id":"step-1","messageID":"msg-asst","sessionID":"oc1","type":"step-finish","tokens":{"input":100,"output":50}}`)
-
-	service := Service{HomeDir: home}
-	original, err := service.Info("oc1", "opencode")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	info, entries := SerializeOpenCode(original, "")
-
-	home2 := t.TempDir()
-	root2 := filepath.Join(home2, ".local", "share", "opencode", "project", "project", "storage", "session")
-
-	infoData, _ := json.Marshal(info)
-	writeFixture(t, filepath.Join(root2, "info", original.ID+".json"), string(infoData))
-	for _, entry := range entries {
-		data, _ := json.Marshal(entry.Content)
-		writeFixture(t, filepath.Join(root2, entry.Path), string(data))
-	}
-
-	service2 := Service{HomeDir: home2}
-	roundTripped, err := service2.Info(original.ID, "opencode")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assertMessagesEquivalent(t, original.Messages, roundTripped.Messages)
-
-	// Verify step tool call survived
-	foundStep := false
-	foundStepResult := false
-	for _, m := range roundTripped.Messages {
-		for _, b := range m.Content {
-			if b.Type == "tool_use" && b.Name == "step" {
-				foundStep = true
-			}
-		}
-		if m.Role == "tool" && m.ToolName == "step" {
-			foundStepResult = true
-		}
-	}
-	if !foundStep {
-		t.Fatal("missing step tool_use block after opencode round-trip")
-	}
-	if !foundStepResult {
-		t.Fatal("missing step tool result after opencode round-trip")
 	}
 }
 

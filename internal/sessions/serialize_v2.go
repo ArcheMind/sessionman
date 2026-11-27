@@ -684,9 +684,6 @@ func WriteProtocolSessionFile(detail ProtocolSession, agentID, dir, homeDir stri
 		detail.ID = newID
 		detail.Workspace = workspace
 		return path, writeJSONLFile(path, SerializePiProtocol(detail))
-	case "opencode":
-		// OpenCode remains on the v1 adapter until its SQLite/file serializer migrates.
-		return "", fmt.Errorf("opencode protocol 2.0 write not yet enabled")
 	default:
 		return "", fmt.Errorf("unsupported resume target %q", agentID)
 	}

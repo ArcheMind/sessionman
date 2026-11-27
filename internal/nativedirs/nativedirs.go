@@ -35,7 +35,7 @@ var (
 )
 
 // KnownAgents lists agents the resolver handles.
-var KnownAgents = []string{"pi", "codex", "claude", "opencode", "dsh", "agy"}
+var KnownAgents = []string{"pi", "codex", "claude", "dsh", "agy"}
 
 type Scope string
 
@@ -64,9 +64,8 @@ var tables = map[string]agentTable{
 	"claude": {root: ".claude", rootVar: "CLAUDE_CONFIG_DIR", env: []EnvVar{
 		{"CLAUDE_CONFIG_DIR", ScopeSession}, {"CLAUDE_SECURESTORAGE_CONFIG_DIR", ScopeOther},
 	}},
-	"opencode": {root: ".opencode"},
-	"dsh":      {root: ".dsh", rootVar: "DSH_HOME"},
-	"agy":      {root: ".gemini"},
+	"dsh": {root: ".dsh", rootVar: "DSH_HOME"},
+	"agy": {root: ".gemini"},
 }
 
 const nativePrefix = "SM_NATIVE_"
@@ -151,11 +150,6 @@ func nativeSessionRoots(agent, home string) []string {
 		return []string{filepath.Join(root, "projects")}
 	case "agy":
 		return []string{filepath.Join(root, "antigravity-cli")}
-	case "opencode":
-		if home == "" {
-			home = userHome()
-		}
-		return []string{filepath.Join(home, ".local", "share", "opencode", "project")}
 	}
 	return []string{root}
 }
@@ -367,8 +361,6 @@ func Resolve(agent string, dirs Dirs) (*AgentDirs, error) {
 		return resolveCodex(dirs)
 	case "claude":
 		return resolveClaude(dirs)
-	case "opencode":
-		return resolveOpenCode(dirs)
 	case "dsh":
 		return resolveDSH(dirs)
 	case "agy":
@@ -646,6 +638,9 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 		if err := mount.mount(ad, "pi", piHome, configSource); err != nil {
 			return nil, err
 		}
+		if err := mountUnifiedSkills(ad, dirs.ConfigDir, piHome, configSource, "skills"); err != nil {
+			return nil, err
+		}
 		ad.SessionRoots = []string{filepath.Join(piHome, "sessions")}
 	} else {
 		// C only: shadow home; sessions stay native
@@ -657,6 +652,9 @@ func resolvePi(dirs Dirs) (*AgentDirs, error) {
 		)
 		ad.linkConfig(shadow, configSource, piConfigEntries, true)
 		if err := mount.mount(ad, "pi", shadow, configSource); err != nil {
+			return nil, err
+		}
+		if err := mountUnifiedSkills(ad, dirs.ConfigDir, shadow, configSource, "skills"); err != nil {
 			return nil, err
 		}
 		ad.Symlinks = append(ad.Symlinks, Symlink{
@@ -706,6 +704,12 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		if err := mount.mount(ad, "codex", codexHome, configSource); err != nil {
 			return nil, err
 		}
+		if err := mountUnifiedSkills(ad, dirs.ConfigDir, codexHome, configSource, "skills"); err != nil {
+			return nil, err
+		}
+		if err := mountUnifiedMCP(ad, "codex", dirs.ConfigDir, codexHome, configSource); err != nil {
+			return nil, err
+		}
 		// auth stays native
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(codexHome, "auth.json"), filepath.Join(native, "auth.json"),
@@ -720,6 +724,12 @@ func resolveCodex(dirs Dirs) (*AgentDirs, error) {
 		// config entries from C
 		ad.linkConfig(shadow, configSource, configEntries, true)
 		if err := mount.mount(ad, "codex", shadow, configSource); err != nil {
+			return nil, err
+		}
+		if err := mountUnifiedSkills(ad, dirs.ConfigDir, shadow, configSource, "skills"); err != nil {
+			return nil, err
+		}
+		if err := mountUnifiedMCP(ad, "codex", dirs.ConfigDir, shadow, configSource); err != nil {
 			return nil, err
 		}
 		// session data stays native
@@ -790,20 +800,6 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 			Symlink{filepath.Join(shadow, ".claude.json"), nativeClaudeJSON},
 			Symlink{filepath.Join(shadow, "projects"), filepath.Join(native, "projects")},
 		)
-	}
-
-	return ad, nil
-}
-
-func resolveOpenCode(dirs Dirs) (*AgentDirs, error) {
-	native := NativeRoot("opencode", "")
-	ad := &AgentDirs{
-		Env: map[string]string{}, NativeHome: native, ConfigDir: native,
-		SessionRoots: nativeSessionRoots("opencode", ""),
-	}
-
-	if !dirs.Empty() {
-		return nil, fmt.Errorf("opencode does not support --session-dir or --config-dir")
 	}
 
 	return ad, nil
@@ -928,7 +924,6 @@ func HelpText() string {
 Per-agent limitations:
   codex     C-only: session_index.jsonl diverges after thread delete;
             keychain-based auth not supported (file auth required)
-  opencode  does not support --session-dir or --config-dir
   dsh       AGENTS.md, skills, presets not movable
   agy       CLI settings.json travels with the session dir
 

@@ -35,13 +35,10 @@ func TestListDeduplicatesClaudeProjectionAndReportsSupport(t *testing.T) {
 		t.Fatalf("skills = %#v", result.Skills)
 	}
 	item := result.Skills[0]
-	if strings.Join(item.Agents, ",") != "agy,claude,codex,dsh,opencode,pi" || item.Path != inventory.Physical(canonical) {
+	if strings.Join(item.Agents, ",") != "agy,claude,codex,dsh,pi" || item.Path != inventory.Physical(canonical) {
 		t.Fatalf("skill = %#v", item)
 	}
 	for _, support := range result.Agents {
-		if support.Agent == "opencode" {
-			t.Fatalf("OpenCode must remain outside new skill support: %#v", result.Agents)
-		}
 		if support.Agent == "dsh" && support.Supported {
 			t.Fatalf("DSH support = %#v", support)
 		}
@@ -85,7 +82,7 @@ func TestInstallLocalSkillAndClaudeProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Skills) != 1 || strings.Join(result.Skills[0].Agents, ",") != "agy,claude,codex,dsh,opencode,pi" {
+	if len(result.Skills) != 1 || strings.Join(result.Skills[0].Agents, ",") != "agy,claude,codex,dsh,pi" {
 		t.Fatalf("skills = %#v", result.Skills)
 	}
 	if result.Skills[0].Source != "local" || result.Skills[0].Origin != source {

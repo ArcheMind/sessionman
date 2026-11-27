@@ -25,8 +25,8 @@ func (s Service) Inventory() inventory.Result {
 			base = s.Home
 		}
 		roots := []skillRoot{
-			{filepath.Join(base, ".agents", "skills"), []string{"codex", "dsh", "opencode", "pi"}, true},
-			{filepath.Join(base, ".claude", "skills"), []string{"claude", "opencode"}, false},
+			{filepath.Join(base, ".agents", "skills"), []string{"codex", "dsh", "pi"}, true},
+			{filepath.Join(base, ".claude", "skills"), []string{"claude"}, false},
 			{filepath.Join(base, ".codex", "skills"), []string{"codex"}, false},
 		}
 		if scope == "project" {
@@ -48,13 +48,6 @@ func (s Service) Inventory() inventory.Result {
 			dshBase = nativedirs.NativeRoot("dsh", base)
 		}
 		roots = append(roots, skillRoot{filepath.Join(dshBase, "skills"), []string{"dsh"}, false})
-		openBase := filepath.Join(base, ".opencode")
-		if scope == "user" {
-			openBase = filepath.Join(base, ".config", "opencode")
-		}
-		for _, name := range []string{"skill", "skills"} {
-			roots = append(roots, skillRoot{filepath.Join(openBase, name), []string{"opencode"}, false})
-		}
 		if scope == "user" {
 			roots = append(roots, skillRoot{filepath.Join(base, ".pi", "agent", "skills"), []string{"pi"}, false})
 		} else {
@@ -66,18 +59,13 @@ func (s Service) Inventory() inventory.Result {
 			roots[2].path = filepath.Join(codexBase, "skills")
 			roots = append(roots, skillRoot{filepath.Join(codexBase, "skills", ".system"), []string{"codex"}, false})
 			if value := os.Getenv("DSH_AGENTS_HOME"); value != "" {
-				roots[0].agents = []string{"codex", "opencode", "pi"}
+				roots[0].agents = []string{"codex", "pi"}
 				roots = append(roots, skillRoot{filepath.Join(value, "skills"), []string{"dsh"}, false})
 			}
 		} else {
 			ancestors := inventory.ProjectDirectories(s.Project)
 			for _, parent := range ancestors[1:] {
-				for _, name := range []string{"skill", "skills"} {
-					roots = append(roots, skillRoot{filepath.Join(parent, ".opencode", name), []string{"opencode"}, false})
-				}
-				roots = append(roots, skillRoot{filepath.Join(parent, ".claude", "skills"), []string{"opencode"}, false})
-
-				roots = append(roots, skillRoot{filepath.Join(parent, ".agents", "skills"), []string{"codex", "opencode", "pi"}, true}, skillRoot{filepath.Join(parent, ".codex", "skills"), []string{"codex"}, false})
+				roots = append(roots, skillRoot{filepath.Join(parent, ".agents", "skills"), []string{"codex", "pi"}, true}, skillRoot{filepath.Join(parent, ".codex", "skills"), []string{"codex"}, false})
 			}
 			if len(ancestors) > 0 {
 				root := ancestors[len(ancestors)-1]
@@ -88,7 +76,7 @@ func (s Service) Inventory() inventory.Result {
 						}
 					}
 					if root != s.Project {
-						roots[0].agents = []string{"codex", "opencode", "pi"}
+						roots[0].agents = []string{"codex", "pi"}
 						roots = append(roots, skillRoot{filepath.Join(root, ".agents", "skills"), []string{"dsh"}, true})
 					}
 				}
@@ -101,15 +89,10 @@ func (s Service) Inventory() inventory.Result {
 				switch root.path {
 				case filepath.Join(base, ".claude", "skills"):
 					if claudeDir := inventory.UserDirectory(base, "claude"); claudeDir != filepath.Join(base, ".claude") {
-						root.agents = []string{"opencode"}
-						roots = append(roots, skillRoot{filepath.Join(claudeDir, "skills"), []string{"claude"}, false})
+						root.path = filepath.Join(claudeDir, "skills")
 					}
 				case filepath.Join(base, ".pi", "agent", "skills"):
 					root.path = filepath.Join(inventory.UserDirectory(base, "pi"), "skills")
-				case filepath.Join(base, ".config", "opencode", "skill"):
-					root.path = filepath.Join(inventory.UserDirectory(base, "opencode"), "skill")
-				case filepath.Join(base, ".config", "opencode", "skills"):
-					root.path = filepath.Join(inventory.UserDirectory(base, "opencode"), "skills")
 				}
 			}
 		}
@@ -250,7 +233,7 @@ func (s Service) Inventory() inventory.Result {
 		}
 
 	}
-	for _, agent := range []string{"agy", "claude", "codex", "dsh", "opencode", "pi"} {
+	for _, agent := range []string{"agy", "claude", "codex", "dsh", "pi"} {
 		path := agent + " dynamic/plugin/package/CLI/settings skill sources"
 		if agent == "agy" {
 			path = "agy dynamic/package/CLI/settings skill sources"

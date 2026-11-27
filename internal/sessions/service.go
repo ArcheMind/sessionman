@@ -306,7 +306,6 @@ func (s Service) Read(item Summary) (Session, error) {
 
 // ParseRecords parses raw records from a native agent format into a unified Session.
 // For JSONL agents (claude, codex, pi), records is the list of parsed JSON objects.
-// For opencode, this returns false since opencode uses a file-per-message layout.
 func ParseRecords(agent string, records []map[string]any) (Session, bool) {
 	spec := agentSpecByID(agent)
 	if spec == nil || spec.parse == nil {

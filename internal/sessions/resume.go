@@ -46,9 +46,6 @@ func PlanSessionFile(detail Session, agentID, dir, homeDir string) (token, path 
 	case "pi":
 		_, _, path, err := piSessionPath(detail.Workspace, homeDir)
 		return path, path, err
-	case "opencode":
-		base := filepath.Join(dir, newUUID())
-		return base, base, nil
 	default:
 		return "", "", fmt.Errorf("unsupported resume target %q", agentID)
 	}
@@ -105,25 +102,6 @@ func WriteSessionFile(detail Session, agentID, dir, homeDir string) (string, err
 		detail.ID = newID
 		detail.Workspace = workspace
 		return path, writeJSONLFile(path, SerializePi(detail))
-	case "opencode":
-		base := filepath.Join(dir, newUUID())
-		info, entries := SerializeOpenCode(detail, base)
-		infoPath := filepath.Join(base, "session.json")
-		if err := os.MkdirAll(filepath.Dir(infoPath), 0700); err != nil {
-			return "", err
-		}
-		if err := writeJSONFile(infoPath, info); err != nil {
-			return "", err
-		}
-		for _, entry := range entries {
-			if err := os.MkdirAll(filepath.Dir(entry.Path), 0700); err != nil {
-				return "", err
-			}
-			if err := writeJSONFile(entry.Path, entry.Content); err != nil {
-				return "", err
-			}
-		}
-		return base, nil
 	default:
 		return "", fmt.Errorf("unsupported resume target %q", agentID)
 	}

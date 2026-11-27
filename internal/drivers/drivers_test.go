@@ -15,7 +15,7 @@ import (
 
 func TestRegistryContainsSupportedAgents(t *testing.T) {
 	registry := NewRegistry()
-	want := []string{"agy", "claude", "codex", "dsh", "opencode", "pi"}
+	want := []string{"agy", "claude", "codex", "dsh", "pi"}
 	all := registry.All()
 	got := make([]string, 0, len(all))
 	for _, agent := range all {
@@ -28,12 +28,11 @@ func TestRegistryContainsSupportedAgents(t *testing.T) {
 
 func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
-		"agy":      {Executable: "agy", Args: []string{"acp", "--login"}, Agent: "agy"},
-		"claude":   {Executable: "claude", Args: []string{"auth", "login", "--claudeai"}, Agent: "claude"},
-		"codex":    {Executable: "codex", Args: []string{"login"}, Agent: "codex"},
-		"dsh":      {Executable: "dsh", Args: []string{"web"}, Agent: "dsh"},
-		"opencode": {Executable: "opencode", Args: []string{"auth", "login"}, Agent: "opencode"},
-		"pi":       {Executable: "node", Args: []string{"<Pi SDK login adapter>"}},
+		"agy":    {Executable: "agy", Args: []string{"acp", "--login"}, Agent: "agy"},
+		"claude": {Executable: "claude", Args: []string{"auth", "login", "--claudeai"}, Agent: "claude"},
+		"codex":  {Executable: "codex", Args: []string{"login"}, Agent: "codex"},
+		"dsh":    {Executable: "dsh", Args: []string{"web"}, Agent: "dsh"},
+		"pi":     {Executable: "node", Args: []string{"<Pi SDK login adapter>"}},
 	}
 	registry := NewRegistry()
 	for id, expected := range want {
@@ -52,11 +51,10 @@ func TestNativeAuthPlansUseAgentOAuthFlows(t *testing.T) {
 
 func TestNativeAuthLogoutPlans(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
-		"agy":      {Executable: "agy", Agent: "agy"},
-		"claude":   {Executable: "claude", Args: []string{"auth", "logout"}, Agent: "claude"},
-		"codex":    {Executable: "codex", Args: []string{"logout"}, Agent: "codex"},
-		"opencode": {Executable: "opencode", Args: []string{"auth", "logout"}, Agent: "opencode"},
-		"pi":       {Executable: "pi", Agent: "pi"},
+		"agy":    {Executable: "agy", Agent: "agy"},
+		"claude": {Executable: "claude", Args: []string{"auth", "logout"}, Agent: "claude"},
+		"codex":  {Executable: "codex", Args: []string{"logout"}, Agent: "codex"},
+		"pi":     {Executable: "pi", Agent: "pi"},
 	}
 	registry := NewRegistry()
 	for id, expected := range want {
@@ -72,9 +70,8 @@ func TestNativeAuthLogoutPlans(t *testing.T) {
 
 func TestNativeAuthStatusCommands(t *testing.T) {
 	want := map[string]runtime.CommandPlan{
-		"claude":   {Executable: "claude", Args: []string{"auth", "status", "--json"}, Agent: "claude"},
-		"codex":    {Executable: "codex", Args: []string{"login", "status"}, Agent: "codex"},
-		"opencode": {Executable: "opencode", Args: []string{"auth", "list"}, Agent: "opencode"},
+		"claude": {Executable: "claude", Args: []string{"auth", "status", "--json"}, Agent: "claude"},
+		"codex":  {Executable: "codex", Args: []string{"login", "status"}, Agent: "codex"},
 	}
 	registry := NewRegistry()
 	for id, expected := range want {
@@ -117,12 +114,6 @@ func TestNativeAuthStatusParsers(t *testing.T) {
 			result: runtime.CommandResult{Stderr: "Not logged in\n", ExitCode: 1},
 			want:   runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{}},
 		},
-		{
-			name:   "opencode",
-			parser: parseOpenCodeAuthStatus,
-			result: runtime.CommandResult{Stdout: "\x1b[0mCredentials\n●  GitHub Copilot \x1b[90moauth\n1 credentials\nEnvironment\n4 environment variables\n"},
-			want:   runtime.AuthStatus{Supported: true, Providers: []runtime.AuthProvider{{ID: "GitHub Copilot", Method: "oauth"}}},
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -143,7 +134,7 @@ func TestNativeAuthStatusParsers(t *testing.T) {
 
 func TestAuthStatusCapabilitiesMatchNativeSupport(t *testing.T) {
 	registry := NewRegistry()
-	for _, id := range []string{"agy", "claude", "codex", "dsh", "opencode", "pi"} {
+	for _, id := range []string{"agy", "claude", "codex", "dsh", "pi"} {
 		agent, err := registry.Get(id)
 		if err != nil {
 			t.Fatal(err)

@@ -202,7 +202,7 @@ func TestCreateOffersOnlyListedCodexEfforts(t *testing.T) {
 }
 
 func TestEffortNotApplicableOffersOnlyNativeDefault(t *testing.T) {
-	note, choices := effortChoices(presetDraft{preset: presets.Preset{Agent: "opencode", Model: "m"}})
+	note, choices := effortChoices(presetDraft{preset: presets.Preset{Agent: "dsh", Model: "m"}})
 	if len(choices) != 1 || choices[0].value != "" || !strings.Contains(note, "not applicable") {
 		t.Fatal(choices, note)
 	}

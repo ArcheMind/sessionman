@@ -16,8 +16,6 @@ var agentSpecs = []agentSpec{
 		discoverIn: discoverAgyIn, summarize: summarizeAgy, read: readAgySession},
 	jsonlSpec("claude", "Claude Code", discoverClaudeIn, parseClaude),
 	jsonlSpec("codex", "Codex CLI", discoverCodexIn, parseCodex),
-	{id: "opencode", name: "OpenCode", binary: "opencode",
-		discoverIn: discoverOpenCodeIn, summarize: summarizeOpenCode, read: readOpenCodeSession},
 	jsonlSpec("pi", "Pi Coding Agent", discoverPiIn, parsePi),
 }
 

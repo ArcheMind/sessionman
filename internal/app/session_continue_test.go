@@ -556,7 +556,7 @@ func TestSessionContinueClaudeProtocol20PreventsReasoningExtraction(t *testing.T
 
 func TestSessionContinueRejectsAgentsWithoutAdapter(t *testing.T) {
 	application, _, _ := continueApp(t, "claude", "", "")
-	err := application.Run(context.Background(), []string{"session", "continue", "opencode"})
+	err := application.Run(context.Background(), []string{"session", "continue", "dsh"})
 	if err == nil || !strings.Contains(err.Error(), "no headless continue adapter") {
 		t.Fatalf("err = %v", err)
 	}

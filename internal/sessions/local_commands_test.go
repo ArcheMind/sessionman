@@ -16,10 +16,9 @@ func TestSerializeDropsClaudeLocalCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, entries := SerializeOpenCode(detail, "")
 	for target, native := range map[string]any{
 		"claude": SerializeClaude(detail), "codex": SerializeCodex(detail),
-		"pi": SerializePi(detail), "opencode": entries,
+		"pi":  SerializePi(detail),
 		"agy": string(bytes.Join(agy, nil)),
 	} {
 		data, err := json.Marshal(native)
@@ -36,7 +35,7 @@ func TestReplayDropsClaudeLocalCommands(t *testing.T) {
 	text := func(id, parent, role, value string) Message {
 		return Message{ID: id, ParentID: parent, Role: role, Content: []ContentBlock{{Type: "text", Text: value}}}
 	}
-	for _, provider := range []string{"claude", "codex", "pi", "opencode", "agy"} {
+	for _, provider := range []string{"claude", "codex", "pi", "agy"} {
 		t.Run(provider, func(t *testing.T) {
 			messages := []Message{
 				text("caveat", "", "user", "<local-command-caveat>Not a request</local-command-caveat>"),

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/ArcheMind/sessionman/internal/runtime"
@@ -80,31 +79,6 @@ func parseCodexAuthStatus(result runtime.CommandResult, executeErr error) (runti
 		}
 	}
 	return runtime.AuthStatus{}, statusParseError("codex", executeErr, nil)
-}
-
-var openCodeCredentialPattern = regexp.MustCompile(`(?m)^●\s+(.+?)\s+(oauth|api_key|api key)\s*$`)
-
-func parseOpenCodeAuthStatus(result runtime.CommandResult, executeErr error) (runtime.AuthStatus, error) {
-	output := stripANSI(result.Stdout + result.Stderr)
-	credentials, _, ok := strings.Cut(output, "Environment")
-	if !ok {
-		return runtime.AuthStatus{}, statusParseError("opencode", executeErr, nil)
-	}
-	matches := openCodeCredentialPattern.FindAllStringSubmatch(credentials, -1)
-	providers := make([]runtime.AuthProvider, 0, len(matches))
-	for _, match := range matches {
-		providers = append(providers, runtime.AuthProvider{ID: strings.TrimSpace(match[1]), Method: strings.ReplaceAll(match[2], "_", " ")})
-	}
-	countPattern := regexp.MustCompile(`(?m)(\d+) credentials?\s*$`)
-	match := countPattern.FindStringSubmatch(credentials)
-	if len(match) != 2 {
-		return runtime.AuthStatus{}, statusParseError("opencode", executeErr, nil)
-	}
-	count, err := strconv.Atoi(match[1])
-	if err != nil || count != len(providers) {
-		return runtime.AuthStatus{}, statusParseError("opencode", executeErr, err)
-	}
-	return runtime.AuthStatus{Supported: true, Providers: providers}, nil
 }
 
 type ProviderAuth struct {

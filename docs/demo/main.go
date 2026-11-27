@@ -71,9 +71,6 @@ func (input *demoInput) Read(buffer []byte) (int, error) {
 type demoRunner struct{}
 
 func (demoRunner) Execute(_ context.Context, plan runtime.CommandPlan, options runtime.ExecuteOptions) (runtime.CommandResult, error) {
-	if plan.Executable == "opencode" && len(plan.Args) == 1 && plan.Args[0] == "models" {
-		return runtime.CommandResult{Stdout: "openai/gpt-5.4\nanthropic/claude-sonnet-4-6\ndeepseek/deepseek-chat\n"}, nil
-	}
 	if options.Interactive {
 		model := "native default"
 		for index, arg := range plan.Args {

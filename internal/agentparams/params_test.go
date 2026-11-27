@@ -36,7 +36,6 @@ func TestTransportBehavior(t *testing.T) {
 		{"pi", RPC, Request{Model: "native", Effort: "low", Mode: ModeYolo}, []string{"--mode", "rpc", "--no-approve", "--thinking", "low", "--model", "native"}},
 		{"pi", Exec, Request{Model: "native"}, []string{"--print", "--mode", "json", "--model", "native"}},
 		{"agy", Exec, Request{Model: "gemini", Session: testUUID}, []string{"--input-format", "stream-json", "--output-format", "stream-json", "--conversation", testUUID, "--model", "gemini"}},
-		{"opencode", Interactive, Request{Session: "token"}, []string{"--session", "token"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.agent+"/"+string(tc.t), func(t *testing.T) {
@@ -91,7 +90,6 @@ func TestRejectsUnsupportedAndConflictingParameters(t *testing.T) {
 		{"codex", AppServer, Request{UserConfig: boolPtr(false)}},
 		{"pi", RPC, Request{MCP: MCPConfig{Servers: map[string]MCPServer{"x": {Command: "node"}}}}},
 		{"agy", Exec, Request{SystemPrompt: "role"}},
-		{"opencode", Interactive, Request{Mode: ModeYolo}},
 		{"dsh", Interactive, Request{Model: "model"}},
 		{"claude", Interactive, Request{Model: "opus", Flags: []string{"--model=sonnet"}}},
 		{"codex", Interactive, Request{Effort: "high", Flags: []string{"--config=model_reasoning_effort=low"}}},

@@ -117,39 +117,6 @@ func TestCLIRelativeEnvConfigDirRejected(t *testing.T) {
 	}
 }
 
-func TestCLIOpenCodeUnsupportedWithS(t *testing.T) {
-	s := t.TempDir()
-	_, stderr, code := runSM(t, nil, "--session-dir", s, "opencode", "--dry-run")
-	if code == 0 {
-		t.Fatal("expected non-zero exit for opencode with --session-dir")
-	}
-	if !strings.Contains(stderr, "does not support") {
-		t.Errorf("stderr = %q, want 'does not support'", stderr)
-	}
-}
-
-func TestCLIOpenCodeUnsupportedWithC(t *testing.T) {
-	c := t.TempDir()
-	_, stderr, code := runSM(t, nil, "--config-dir", c, "opencode", "--dry-run")
-	if code == 0 {
-		t.Fatal("expected non-zero exit for opencode with --config-dir")
-	}
-	if !strings.Contains(stderr, "does not support") {
-		t.Errorf("stderr = %q, want 'does not support'", stderr)
-	}
-}
-
-func TestCLISessionListSourceBlocked(t *testing.T) {
-	s := t.TempDir()
-	_, stderr, code := runSM(t, nil, "--session-dir", s, "session", "list", "--source", "opencode")
-	if code == 0 {
-		t.Fatal("expected non-zero exit for list --source opencode under S")
-	}
-	if !strings.Contains(stderr, "opencode blocked") && !strings.Contains(stderr, "opencode") {
-		t.Errorf("stderr = %q, want opencode blocked message", stderr)
-	}
-}
-
 // --- help text ---
 
 func TestCLIHelpShowsLimitations(t *testing.T) {
@@ -158,7 +125,7 @@ func TestCLIHelpShowsLimitations(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("%v exit %d", args, code)
 		}
-		for _, want := range []string{"Per-agent limitations:", "opencode  does not support"} {
+		for _, want := range []string{"Per-agent limitations:", "dsh       AGENTS.md, skills, presets not movable"} {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("%v output lacks %q", args, want)
 			}

@@ -250,12 +250,6 @@ func UserDirectory(home, agent string) string {
 	switch agent {
 	case "agy":
 		return filepath.Join(nativedirs.NativeRoot("agy", home), "config")
-	case "opencode":
-		base := os.Getenv("XDG_CONFIG_HOME")
-		if base == "" {
-			base = filepath.Join(home, ".config")
-		}
-		return filepath.Join(base, "opencode")
 	}
 	return nativedirs.NativeRoot(agent, home)
 }

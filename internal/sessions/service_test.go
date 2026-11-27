@@ -19,8 +19,8 @@ func TestBuiltInAgents(t *testing.T) {
 		},
 	}
 	agents := service.Agents()
-	if len(agents) != 5 {
-		t.Fatalf("agents = %d, want 5", len(agents))
+	if len(agents) != 4 {
+		t.Fatalf("agents = %d, want 4", len(agents))
 	}
 	for _, agent := range agents {
 		if agent.Installed != (agent.ID == "codex") {
@@ -48,19 +48,6 @@ func TestNativeSessionReaders(t *testing.T) {
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":"latest codex"}}`,
 	}, "\n"))
 
-	openCodeRoot := filepath.Join(home, ".local", "share", "opencode", "project", "project", "storage", "session")
-	writeFixture(t, filepath.Join(openCodeRoot, "info", "opencode-id.json"),
-		`{"id":"opencode-id","title":"fix opencode","time":{"created":1788271200000,"updated":1788271260000}}`)
-	writeFixture(t, filepath.Join(openCodeRoot, "message", "opencode-id", "message-id.json"),
-		fmt.Sprintf(`{"id":"message-id","sessionID":"opencode-id","role":"user","path":{"root":%q},"time":{"created":1788271200000}}`, workspace))
-	writeFixture(t, filepath.Join(openCodeRoot, "part", "opencode-id", "message-id", "part-id.json"),
-		`{"id":"part-id","messageID":"message-id","sessionID":"opencode-id","type":"text","text":"fix opencode"}`)
-
-	writeFixture(t, filepath.Join(openCodeRoot, "message", "opencode-id", "latest-message.json"),
-		`{"id":"latest-message","sessionID":"opencode-id","role":"user","time":{"created":1788271230000}}`)
-	writeFixture(t, filepath.Join(openCodeRoot, "part", "opencode-id", "latest-message", "part-id.json"),
-		`{"type":"text","text":"latest opencode"}`)
-
 	writeFixture(t, filepath.Join(home, ".pi", "agent", "sessions", "project", "pi.jsonl"), strings.Join([]string{
 		fmt.Sprintf(`{"type":"session","id":"pi-id","cwd":%q,"timestamp":"2026-09-01T14:00:00Z"}`, workspace),
 		`{"type":"message","message":{"role":"user","timestamp":1788271200000,"content":[{"type":"text","text":"fix pi"}]}}`,
@@ -75,7 +62,6 @@ func TestNativeSessionReaders(t *testing.T) {
 	}{
 		{agent: "claude", id: "claude-id", content: "fix claude"},
 		{agent: "codex", id: "codex-id", content: "fix codex"},
-		{agent: "opencode", id: "opencode-id", content: "fix opencode"},
 		{agent: "pi", id: "pi-id", content: "fix pi"},
 	} {
 		t.Run(test.agent, func(t *testing.T) {
@@ -93,8 +79,8 @@ func TestNativeSessionReaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 4 {
-		t.Fatalf("workspace sessions = %d, want 4: %#v", len(items), items)
+	if len(items) != 3 {
+		t.Fatalf("workspace sessions = %d, want 3: %#v", len(items), items)
 	}
 	for _, item := range items {
 		if item.FirstUserMessage != "fix "+item.Agent || item.LatestUserMessage != "latest "+item.Agent {
@@ -102,7 +88,7 @@ func TestNativeSessionReaders(t *testing.T) {
 		}
 	}
 	groups, err := service.RecentGroups(workspace, 10, false)
-	if err != nil || len(groups.Current) != 4 {
+	if err != nil || len(groups.Current) != 3 {
 		t.Fatalf("groups = %#v, err = %v", groups, err)
 	}
 	for _, item := range groups.Current {
@@ -193,13 +179,6 @@ func TestSubagentSessionsAreFilteredByDefault(t *testing.T) {
 	}, "\n"))
 	writeFixture(t, filepath.Join(home, ".claude", "projects", "project", "parent", "subagents", "agent-claude-child.jsonl"),
 		fmt.Sprintf(`{"type":"user","sessionId":"claude-root","agentId":"claude-child","isSidechain":true,"cwd":%q,"timestamp":"2026-09-10T22:00:00Z","message":{"content":"claude child"}}`, workspace))
-	openCodeRoot := filepath.Join(home, ".local", "share", "opencode", "project", "project", "storage", "session")
-	writeFixture(t, filepath.Join(openCodeRoot, "info", "opencode-child.json"),
-		`{"id":"opencode-child","parentID":"opencode-root","title":"opencode child","time":{"created":1789081200000,"updated":1789081260000}}`)
-	writeFixture(t, filepath.Join(openCodeRoot, "message", "opencode-child", "message.json"),
-		fmt.Sprintf(`{"id":"message","sessionID":"opencode-child","role":"user","path":{"cwd":%q},"time":{"created":1789081200000}}`, workspace))
-	writeFixture(t, filepath.Join(openCodeRoot, "part", "opencode-child", "message", "part.json"),
-		`{"type":"text","text":"opencode child"}`)
 
 	service := Service{HomeDir: home}
 	items, err := service.List(ListOptions{All: true})
@@ -216,7 +195,6 @@ func TestSubagentSessionsAreFilteredByDefault(t *testing.T) {
 	}
 	want := map[string]bool{
 		"codex-root": false, "codex-child": true, "claude-child": true,
-		"opencode-child": true,
 	}
 	if len(items) != len(want) {
 		t.Fatalf("included sessions = %#v", items)

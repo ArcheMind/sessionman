@@ -21,7 +21,7 @@ func buildCodex(t Transport, r Request) (Plan, error) {
 			config["model_reasoning_effort"] = r.Effort
 		}
 		if len(r.MCP.Servers) > 0 {
-			config["mcp_servers"] = codexMCPConfig(r.MCP)
+			config["mcp_servers"] = CodexMCPConfig(r.MCP)
 		}
 		params := map[string]any{}
 		if r.Cwd != "" {

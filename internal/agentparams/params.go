@@ -21,13 +21,12 @@ type AgentRule struct {
 }
 
 var Agents = map[string]AgentRule{
-	"agy":      {Name: "Antigravity CLI", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Antigravity CLI --effort levels; per-model support is not verified by agy models", Bypassable: true},
-	"claude":   {Name: "Claude", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Claude Code --effort levels; per-model support is not verified locally", Bypassable: true},
-	"codex":    {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", Bypassable: true},
-	"opencode": {Name: "OpenCode", EffortNote: "OpenCode exposes no verified effort control"},
-	"pi":       {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent reports a warning when Pi's provider request carries a different effort, without blocking execution (Pi can clamp or remap unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal", Bypassable: true},
+	"agy":    {Name: "Antigravity CLI", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Antigravity CLI --effort levels; per-model support is not verified by agy models", Bypassable: true},
+	"claude": {Name: "Claude", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Claude Code --effort levels; per-model support is not verified locally", Bypassable: true},
+	"codex":  {Name: "Codex", Efforts: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, EffortNote: "Codex reports supported levels per model", Bypassable: true},
+	"pi":     {Name: "Pi", Efforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortNote: "Pi --thinking levels; ExternalSubagent reports a warning when Pi's provider request carries a different effort, without blocking execution (Pi can clamp or remap unsupported levels). off and minimal are not offered: for Codex-backed models Pi sends no effort for off (the server default applies) and sends low for minimal", Bypassable: true},
 }
-var AgentOrder = []string{"claude", "codex", "opencode", "pi", "agy"}
+var AgentOrder = []string{"claude", "codex", "pi", "agy"}
 
 type Request struct {
 	Cwd, Model, Effort, Mode, Session, SystemPrompt string
@@ -157,7 +156,7 @@ func Build(agent string, transport Transport, r Request) (Plan, error) {
 		return buildAgy(transport, r)
 	case "pi":
 		return buildPi(transport, r)
-	case "opencode", "dsh":
+	case "dsh":
 		return buildSimple(agent, transport, r)
 	}
 	return Plan{}, fmt.Errorf("unsupported agent %q", agent)
@@ -202,12 +201,6 @@ func checkConflicts(agent string, r Request) error {
 		aliases["--conversation"] = "session"
 		aliases["--include-default-customizations"] = "user config"
 		modeFlags["--dangerously-skip-permissions"] = true
-	case "opencode":
-		aliases["-m"] = "model"
-		aliases["--session"] = "session"
-		aliases["-s"] = "session"
-		aliases["--continue"] = "session"
-		aliases["-c"] = "session"
 	case "pi":
 		aliases["--thinking"] = "effort"
 		aliases["--session"] = "session"

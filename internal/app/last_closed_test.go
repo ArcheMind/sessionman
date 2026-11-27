@@ -2,13 +2,10 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/ArcheMind/sessionman/internal/runtime"
@@ -139,43 +136,5 @@ func TestCodexSessionObserverPreservesExistingSessionStartHooks(t *testing.T) {
 	}
 	if args[2] != "--config="+original || projected[end] != "--" || projected[end+1] != "prompt" {
 		t.Fatalf("projection changed original or passthrough args: original %v, projected %v", args, projected)
-	}
-}
-
-func TestOpenCodeInteractiveClosePrefersTUIRoute(t *testing.T) {
-	t.Setenv("OPENCODE_TUI_CONFIG", "")
-	t.Setenv("OPENCODE_CONFIG_CONTENT", `{"plugin":["user-plugin"],"theme":"user-theme"}`)
-	a := App{Sessions: sessions.Service{HomeDir: t.TempDir()}, Stderr: io.Discard}
-	a.Runner = trackedSessionRunner(func(plan runtime.CommandPlan) (runtime.CommandResult, error) {
-		var config struct {
-			Plugin []string `json:"plugin"`
-			Theme  string   `json:"theme"`
-		}
-		if err := json.Unmarshal([]byte(plan.Env["OPENCODE_CONFIG_CONTENT"]), &config); err != nil || len(config.Plugin) != 2 || config.Plugin[0] != "user-plugin" || config.Theme != "user-theme" {
-			t.Fatalf("OpenCode config = %#v, %v", config, err)
-		}
-		manifest := plan.Env["OPENCODE_TUI_CONFIG"]
-		data, err := os.ReadFile(manifest)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(data, &config); err != nil || len(config.Plugin) != 1 {
-			t.Fatalf("OpenCode TUI config = %#v, %v", config, err)
-		}
-		pluginURL, err := url.Parse(config.Plugin[0])
-		if err != nil || pluginURL.Scheme != "file" || !strings.HasSuffix(pluginURL.Path, "sessionman-tui-session.js") {
-			t.Fatalf("OpenCode TUI plugin URL = %#v, %v", pluginURL, err)
-		}
-		root := filepath.Dir(manifest)
-		if err := os.WriteFile(filepath.Join(root, "session-id"), []byte("server-session"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		return runtime.CommandResult{}, os.WriteFile(filepath.Join(root, openCodeRouteReport), []byte("tui-session"), 0600)
-	})
-	if _, err := a.executeTrackedSession(context.Background(), runtime.CommandPlan{Agent: "opencode"}, runtime.ExecuteOptions{Interactive: true}, "fallback"); err != nil {
-		t.Fatal(err)
-	}
-	if closed, ok, err := a.Sessions.LatestClosed(); err != nil || !ok || closed.ID != "tui-session" {
-		t.Fatalf("last OpenCode close = %#v, %t, %v", closed, ok, err)
 	}
 }

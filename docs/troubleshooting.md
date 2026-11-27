@@ -44,7 +44,7 @@ SessionMan preserves the native command's exit behavior. Enable the debug protoc
 
 ```bash
 SM_LOG=debug sm agent list
-sm --verbose agent models opencode
+sm --verbose agent models codex
 ```
 
 Debug output may contain sensitive native content. Review and redact it before attaching it to an issue.

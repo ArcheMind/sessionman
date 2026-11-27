@@ -84,7 +84,7 @@ func TestInventoryNativeFilesystemRoots(t *testing.T) {
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	t.Setenv("DSH_HOME", filepath.Join(home, ".dsh"))
 	t.Setenv("DSH_AGENTS_HOME", filepath.Join(home, ".agents"))
-	for _, root := range []string{".claude/skills", ".codex/skills", ".dsh/skills", ".opencode/skills", ".pi/skills"} {
+	for _, root := range []string{".claude/skills", ".codex/skills", ".dsh/skills", ".pi/skills"} {
 		writeSkill(t, filepath.Join(project, root, "native"), "native", "native")
 	}
 	counts := map[string]int{}
@@ -97,7 +97,7 @@ func TestInventoryNativeFilesystemRoots(t *testing.T) {
 			}
 		}
 	}
-	for _, agent := range []string{"claude", "codex", "dsh", "opencode", "pi"} {
+	for _, agent := range []string{"claude", "codex", "dsh", "pi"} {
 		if counts[agent] == 0 {
 			t.Fatalf("native %s missing: %v", agent, counts)
 		}
@@ -163,13 +163,10 @@ func TestFlatAndNestedAgentApplicability(t *testing.T) {
 
 func TestUserOverrides(t *testing.T) {
 	home, project, custom := t.TempDir(), t.TempDir(), t.TempDir()
-	for _, agent := range []struct{ name, env, dir string }{{"claude", "CLAUDE_CONFIG_DIR", "claude"}, {"codex", "CODEX_HOME", "codex"}, {"pi", "PI_CODING_AGENT_DIR", "pi"}, {"dsh", "DSH_HOME", "dsh"}, {"opencode", "XDG_CONFIG_HOME", "config"}} {
+	for _, agent := range []struct{ name, env, dir string }{{"claude", "CLAUDE_CONFIG_DIR", "claude"}, {"codex", "CODEX_HOME", "codex"}, {"pi", "PI_CODING_AGENT_DIR", "pi"}, {"dsh", "DSH_HOME", "dsh"}} {
 		base := filepath.Join(custom, agent.dir)
 		t.Setenv(agent.env, base)
 		root := filepath.Join(base, "skills")
-		if agent.name == "opencode" {
-			root = filepath.Join(base, "opencode", "skills")
-		}
 		writeSkill(t, filepath.Join(root, agent.name), agent.name, "override")
 	}
 	result := (Service{Home: home, Project: project}).Inventory()
@@ -183,7 +180,7 @@ func TestUserOverrides(t *testing.T) {
 			}
 		}
 	}
-	for _, agent := range []string{"claude", "codex", "pi", "dsh", "opencode"} {
+	for _, agent := range []string{"claude", "codex", "pi", "dsh"} {
 		if !found[agent] {
 			t.Fatalf("override %s missing", agent)
 		}

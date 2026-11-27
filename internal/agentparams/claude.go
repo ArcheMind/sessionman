@@ -27,7 +27,7 @@ func buildClaude(t Transport, r Request) (Plan, error) {
 		args = append(args, "--append-system-prompt", r.SystemPrompt)
 	}
 	if len(r.MCP.Servers) > 0 {
-		config, err := claudeMCP(r.MCP)
+		config, err := ClaudeMCPJSON(r.MCP)
 		if err != nil {
 			return Plan{}, err
 		}

@@ -51,13 +51,11 @@ New session · Presets
 Recent sessions · Current workspace
   claude    Sep 11 05:08 (18m)      Design the interactive session-resume experience for the…
   codex     Sep 11 04:42 (47m)      Refactor the OAuth callback and tighten token refresh ha…
-  opencode  Sep 11 03:50 (1h 10m)   Polish the session list layout and status copy
   pi        Sep 11 03:24 (44m)      Reduce duplicate state in the keyboard navigation handler
 
 Recent sessions · Global
   codex     Sep 10 12:20 (1h 15m)   ../data-pipeline      Fix the streaming response parser …
   claude    Sep 10 10:48 (33m)      ../api-gateway        Review the production timeout inci…
-  opencode  Sep 10 10:20 (4h 00m)   ../analytics          Investigate the slow analytics que…
   pi        Sep 10 06:15 (55m)      ../infrastructure     Add a preflight check before the p…
 
 ↑/↓ or j/k select · Enter open · e export session · m manage presets · q/Esc cancel
@@ -82,7 +80,6 @@ Choose an agent:
 > agy
   claude
   codex
-  opencode
   pi
 ```
 
@@ -130,7 +127,7 @@ Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagent
 ## Configure once, every agent follows
 
 ```text
-~/.agents/skills/<name>/SKILL.md      codex · dsh · opencode · pi, Claude via .claude/skills
+~/.agents/skills/<name>/SKILL.md      codex · dsh · pi, Claude via .claude/skills
 ~/.agents/hooks.json                  claude · codex · pi; agy SessionStart/Stop
 ~/.sessionman/presets/<name>/PRESET.md  sm · the ExternalSubagent tools above
 ```
@@ -198,13 +195,11 @@ Run `sm update` to immediately check for and install the latest stable release, 
 | Claude Code | yes | yes | yes, via `.claude/skills` | yes |
 | Codex CLI | yes | yes | yes | yes |
 | DeepSeek Harness | — | — | yes | — |
-| OpenCode | yes | native sessions only | yes | — |
 | Pi | yes | yes | yes | yes |
 
 Antigravity CLI 1.5.8 supports native SQLite sessions, model discovery, presets and ACP ExternalSubagents. `sm session continue agy` places `--append-system-prompt` in a `<system-prompt>` text block before the original user text in the same message. `sm agent exec agy` rejects `--append-system-prompt`. Both commands reject temporary `--mcp-config`. ACP supports session-scoped MCP. Provider effort is unverified. Its owned plugin is also discovered by plain `agy`, whose MCP bridge requires launching through `sm` to bind the workspace. See [agy acceptance and boundaries](docs/agy-acceptance.md).
 
-DeepSeek Harness has no verified session source, so it is not a session or resume target. SessionMan can still install, authenticate, and launch it. OpenCode and DeepSeek Harness are not part of the actively developed skill and hook integrations. OpenCode resumes native session IDs through `--session`; converted transcript
-directories are not native session IDs and cannot be resumed through this path.
+DeepSeek Harness has no verified session source, so it is not a session or resume target. SessionMan can still install, authenticate, and launch it. DeepSeek Harness is not part of the actively developed skill and hook integrations.
 Codex transcript import resolves its provider through app-server configuration
 inspection; imports using `--profile` or `user_config: false` are rejected because
 that inspection cannot honor those selections. Existing native sessions do not
@@ -293,7 +288,7 @@ make verify
 
 Report vulnerabilities privately per [SECURITY.md](SECURITY.md). Usage questions and confirmed bugs go through [SUPPORT.md](SUPPORT.md).
 
-SessionMan is an independent open-source project, not affiliated with Anthropic, OpenAI, Google, OpenCode, or Pi's maintainers. Product names belong to their respective owners.
+SessionMan is an independent open-source project, not affiliated with Anthropic, OpenAI, Google, or Pi's maintainers. Product names belong to their respective owners.
 
 ## License
 

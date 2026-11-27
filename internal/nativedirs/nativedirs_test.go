@@ -9,7 +9,7 @@ import (
 )
 
 func TestResolveNone(t *testing.T) {
-	for _, agent := range []string{"pi", "codex", "claude", "opencode", "dsh", "agy"} {
+	for _, agent := range []string{"pi", "codex", "claude", "dsh", "agy"} {
 		t.Run(agent, func(t *testing.T) {
 			ad, err := Resolve(agent, Dirs{})
 			if err != nil {
@@ -164,13 +164,13 @@ func TestClaudeJSONAlwaysLinksToNative(t *testing.T) {
 	t.Error("missing .claude.json symlink")
 }
 
-func TestCachedErrorOpenCode(t *testing.T) {
+func TestCachedError(t *testing.T) {
 	resolvedMu.Lock()
 	resolvedErrs = map[string]error{
-		"opencode": fmt.Errorf("opencode does not support --config-dir"),
+		"dsh": fmt.Errorf("dsh error"),
 	}
 	resolved = map[string]*AgentDirs{
-		"opencode": {Env: map[string]string{}, SessionRoots: []string{}},
+		"dsh": {Env: map[string]string{}, SessionRoots: []string{}},
 	}
 	resolvedMu.Unlock()
 	defer func() {
@@ -180,8 +180,8 @@ func TestCachedErrorOpenCode(t *testing.T) {
 		resolvedMu.Unlock()
 	}()
 
-	if err := CachedError("opencode"); err == nil {
-		t.Error("expected cached error for opencode")
+	if err := CachedError("dsh"); err == nil {
+		t.Error("expected cached error for dsh")
 	}
 	if err := CachedError("claude"); err != nil {
 		t.Errorf("unexpected cached error for claude: %v", err)

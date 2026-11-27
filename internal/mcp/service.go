@@ -35,24 +35,8 @@ func (s Service) List() inventory.Result {
 		for _, path := range plugins {
 			candidates = append(candidates, struct{ path, agent, format string }{path, "agy", "json"})
 		}
-		openBase := filepath.Join(base, ".opencode")
-		if scope == "user" {
-			openBase = filepath.Join(base, ".config", "opencode")
-		}
-		for _, name := range []string{"opencode.json", "opencode.jsonc"} {
-			candidates = append(candidates, struct{ path, agent, format string }{filepath.Join(openBase, name), "opencode", "jsonc"})
-			if scope == "project" {
-				candidates = append(candidates, struct{ path, agent, format string }{filepath.Join(base, name), "opencode", "jsonc"})
-			}
-		}
 		if scope == "project" {
 			for _, parent := range inventory.ProjectDirectories(s.Project)[1:] {
-				for _, name := range []string{"opencode.json", "opencode.jsonc"} {
-					for _, dir := range []string{parent, filepath.Join(parent, ".opencode")} {
-						candidates = append(candidates, struct{ path, agent, format string }{filepath.Join(dir, name), "opencode", "jsonc"})
-					}
-				}
-
 				candidates = append(candidates, struct{ path, agent, format string }{filepath.Join(parent, ".codex", "config.toml"), "codex", "toml"})
 			}
 			candidates = append(candidates, struct{ path, agent, format string }{filepath.Join(base, "config.toml"), "codex", "toml"})
@@ -66,8 +50,6 @@ func (s Service) List() inventory.Result {
 					candidate.path = nativedirs.ClaudeJSONPath(base)
 				case "codex":
 					candidate.path = filepath.Join(inventory.UserDirectory(base, "codex"), "config.toml")
-				case "opencode":
-					candidate.path = filepath.Join(inventory.UserDirectory(base, "opencode"), filepath.Base(candidate.path))
 				}
 			}
 		}
@@ -96,9 +78,6 @@ func (s Service) List() inventory.Result {
 				if err == nil {
 					var servers map[string]json.RawMessage
 					key := "mcpServers"
-					if candidate.agent == "opencode" {
-						key = "mcp"
-					}
 					if data, ok := root[key]; ok {
 						err = json.Unmarshal(data, &servers)
 					}
@@ -141,7 +120,7 @@ func (s Service) List() inventory.Result {
 		sources = append(sources, inventory.Source{Scope: "user", Path: agent + " MCP discovery", Agents: []string{agent}, Status: "unsupported"})
 	}
 	sources = append(sources, inventory.Source{Scope: "user", Path: "AX MCP common configuration (no defined storage contract)", Status: "unsupported"})
-	for _, agent := range []string{"agy", "claude", "codex", "opencode"} {
+	for _, agent := range []string{"agy", "claude", "codex"} {
 		path := agent + " dynamic/plugin/managed/CLI MCP sources"
 		if agent == "agy" {
 			path = "agy runtime/managed/CLI MCP sources"
