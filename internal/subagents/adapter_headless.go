@@ -94,8 +94,7 @@ func (d *Daemon) startHeadlessLocked() error {
 	if !ok {
 		return fmt.Errorf("%s has no native subagent execution adapter", agent)
 	}
-	role, err := d.preStartLocked()
-	if err != nil {
+	if err := d.preStartLocked(); err != nil {
 		return err
 	}
 	if agent == "pi" {
@@ -103,7 +102,7 @@ func (d *Daemon) startHeadlessLocked() error {
 			return err
 		}
 	}
-	req, err := d.parameterRequest(role)
+	req, err := d.parameterRequest()
 	if err != nil {
 		return err
 	}

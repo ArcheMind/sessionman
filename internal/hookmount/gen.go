@@ -166,9 +166,22 @@ func ClaudeSettings(executable string, base []byte, hooks []Hook) ([]byte, error
 // AgyPlugin returns the files of sm's agy plugin. The MCP registration is
 // always present; hooks.json only when an agy-supported hook is configured.
 func AgyPlugin(executable string, hooks []Hook) (map[string][]byte, error) {
+	return AgyPluginWithRole(executable, hooks, false)
+}
+
+// AgyPluginWithRole returns the files of sm's agy plugin, optionally adding
+// a SessionStart hook that injects SM_AGY_SYSTEM_PROMPT into interactive runs.
+func AgyPluginWithRole(executable string, hooks []Hook, includeRoleHook bool) (map[string][]byte, error) {
 	handlers, err := eventHandlers(executable, "agy", hooks)
 	if err != nil {
 		return nil, err
+	}
+	if includeRoleHook {
+		handlers["SessionStart"] = append(handlers["SessionStart"], nativeHandler{
+			Type:    "command",
+			Command: shellExecutable(executable) + " hook __agy_role",
+			Timeout: 5,
+		})
 	}
 	files := map[string][]byte{
 		"plugin.json": []byte("{\"name\":\"sessionman\",\"version\":\"1.0.0\",\"description\":\"SessionMan native MCP and portable hooks\"}\n"),

@@ -371,7 +371,7 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 		}
 	}
 	if agent.ID == "agy" {
-		release, err := injectAgySessionMan(a.Sessions.HomeDir, true)
+		release, err := injectAgySessionMan(a.Sessions.HomeDir, true, request.SystemPrompt != "")
 		if err != nil {
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}

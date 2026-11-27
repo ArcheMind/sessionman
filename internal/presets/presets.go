@@ -50,8 +50,25 @@ func (p Preset) EffectiveUnifiedConfig() bool {
 	return p.UnifiedConfig == nil || *p.UnifiedConfig
 }
 
+// RolePrompt returns the system-prompt text representing this preset's role,
+// or "" when the preset has no description.
+func (p Preset) RolePrompt() string {
+	if strings.TrimSpace(p.Description) == "" {
+		return ""
+	}
+	return "Role: " + p.Name + "\n" + p.Description
+}
+
+// Request builds the base agentparams.Request for this preset, including its role prompt.
 func (p Preset) Request() agentparams.Request {
-	return agentparams.Request{Model: p.Model, Effort: p.Effort, Mode: p.EffectiveMode(), UserConfig: p.UserConfig, Flags: append([]string(nil), p.Flags...)}
+	return agentparams.Request{
+		Model:        p.Model,
+		Effort:       p.Effort,
+		Mode:         p.EffectiveMode(),
+		SystemPrompt: p.RolePrompt(),
+		UserConfig:   p.UserConfig,
+		Flags:        append([]string(nil), p.Flags...),
+	}
 }
 
 func ModeLabel(mode string) string {

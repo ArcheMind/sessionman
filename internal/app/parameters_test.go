@@ -19,7 +19,7 @@ func TestCLIAndPresetUseTheSameInvocationParameters(t *testing.T) {
 	if started, err := app.startPreset(context.Background(), bufio.NewReader(strings.NewReader("")), app.Hooks.Home, preset); err != nil || !started {
 		t.Fatalf("start = %t, %v", started, err)
 	}
-	if err := app.Run(context.Background(), []string{"claude", "--model", "opus", "--effort", "high", "--mode", "yolo", "--user-config", "false", "--", "--verbose"}); err != nil {
+	if err := app.Run(context.Background(), []string{"claude", "--model", "opus", "--effort", "high", "--mode", "yolo", "--user-config", "false", "--append-system-prompt", preset.RolePrompt(), "--", "--verbose"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(runner.plans) != 2 {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/ArcheMind/sessionman/internal/hooks"
@@ -15,6 +16,9 @@ import (
 func (a App) hook(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "__session_start" {
 		return a.captureSessionStart(args[1:])
+	}
+	if len(args) > 0 && args[0] == "__agy_role" {
+		return a.emitAgyRoleContext()
 	}
 	if len(args) > 0 && args[0] == "__dispatch" {
 		return a.dispatchHook(ctx, args[1:])
@@ -109,4 +113,17 @@ func (a App) dispatchHook(ctx context.Context, args []string) error {
 		fmt.Fprint(a.Stdout, result.Stdout)
 	}
 	return nil
+}
+
+func (a App) emitAgyRoleContext() error {
+	role := os.Getenv("SM_AGY_SYSTEM_PROMPT")
+	if role == "" {
+		return nil
+	}
+	return json.NewEncoder(a.Stdout).Encode(map[string]any{
+		"hookSpecificOutput": map[string]string{
+			"hookEventName":     "SessionStart",
+			"additionalContext": role,
+		},
+	})
 }

@@ -19,5 +19,9 @@ func Plan(agent string, transport agentparams.Transport, request agentparams.Req
 	if len(plan.Params) > 0 {
 		return runtime.CommandPlan{}, fmt.Errorf("%s %s requires a native protocol session", agent, transport)
 	}
-	return runtime.CommandPlan{Executable: agent, Args: plan.Args, Cwd: request.Cwd, Agent: agent}, nil
+	var env map[string]string
+	if agent == "agy" && plan.SystemPrompt != "" {
+		env = map[string]string{"SM_AGY_SYSTEM_PROMPT": plan.SystemPrompt}
+	}
+	return runtime.CommandPlan{Executable: agent, Args: plan.Args, Cwd: request.Cwd, Agent: agent, Env: env}, nil
 }

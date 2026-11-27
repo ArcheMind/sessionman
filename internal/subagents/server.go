@@ -318,11 +318,7 @@ func (s *Server) callStart(raw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	role := ""
-	if o.Description != "" {
-		role = "Role: " + o.Name + "\n" + o.Description
-	}
-	resolved, err := agentparams.Resolve(o.Agent, o.Request(), agentparams.Request{Cwd: s.Cwd, Mode: in.Mode, SystemPrompt: role})
+	resolved, err := agentparams.Resolve(o.Agent, o.Request(), agentparams.Request{Cwd: s.Cwd, Mode: in.Mode})
 	if err != nil {
 		return "", fmt.Errorf("%w; no task started", err)
 	}

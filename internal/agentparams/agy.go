@@ -31,7 +31,7 @@ func buildAgy(t Transport, r Request) (Plan, error) {
 	if len(r.MCP.Servers) > 0 {
 		return unsupported("agy", t, "temporary MCP mount")
 	}
-	if r.SystemPrompt != "" {
+	if t == Exec && r.SystemPrompt != "" {
 		return unsupported("agy", t, "system prompt")
 	}
 	if r.UserConfig != nil && !*r.UserConfig {
@@ -54,5 +54,5 @@ func buildAgy(t Transport, r Request) (Plan, error) {
 		args = append(args, "--dangerously-skip-permissions")
 	}
 	args = append(args, r.Flags...)
-	return Plan{Args: args}, nil
+	return Plan{Args: args, SystemPrompt: r.SystemPrompt}, nil
 }

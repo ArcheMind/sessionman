@@ -38,7 +38,7 @@ func TestDaemonLaunchPlanUnifiedConfigTakeover(t *testing.T) {
 		},
 	}
 
-	req, err := d.parameterRequest("role")
+	req, err := d.parameterRequest()
 	if err != nil {
 		t.Fatal(err)
 	}

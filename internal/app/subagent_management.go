@@ -216,7 +216,7 @@ const agyPluginOwner = "sessionman native agy plugin\n"
 // injectAgySessionMan mounts SessionMan's MCP-only agy plugin via a symlink at
 // ~/.gemini/config/plugins/sessionman when SM_CONFIG_DIR is unset, and returns
 // a release function that unlinks it once the last sm agy session exits.
-func injectAgySessionMan(home string, write bool) (func(), error) {
+func injectAgySessionMan(home string, write bool, roleHook ...bool) (func(), error) {
 	noop := func() {}
 	if !write || nativedirs.FromEnv().ConfigDir != "" {
 		return noop, nil
@@ -225,7 +225,8 @@ func injectAgySessionMan(home string, write bool) (func(), error) {
 	if err != nil {
 		return noop, err
 	}
-	files, err := hookmount.AgyPlugin(executable, nil)
+	includeRole := len(roleHook) > 0 && roleHook[0]
+	files, err := hookmount.AgyPluginWithRole(executable, nil, includeRole)
 	if err != nil {
 		return noop, err
 	}

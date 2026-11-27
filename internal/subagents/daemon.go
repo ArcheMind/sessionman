@@ -330,23 +330,16 @@ func (d *Daemon) deliverQueue() {
 	}
 }
 
-// preStartLocked runs the shared pre-round checks before a native process spawn and returns
-// the role instructions.
-func (d *Daemon) preStartLocked() (string, error) {
+// preStartLocked runs the shared pre-round checks before a native process spawn.
+func (d *Daemon) preStartLocked() error {
 	a := d.agent
 	if current, err := presets.Read(d.Home, a.Option.Name); err != nil || !current.Equal(a.Option) {
-		return "", fmt.Errorf("original preset %s changed or was removed before execution; no replacement selected", a.Option.Name)
+		return fmt.Errorf("original preset %s changed or was removed before execution; no replacement selected", a.Option.Name)
 	}
-	if err := checkWorktree(a); err != nil {
-		return "", err
-	}
-	if a.Option.Description != "" {
-		return "Role: " + a.Option.Name + "\n" + a.Option.Description, nil
-	}
-	return "", nil
+	return checkWorktree(a)
 }
 
-func (d *Daemon) parameterRequest(role string) (agentparams.Request, error) {
+func (d *Daemon) parameterRequest() (agentparams.Request, error) {
 	a := d.agent
 	mcp := agentparams.MCPConfig{Servers: map[string]agentparams.MCPServer{}}
 	if a.Option.Agent != "pi" && d.meta.AxBinary != "" && d.meta.DelegationDepth < MaxDelegationDepth {
@@ -363,7 +356,7 @@ func (d *Daemon) parameterRequest(role string) (agentparams.Request, error) {
 		mcp.Servers["sessionman"] = agentparams.MCPServer{Command: d.meta.AxBinary, Args: []string{"mcp", "serve"}, Env: env}
 	}
 	return agentparams.Resolve(a.Option.Agent, a.Option.Request(), agentparams.Request{
-		Cwd: a.Cwd, Session: a.Session, Mode: a.Mode, SystemPrompt: role, MCP: mcp,
+		Cwd: a.Cwd, Session: a.Session, Mode: a.Mode, MCP: mcp,
 	})
 }
 

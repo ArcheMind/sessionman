@@ -26,7 +26,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Version = "0.22.0"
+var Version = "0.22.1"
 
 type App struct {
 	Registry   drivers.Registry
@@ -409,7 +409,7 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 		}
 	}
 	if agent.ID == "agy" {
-		release, err := injectAgySessionMan(a.Sessions.HomeDir, !dryRun)
+		release, err := injectAgySessionMan(a.Sessions.HomeDir, !dryRun, request.SystemPrompt != "")
 		if err != nil {
 			return err
 		}
@@ -1042,7 +1042,7 @@ func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, det
 			return err
 		}
 	case "agy":
-		release, err := injectAgySessionMan(a.Sessions.HomeDir, !dryRun)
+		release, err := injectAgySessionMan(a.Sessions.HomeDir, !dryRun, request.SystemPrompt != "")
 		if err != nil {
 			return err
 		}

@@ -251,7 +251,7 @@ func TestAgyStopTerminatesDetachedDescendant(t *testing.T) {
 
 func TestAgyNestedMCPAndUnknownExecutor(t *testing.T) {
 	d := &Daemon{Dir: "/agent", agent: &ExternalSubagentState{Cwd: "/child-work", Option: presets.Preset{Agent: "agy"}}, meta: AgentMeta{AxBinary: "/sm", DelegationDepth: 1}}
-	req, err := d.parameterRequest("")
+	req, err := d.parameterRequest()
 	if err != nil {
 		t.Fatal(err)
 	}
