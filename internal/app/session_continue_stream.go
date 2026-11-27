@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	transcript "github.com/ArcheMind/sessionman-protocol/go"
 	"github.com/ArcheMind/sessionman/internal/nativedirs"
 	"github.com/ArcheMind/sessionman/internal/sessions"
 )
@@ -206,16 +207,16 @@ func (s *continueTranscriptStream) readStore() error {
 	if !changed {
 		return nil
 	}
-	full, ok := sessions.ParseRecords(s.agent, s.records)
-	if !ok || len(full.Messages) < s.prefix {
+	full, ok := sessions.ParseProtocolRecords(s.agent, s.records, s.path)
+	if !ok || len(full.Entries) < s.prefix {
 		return nil
 	}
 	if s.agent != "pi" && s.sessionID != "" && full.ID != s.sessionID {
 		return fmt.Errorf("%s streaming store identity %s differs from %s", s.agent, full.ID, s.sessionID)
 	}
-	delta := continueDelta(full.Messages, s.prefix)
+	delta := continueDeltaEntries(full.Entries, s.prefix)
 	if s.agent == "pi" {
-		delta = sessions.RechainMessages(delta)
+		delta = sessions.RechainEntries(delta)
 	}
 	if s.agent == "pi" && len(delta) > 0 {
 		// Section replacements can remove an earlier system projection. Hold that tail
@@ -239,19 +240,20 @@ func (s *continueTranscriptStream) readStore() error {
 			}
 			stable[id] = true
 		}
-		for i, message := range delta {
-			if !stable[message.ID] {
+		for i, entry := range delta {
+			if !stable[entry.ID] {
 				delta = delta[:i]
 				break
 			}
 		}
 	}
 	// The Codex converter can still append reasoning/tool blocks to the
-	// trailing assistant. A following message closes that canonical record.
-	if s.agent == "codex" && len(delta) > 0 && delta[len(delta)-1].Role == "assistant" {
+	// trailing assistant. A following entry closes that canonical record.
+	if s.agent == "codex" && len(delta) > 0 && delta[len(delta)-1].Source == transcript.SourceS2 {
 		delta = delta[:len(delta)-1]
 	}
-	return s.emit(namespaceDelta(delta, continueRunID(s.agent, s.token, full.ID)))
+	namespaced, _ := namespaceEntryDelta(delta, continueRunID(s.agent, s.token, full.ID))
+	return s.emit(namespaced)
 }
 
 func (s *continueTranscriptStream) streamWriter() *continueStreamWriter {
@@ -261,25 +263,25 @@ func (s *continueTranscriptStream) streamWriter() *continueStreamWriter {
 	return s.writer
 }
 
-func (s *continueTranscriptStream) emit(messages []sessions.Message) error {
-	if len(messages) < len(s.emitted) {
-		return fmt.Errorf("%s streaming transcript lost previously emitted messages", s.agent)
+func (s *continueTranscriptStream) emit(entries []sessions.Entry) error {
+	if len(entries) < len(s.emitted) {
+		return fmt.Errorf("%s streaming transcript lost previously emitted entries", s.agent)
 	}
-	for i, message := range messages {
-		encoded, err := json.Marshal(message)
+	for i, entry := range entries {
+		encoded, err := json.Marshal(entry)
 		if err != nil {
 			return err
 		}
 		if i < len(s.emitted) {
 			if !bytes.Equal(encoded, s.emitted[i]) {
-				return fmt.Errorf("%s streaming message %s changed after emission", s.agent, message.ID)
+				return fmt.Errorf("%s streaming entry %s changed after emission", s.agent, entry.ID)
 			}
 			continue
 		}
 		if err := s.streamWriter().WriteEvent(struct {
-			Type    string           `json:"type"`
-			Message sessions.Message `json:"message"`
-		}{"message", message}); err != nil {
+			Type  string         `json:"type"`
+			Entry sessions.Entry `json:"entry"`
+		}{"entry", entry}); err != nil {
 			return err
 		}
 		s.emitted = append(s.emitted, encoded)
@@ -298,12 +300,12 @@ func (s *continueTranscriptStream) stop() error {
 	return s.err
 }
 
-func (s *continueTranscriptStream) finish(out sessions.Session) error {
-	if err := s.emit(out.Messages); err != nil {
+func (s *continueTranscriptStream) finish(out sessions.ProtocolSession) error {
+	if err := s.emit(out.Entries); err != nil {
 		return err
 	}
 	return s.streamWriter().WriteTerminal(struct {
-		Type    string           `json:"type"`
-		Session sessions.Session `json:"session"`
+		Type    string                   `json:"type"`
+		Session sessions.ProtocolSession `json:"session"`
 	}{"result", out})
 }

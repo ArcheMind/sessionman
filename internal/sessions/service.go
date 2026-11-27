@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ArcheMind/sessionman/internal/nativedirs"
 	transcript "github.com/ArcheMind/sessionman-protocol/go"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 )
 
 type Agent struct {

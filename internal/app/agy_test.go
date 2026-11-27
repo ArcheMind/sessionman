@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	transcript "github.com/ArcheMind/sessionman-protocol/go"
 	"github.com/ArcheMind/sessionman/internal/presets"
 	"github.com/ArcheMind/sessionman/internal/runtime"
 	"github.com/ArcheMind/sessionman/internal/sessions"
@@ -194,11 +195,8 @@ func TestAgyContinueReparsesProjectedHistoryPrefix(t *testing.T) {
 	if err := app.Run(context.Background(), []string{"session", "continue", "agy", "--model", "native-future-model"}); err != nil {
 		t.Fatal(err)
 	}
-	var delta sessions.Session
-	if err := json.Unmarshal(stdout.Bytes(), &delta); err != nil {
-		t.Fatal(err)
-	}
-	if len(delta.Messages) != 1 || sessions.MessageText(delta.Messages[0]) != "new answer" || runner.prompt != "new prompt\nwith special \"quotes\"" || runner.plan.Env["SM_MCP_CWD"] != workspace {
+	delta := decodeDelta(t, &stdout)
+	if len(delta.Entries) != 1 || transcript.TextContent(delta.Entries[0]) != "new answer" || runner.prompt != "new prompt\nwith special \"quotes\"" || runner.plan.Env["SM_MCP_CWD"] != workspace {
 		t.Fatalf("delta=%+v prompt=%q plan=%+v", delta, runner.prompt, runner.plan)
 	}
 	if runner.modelSet != "native-future-model" || len(runner.plan.Args) < 2 || runner.plan.Args[0] != "acp" || runner.plan.Args[1] != "--stdio" {

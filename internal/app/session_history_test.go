@@ -264,3 +264,60 @@ func TestResumeRestoresHistoryBeforeSelectionAndNativeLaunch(t *testing.T) {
 		})
 	}
 }
+
+func TestOffloadHistoryLeadingTabBlockScalarRoundTrip(t *testing.T) {
+	application := New(false, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	application.Sessions = sessions.Service{HomeDir: t.TempDir()}
+
+	tabResult1 := "\treturn true\n}"
+	tabResult2 := "\tline1\n\tline2\n"
+	original := sessions.Session{
+		ID:       "tab-roundtrip",
+		Provider: "claude",
+		Messages: []sessions.Message{
+			userMsg("msg_u1", "check code"),
+			{ID: "msg_a1", Role: "assistant", Content: []sessions.ContentBlock{
+				{Type: "tool_use", ID: "call1", Name: "Bash", Input: map[string]any{"command": "sed -n 1,5p a.go"}},
+			}},
+			toolMsg("msg_t1", "call1", tabResult1),
+			toolMsg("msg_t2", "call2", tabResult2),
+			assistantMsg("msg_end1", "done"),
+			userMsg("msg_u2", "next"),
+			assistantMsg("msg_a2", "ok"),
+		},
+	}
+
+	offloaded, err := application.applySessionTurns(original, []turnDisposition{turnOffload, turnKeep})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, changed, err := loadSessionHistory(offloaded)
+	if err != nil || !changed {
+		t.Fatalf("loadSessionHistory() changed = %t, err = %v", changed, err)
+	}
+	if restored.Messages[2].Result != tabResult1 {
+		t.Fatalf("restored tool result 1 = %q, want %q", restored.Messages[2].Result, tabResult1)
+	}
+	if restored.Messages[3].Result != tabResult2 {
+		t.Fatalf("restored tool result 2 = %q, want %q", restored.Messages[3].Result, tabResult2)
+	}
+}
+
+func TestUnmarshalOffloadHistoryRepairsLegacyTabBlockScalar(t *testing.T) {
+	legacyYAML := []byte(`id: legacy-tab
+provider: claude
+messages:
+  - id: msg_1
+    role: tool
+    result: |-
+      ` + "\t" + `return true
+      }
+`)
+	var out sessions.Session
+	if err := unmarshalOffloadHistory(legacyYAML, &out); err != nil {
+		t.Fatalf("unmarshalOffloadHistory() error = %v", err)
+	}
+	if len(out.Messages) != 1 || out.Messages[0].Result != "\treturn true\n}" {
+		t.Fatalf("unexpected decoded messages: %#v", out.Messages)
+	}
+}

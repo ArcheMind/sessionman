@@ -15,24 +15,25 @@ import (
 	"testing"
 	"time"
 
+	transcript "github.com/ArcheMind/sessionman-protocol/go"
 	"github.com/ArcheMind/sessionman/internal/runtime"
 	"github.com/ArcheMind/sessionman/internal/sessions"
 )
 
 type duplexEvent struct {
-	Type        string           `json:"type"`
-	ID          string           `json:"id"`
-	Disposition string           `json:"disposition"`
-	Error       string           `json:"error"`
-	Message     sessions.Message `json:"message"`
-	Session     sessions.Session `json:"session"`
+	Type        string                   `json:"type"`
+	ID          string                   `json:"id"`
+	Disposition string                   `json:"disposition"`
+	Error       string                   `json:"error"`
+	Entry       sessions.Entry           `json:"entry"`
+	Session     sessions.ProtocolSession `json:"session"`
 }
 
-func decodeDuplexEvents(t *testing.T, output string) ([]sessions.Message, []duplexEvent, *sessions.Session) {
+func decodeDuplexEvents(t *testing.T, output string) ([]sessions.Entry, []duplexEvent, *sessions.ProtocolSession) {
 	t.Helper()
-	var messages []sessions.Message
+	var entries []sessions.Entry
 	var acks []duplexEvent
-	var result *sessions.Session
+	var result *sessions.ProtocolSession
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -48,11 +49,17 @@ func decodeDuplexEvents(t *testing.T, output string) ([]sessions.Message, []dupl
 			t.Fatalf("event after terminal result: %s", line)
 		}
 		switch ev.Type {
-		case "message":
-			messages = append(messages, ev.Message)
+		case "entry":
+			if err := transcript.ValidateEntry(ev.Entry); err != nil {
+				t.Fatalf("invalid streamed 2.0 entry: %v", err)
+			}
+			entries = append(entries, ev.Entry)
 		case "steer_ack":
 			acks = append(acks, ev)
 		case "result":
+			if err := transcript.ValidateSession(ev.Session); err != nil {
+				t.Fatalf("invalid terminal 2.0 session: %v", err)
+			}
 			s := ev.Session
 			result = &s
 		default:
@@ -62,7 +69,7 @@ func decodeDuplexEvents(t *testing.T, output string) ([]sessions.Message, []dupl
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
 	}
-	return messages, acks, result
+	return entries, acks, result
 }
 
 func TestSessionContinueDuplexFlagValidation(t *testing.T) {
@@ -133,7 +140,7 @@ func TestSessionContinueDuplexStartsOnLine1AndIgnoresStdinEOF(t *testing.T) {
 		t.Fatalf("duplex run failed after stdin EOF: %v", err)
 	}
 	msgs, _, final := decodeDuplexEvents(t, capture.snapshot())
-	if final == nil || len(msgs) != 1 || sessions.MessageText(msgs[0]) != "done" {
+	if final == nil || len(msgs) != 1 || transcript.TextContent(msgs[0]) != "done" {
 		t.Fatalf("unexpected output: %s", capture.snapshot())
 	}
 }
@@ -255,11 +262,11 @@ func TestSessionContinueDuplexPiRPCSteerAndCancel(t *testing.T) {
 		if len(acks) != 1 || acks[0].ID != "p1" || acks[0].Disposition != "steered" {
 			t.Fatalf("unexpected pi acks: %+v", acks)
 		}
-		if final == nil || len(msgs) != 3 || !reflect.DeepEqual(msgs, final.Messages) {
-			t.Fatalf("expected 3 chronological pi messages, got %d: %+v", len(msgs), msgs)
+		if final == nil || len(msgs) != 3 || !reflect.DeepEqual(msgs, final.Entries) {
+			t.Fatalf("expected 3 chronological pi entries, got %d: %+v", len(msgs), msgs)
 		}
-		if msgs[1].Role != "user" || sessions.MessageText(msgs[1]) != "check pi" {
-			t.Fatalf("missing steered user message in pi delta: %+v", msgs)
+		if msgs[1].Source != transcript.SourceUser || transcript.TextContent(msgs[1]) != "check pi" {
+			t.Fatalf("missing steered user entry in pi delta: %+v", msgs)
 		}
 	})
 
@@ -332,9 +339,9 @@ func TestContinueStreamWriterConcurrentLockingAndTerminalBarrier(t *testing.T) {
 	wg.Wait()
 
 	if err := w.WriteTerminal(struct {
-		Type    string           `json:"type"`
-		Session sessions.Session `json:"session"`
-	}{"result", sessions.Session{ID: "done"}}); err != nil {
+		Type    string                   `json:"type"`
+		Session sessions.ProtocolSession `json:"session"`
+	}{"result", sessions.ProtocolSession{ProtocolVersion: transcript.ProtocolVersion, ID: "done", Provider: "claude"}}); err != nil {
 		t.Fatal(err)
 	}
 	// Post-terminal writes must be silently dropped so nothing follows result.
@@ -361,7 +368,7 @@ func TestSessionContinueNonDuplexMultilineStdinBackwardsCompat(t *testing.T) {
 		t.Fatalf("non-duplex multiline stdin failed: %v", err)
 	}
 	msgs, _, final := decodeDuplexEvents(t, capture.snapshot())
-	if final == nil || len(msgs) != 1 || sessions.MessageText(msgs[0]) != "compat ok" {
+	if final == nil || len(msgs) != 1 || transcript.TextContent(msgs[0]) != "compat ok" {
 		t.Fatalf("unexpected non-duplex output: %s", capture.snapshot())
 	}
 }

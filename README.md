@@ -251,13 +251,13 @@ sm --json session continue claude --mode yolo --mcp-config mcp.json < transcript
 sm session continue claude --stream < transcript.json
 ```
 
-`session continue --stream` writes NDJSON: completed canonical transcript records
-as `{"type":"message","message":...}`, then exactly one
-`{"type":"result","session":...}` after success. The result is the authoritative
-delta; message events form an identical ordered prefix, with the same IDs,
+`session continue --stream` writes NDJSON: completed canonical Protocol 2.0 transcript entries
+as `{"type":"entry","entry":...}`, then exactly one
+`{"type":"result","session":...}` (a Protocol 2.0 session) after success. The result is the authoritative
+delta; entry events form an identical ordered prefix, with the same IDs,
 parents, tool IDs, content, and timestamps. Imported history and the echoed prompt
 are excluded. Errors and cancellation produce no successful result. Without
-`--stream`, the existing final structured output is unchanged.
+`--stream`, the final structured output is the same Protocol 2.0 delta session.
 
 Claude, Codex, and Pi emit messages during execution. Codex's trailing assistant record is
 held until a following message closes it (its parser merges consecutive reasoning

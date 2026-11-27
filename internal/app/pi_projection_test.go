@@ -62,17 +62,17 @@ func TestPiContinueProjectsHistoryInstructionsWithStreamParity(t *testing.T) {
 			if err := app.Run(context.Background(), args); err != nil {
 				t.Fatal(err)
 			}
-			var delta sessions.Session
+			var delta sessions.ProtocolSession
 			if stream {
-				messages, final := decodeContinueEvents(t, stdout.String())
-				if final == nil || !reflect.DeepEqual(messages, final.Messages) {
+				entries, final := decodeContinueEvents(t, stdout.String())
+				if final == nil || !reflect.DeepEqual(entries, final.Entries) {
 					t.Fatal(stdout.String())
 				}
 				delta = *final
 			} else {
 				delta = decodeDelta(t, stdout)
 			}
-			if len(delta.Messages) != 3 || delta.Messages[0].Role != "assistant" || delta.Messages[1].ToolName != "bash" {
+			if len(delta.Entries) != 3 || delta.Entries[0].Source != "s2" || delta.Entries[1].ToolResult == nil || delta.Entries[1].ToolResult.ToolName != "bash" {
 				t.Fatalf("delta=%+v", delta)
 			}
 		})
@@ -159,7 +159,7 @@ func TestPiStreamBuffersReplaceableSystemTail(t *testing.T) {
 					deadline := time.Now().Add(2 * time.Second)
 					for {
 						messages, final := decodeContinueEvents(t, capture.snapshot())
-						if len(messages) == 2 && final == nil && messages[0].ParentID == "" {
+						if len(messages) == 2 && final == nil && messages[0].ParentID == nil {
 							break
 						}
 						if time.Now().After(deadline) {
@@ -204,11 +204,11 @@ func TestPiStreamBuffersReplaceableSystemTail(t *testing.T) {
 			if err := app.Run(context.Background(), []string{"session", "continue", "pi", "--model", "provider/model", "--stream"}); err != nil {
 				t.Fatal(err)
 			}
-			messages, final := decodeContinueEvents(t, capture.snapshot())
-			if final == nil || !reflect.DeepEqual(messages, final.Messages) {
+			entries, final := decodeContinueEvents(t, capture.snapshot())
+			if final == nil || !reflect.DeepEqual(entries, final.Entries) {
 				t.Fatalf("stream/final mismatch: %s", capture.snapshot())
 			}
-			_, prompt := sessions.PreparePiTranscript(*final, "")
+			_, prompt := sessions.PreparePiProtocolTranscript(*final, "")
 			want := "B"
 			if clear {
 				want = ""
@@ -216,8 +216,8 @@ func TestPiStreamBuffersReplaceableSystemTail(t *testing.T) {
 			if prompt != want {
 				t.Fatalf("restored prompt=%q want=%q", prompt, want)
 			}
-			if len(messages) < 4 || messages[2].Role != "assistant" || messages[2].ParentID != messages[1].ID {
-				t.Fatalf("broken filtered parent: %+v", messages)
+			if len(entries) < 4 || entries[2].Source != "s2" || entries[2].ParentID == nil || *entries[2].ParentID != entries[1].ID {
+				t.Fatalf("broken filtered parent: %+v", entries)
 			}
 		})
 	}

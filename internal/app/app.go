@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"unicode"
 
+	transcript "github.com/ArcheMind/sessionman-protocol/go"
 	"github.com/ArcheMind/sessionman/internal/agentparams"
 	"github.com/ArcheMind/sessionman/internal/drivers"
 	"github.com/ArcheMind/sessionman/internal/hooks"
@@ -21,7 +23,6 @@ import (
 	"github.com/ArcheMind/sessionman/internal/runtime"
 	"github.com/ArcheMind/sessionman/internal/sessions"
 	"github.com/ArcheMind/sessionman/internal/skills"
-	transcript "github.com/ArcheMind/sessionman-protocol/go"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1358,10 +1359,18 @@ func writeStructured(writer io.Writer, value any, format OutputFormat) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(value)
 	case OutputYAML:
-		encoder := yaml.NewEncoder(writer)
+		var buf bytes.Buffer
+		encoder := yaml.NewEncoder(&buf)
 		encoder.SetIndent(2)
-		defer encoder.Close()
-		return encoder.Encode(value)
+		if err := encoder.Encode(value); err != nil {
+			_ = encoder.Close()
+			return err
+		}
+		if err := encoder.Close(); err != nil {
+			return err
+		}
+		_, err := writer.Write(repairYAMLBlockScalarTabs(buf.Bytes()))
+		return err
 	default:
 		return fmt.Errorf("unsupported structured output format %q", format)
 	}

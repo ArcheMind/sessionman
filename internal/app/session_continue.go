@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	transcript "github.com/ArcheMind/sessionman-protocol/go"
 	"github.com/ArcheMind/sessionman/internal/agentparams"
 	"github.com/ArcheMind/sessionman/internal/drivers"
 	"github.com/ArcheMind/sessionman/internal/execution"
@@ -21,7 +22,6 @@ import (
 	"github.com/ArcheMind/sessionman/internal/nativedirs"
 	"github.com/ArcheMind/sessionman/internal/runtime"
 	"github.com/ArcheMind/sessionman/internal/sessions"
-	transcript "github.com/ArcheMind/sessionman-protocol/go"
 )
 
 const sessionContinueUsage = "usage: sm [--json|--yaml] session continue <target-agent> [file] [--stream] [--duplex] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>] [-- <native args...>]"
@@ -119,6 +119,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 
 	token := ""
 	prefix := 0
+	runtimePrefix := 0
 	// Pi always gets a session file (even an empty one): --session is how pi
 	// both resumes and records, and the recorded file is the delta source.
 	if len(history) > 0 || agent.ID == "pi" {
@@ -133,11 +134,12 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		before, err := sessions.ParseNativeSessionFile(agent.ID, importPath)
+		before, err := sessions.ParseNativeProtocolFile(agent.ID, importPath)
 		if err != nil {
 			return err
 		}
-		prefix = len(before.Messages)
+		prefix = len(before.Entries)
+		runtimePrefix = len(before.RuntimeEvents)
 	}
 
 	request.Cwd, request.Session = workspace, token
@@ -191,38 +193,41 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	full, err := sessions.ParseNativeSessionFile(agent.ID, resultPath)
+	full, err := sessions.ParseNativeProtocolFile(agent.ID, resultPath)
 	if err != nil {
 		return err
 	}
-	if len(full.Messages) < prefix {
-		return fmt.Errorf("%s recorded fewer messages (%d) than the imported history (%d)", agent.ID, len(full.Messages), prefix)
+	if len(full.Entries) < prefix {
+		return fmt.Errorf("%s recorded fewer entries (%d) than the imported history (%d)", agent.ID, len(full.Entries), prefix)
 	}
-	delta := continueDelta(full.Messages, prefix)
+	delta := continueDeltaEntries(full.Entries, prefix)
 	if agent.ID == "pi" {
-		delta = sessions.RechainMessages(delta)
+		delta = sessions.RechainEntries(delta)
 	}
 	if len(delta) == 0 {
-		return fmt.Errorf("%s completed the turn but recorded no new messages", agent.ID)
+		return fmt.Errorf("%s completed the turn but recorded no new entries", agent.ID)
 	}
-	delta = namespaceDelta(delta, continueRunID(agent.ID, token, run.sessionID))
+	runID := continueRunID(agent.ID, token, run.sessionID)
+	delta, runtimeEvents := namespaceProtocolDelta(delta, full.RuntimeEvents, runtimePrefix, runID)
 
-	out := sessions.Session{
-		ID:           run.sessionID,
-		Provider:     agent.ID,
-		Workspace:    workspace,
-		StartedAt:    full.StartedAt,
-		UpdatedAt:    full.UpdatedAt,
-		MessageCount: len(delta),
-		Source:       "continue",
-		Messages:     delta,
+	out := sessions.ProtocolSession{
+		ProtocolVersion: transcript.ProtocolVersion,
+		ID:              run.sessionID,
+		Provider:        agent.ID,
+		Workspace:       workspace,
+		StartedAt:       full.StartedAt,
+		UpdatedAt:       full.UpdatedAt,
+		EntryCount:      len(delta),
+		Source:          "continue",
+		Entries:         delta,
+		RuntimeEvents:   runtimeEvents,
 	}
 	if out.ID == "" {
 		out.ID = full.ID
 	}
 	if stream {
 		if transcriptStream == nil {
-			// AGY messages are emitted only after the final native transcript is available.
+			// AGY entries are emitted only after the final native transcript is available.
 			transcriptStream = &continueTranscriptStream{app: a, writer: streamWriter, agent: agent.ID}
 		}
 		return transcriptStream.finish(out)
@@ -230,14 +235,14 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	return writeStructured(a.Stdout, out, a.structuredDefault())
 }
 
-func continueDelta(messages []sessions.Message, prefix int) []sessions.Message {
-	if len(messages) < prefix {
+func continueDeltaEntries(entries []sessions.Entry, prefix int) []sessions.Entry {
+	if len(entries) < prefix {
 		return nil
 	}
-	delta := messages[prefix:]
+	delta := entries[prefix:]
 	// The caller owns the prompt and history; per-turn native setup before
 	// the first assistant must not snowball into its accumulated transcript.
-	for len(delta) > 0 && delta[0].Role != "assistant" {
+	for len(delta) > 0 && delta[0].Source != transcript.SourceS2 {
 		delta = delta[1:]
 	}
 	return delta
@@ -411,24 +416,48 @@ func continueRunID(agentID, token, sessionID string) string {
 	return sessionID
 }
 
-func namespaceDelta(messages []sessions.Message, runID string) []sessions.Message {
-	local := make(map[string]string, len(messages))
-	for _, message := range messages {
-		if message.ID != "" {
-			local[message.ID] = runID + ":" + message.ID
+func namespaceEntryDelta(entries []sessions.Entry, runID string) ([]sessions.Entry, map[string]string) {
+	local := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		if entry.ID != "" {
+			local[entry.ID] = runID + ":" + entry.ID
 		}
 	}
-	out := make([]sessions.Message, len(messages))
-	for i, message := range messages {
-		if mapped, ok := local[message.ID]; ok {
-			message.ID = mapped
+	out := make([]sessions.Entry, len(entries))
+	for i, entry := range entries {
+		if mapped, ok := local[entry.ID]; ok {
+			entry.ID = mapped
 		}
-		if mapped, ok := local[message.ParentID]; ok {
-			message.ParentID = mapped
+		if entry.ParentID != nil {
+			if mapped, ok := local[*entry.ParentID]; ok {
+				p := mapped
+				entry.ParentID = &p
+			} else {
+				p := *entry.ParentID
+				entry.ParentID = &p
+			}
 		}
-		out[i] = message
+		out[i] = entry
 	}
-	return out
+	return out, local
+}
+
+func namespaceProtocolDelta(entries []sessions.Entry, events []sessions.RuntimeEvent, runtimePrefix int, runID string) ([]sessions.Entry, []sessions.RuntimeEvent) {
+	outEntries, local := namespaceEntryDelta(entries, runID)
+	if len(events) <= runtimePrefix {
+		return outEntries, nil
+	}
+	tail := events[runtimePrefix:]
+	outEvents := make([]sessions.RuntimeEvent, len(tail))
+	for i, ev := range tail {
+		if ev.AfterEntryID != "" {
+			if mapped, ok := local[ev.AfterEntryID]; ok {
+				ev.AfterEntryID = mapped
+			}
+		}
+		outEvents[i] = ev
+	}
+	return outEntries, outEvents
 }
 
 func readMCPConfig(value string) (agentparams.MCPConfig, error) {

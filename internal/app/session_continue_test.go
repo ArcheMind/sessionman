@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	transcript "github.com/ArcheMind/sessionman-protocol/go"
 	"github.com/ArcheMind/sessionman/internal/runtime"
 	"github.com/ArcheMind/sessionman/internal/sessions"
 )
@@ -355,11 +356,14 @@ func testWorkspace(t *testing.T) string {
 	return workspace
 }
 
-func decodeDelta(t *testing.T, stdout *bytes.Buffer) sessions.Session {
+func decodeDelta(t *testing.T, stdout *bytes.Buffer) sessions.ProtocolSession {
 	t.Helper()
-	var delta sessions.Session
+	var delta sessions.ProtocolSession
 	if err := json.Unmarshal(stdout.Bytes(), &delta); err != nil {
 		t.Fatalf("stdout %q: %v", stdout.String(), err)
+	}
+	if err := transcript.ValidateSession(delta); err != nil {
+		t.Fatalf("invalid 2.0 delta %q: %v", stdout.String(), err)
 	}
 	return delta
 }
@@ -375,22 +379,22 @@ func TestSessionContinueClaudeEmitsNamespacedDelta(t *testing.T) {
 		t.Fatalf("prompts = %q", runner.prompts)
 	}
 	delta := decodeDelta(t, stdout)
-	if delta.Provider != "claude" || delta.Source != "continue" || delta.Workspace != workspace {
+	if delta.ProtocolVersion != transcript.ProtocolVersion || delta.Provider != "claude" || delta.Source != "continue" || delta.Workspace != workspace {
 		t.Fatalf("delta = %+v", delta)
 	}
-	if len(delta.Messages) != 1 {
-		t.Fatalf("delta messages = %+v", delta.Messages)
+	if len(delta.Entries) != 1 || delta.EntryCount != 1 {
+		t.Fatalf("delta entries = %+v", delta.Entries)
 	}
-	message := delta.Messages[0]
-	if message.Role != "assistant" || sessions.MessageText(message) != "the answer" {
-		t.Fatalf("message = %+v", message)
+	entry := delta.Entries[0]
+	if entry.Source != transcript.SourceS2 || entry.Mutability != transcript.MutabilityDelta || transcript.TextContent(entry) != "the answer" {
+		t.Fatalf("entry = %+v", entry)
 	}
 	if len(runner.resumedIDs) == 0 || runner.resumedIDs[len(runner.resumedIDs)-1] == "" {
 		t.Fatalf("claude ACP missing sessionId: %q", runner.resumedIDs)
 	}
 	token := runner.resumedIDs[len(runner.resumedIDs)-1]
-	if !strings.HasPrefix(message.ID, token+":") {
-		t.Fatalf("id %q not namespaced by %q", message.ID, token)
+	if !strings.HasPrefix(entry.ID, token+":") {
+		t.Fatalf("id %q not namespaced by %q", entry.ID, token)
 	}
 	if delta.ID != token {
 		t.Fatalf("delta session id %q != resumed session %q", delta.ID, token)
@@ -418,8 +422,8 @@ func TestSessionContinueClaudeFreshSessionWithoutHistory(t *testing.T) {
 	if delta.ID != runner.fresh {
 		t.Fatalf("delta.ID = %q", delta.ID)
 	}
-	if len(delta.Messages) != 1 || sessions.MessageText(delta.Messages[0]) != "welcome" {
-		t.Fatalf("delta = %+v", delta.Messages)
+	if len(delta.Entries) != 1 || transcript.TextContent(delta.Entries[0]) != "welcome" {
+		t.Fatalf("delta = %+v", delta.Entries)
 	}
 }
 
@@ -431,11 +435,11 @@ func TestSessionContinueCodexEmitsDeltaFromConfiguredHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	delta := decodeDelta(t, stdout)
-	if delta.Provider != "codex" || len(delta.Messages) != 1 {
+	if delta.Provider != "codex" || len(delta.Entries) != 1 {
 		t.Fatalf("delta = %+v", delta)
 	}
-	if sessions.MessageText(delta.Messages[0]) != "codex answer" {
-		t.Fatalf("message = %+v", delta.Messages[0])
+	if transcript.TextContent(delta.Entries[0]) != "codex answer" {
+		t.Fatalf("entry = %+v", delta.Entries[0])
 	}
 	if len(runner.plans) != 1 {
 		t.Fatalf("expected 1 plan, got %d", len(runner.plans))
@@ -459,8 +463,8 @@ func TestSessionContinuePiEmitsDelta(t *testing.T) {
 	if delta.Provider != "pi" || delta.ID != "pi-native" {
 		t.Fatalf("delta = %+v", delta)
 	}
-	if len(delta.Messages) != 1 || sessions.MessageText(delta.Messages[0]) != "pi answer" {
-		t.Fatalf("messages = %+v", delta.Messages)
+	if len(delta.Entries) != 1 || transcript.TextContent(delta.Entries[0]) != "pi answer" {
+		t.Fatalf("entries = %+v", delta.Entries)
 	}
 }
 
@@ -564,9 +568,16 @@ func TestSessionContinueRejectsAgentsWithoutAdapter(t *testing.T) {
 func TestSessionContinueRoundTripAppendsDeltaAsIs(t *testing.T) {
 	workspace := testWorkspace(t)
 	secret := "Remember the secret passphrase PINEAPPLE-77."
-	first := sessions.Session{ID: "turn-1", Provider: "harness", Workspace: workspace, Messages: []sessions.Message{
-		{ID: "u1", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: secret}}},
-	}, MessageCount: 1}
+	first := sessions.ProtocolSession{
+		ProtocolVersion: transcript.ProtocolVersion,
+		ID:              "turn-1",
+		Provider:        "harness",
+		Workspace:       workspace,
+		Entries: []sessions.Entry{
+			{ID: "u1", Source: transcript.SourceUser, Mutability: transcript.MutabilityDelta, Content: []sessions.ContentBlock{{Type: "text", Text: secret}}},
+		},
+		EntryCount: 1,
+	}
 	firstInput, err := json.Marshal(first)
 	if err != nil {
 		t.Fatal(err)
@@ -579,11 +590,11 @@ func TestSessionContinueRoundTripAppendsDeltaAsIs(t *testing.T) {
 	delta1 := decodeDelta(t, stdout)
 
 	second := first
-	second.Messages = append(append([]sessions.Message{}, first.Messages...), delta1.Messages...)
-	second.Messages = append(second.Messages, sessions.Message{
-		ID: "u2", Role: "user", Content: []sessions.ContentBlock{{Type: "text", Text: "What was the passphrase?"}},
+	second.Entries = append(append([]sessions.Entry{}, first.Entries...), delta1.Entries...)
+	second.Entries = append(second.Entries, sessions.Entry{
+		ID: "u2", Source: transcript.SourceUser, Mutability: transcript.MutabilityDelta, Content: []sessions.ContentBlock{{Type: "text", Text: "What was the passphrase?"}},
 	})
-	second.MessageCount = len(second.Messages)
+	second.EntryCount = len(second.Entries)
 	secondInput, err := json.Marshal(second)
 	if err != nil {
 		t.Fatal(err)
@@ -596,8 +607,8 @@ func TestSessionContinueRoundTripAppendsDeltaAsIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	delta2 := decodeDelta(t, stdout2)
-	if len(delta2.Messages) != 1 || sessions.MessageText(delta2.Messages[0]) != "PINEAPPLE-77" {
-		t.Fatalf("second delta = %+v", delta2.Messages)
+	if len(delta2.Entries) != 1 || transcript.TextContent(delta2.Entries[0]) != "PINEAPPLE-77" {
+		t.Fatalf("second delta = %+v", delta2.Entries)
 	}
 
 	if len(runner2.resumedIDs) == 0 || runner2.resumedIDs[len(runner2.resumedIDs)-1] == "" {
