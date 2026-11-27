@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/hookmount"
+	"github.com/ArcheMind/sessionman/internal/hookmount"
 )
 
 func loadFixture(t *testing.T) []hookmount.Hook {

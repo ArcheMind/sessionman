@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/execution"
-	"github.com/ArcheMind/agentx/internal/headless"
-	"github.com/ArcheMind/agentx/internal/hooks"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/execution"
+	"github.com/ArcheMind/sessionman/internal/headless"
+	"github.com/ArcheMind/sessionman/internal/hooks"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 // steerPrefix frames mid-turn text so the model attributes it to its coordinator instead of

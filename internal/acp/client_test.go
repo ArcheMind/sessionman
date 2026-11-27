@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 type immediateReplyWriter struct {

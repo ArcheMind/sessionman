@@ -1,14 +1,14 @@
 # Product principles
 
-AgentX applies the product philosophy demonstrated by uv to coding-agent workflows. The goal is not to copy uv's feature set; it is to use the same adoption logic.
+SessionMan applies the product philosophy demonstrated by uv to coding-agent workflows. The goal is not to copy uv's feature set; it is to use the same adoption logic.
 
 ## Make adoption nearly free
 
-The first useful command must work with tools and data the user already has. AgentX discovers native executables and sessions before asking the user to create anything.
+The first useful command must work with tools and data the user already has. SessionMan discovers native executables and sessions before asking the user to create anything.
 
 ## Own the workflow, not the format
 
-AgentX coordinates native tools. It does not require a universal preset, credential vault, project manifest, or session database. Existing formats remain authoritative.
+SessionMan coordinates native tools. It does not require a universal preset, credential vault, project manifest, or session database. Existing formats remain authoritative.
 
 ## Deliver an immediate, legible advantage
 
@@ -20,7 +20,7 @@ Capabilities are modular. An agent can support model selection without exposing 
 
 ## Expand from a narrow successful workflow
 
-New surface area must follow observed friction. AgentX does not add lifecycle commands merely to complete a CRUD matrix, and it does not normalize destructive operations without shared semantics.
+New surface area must follow observed friction. SessionMan does not add lifecycle commands merely to complete a CRUD matrix, and it does not normalize destructive operations without shared semantics.
 
 ## Use performance to improve interaction
 
@@ -28,7 +28,7 @@ A single native Go binary makes discovery and inspection cheap enough to use rou
 
 ## Separate the large vision from the first commitment
 
-AgentX may eventually coordinate more of the coding-agent lifecycle, but a user can adopt one command without migrating the rest of their environment.
+SessionMan may eventually coordinate more of the coding-agent lifecycle, but a user can adopt one command without migrating the rest of their environment.
 
 ## Product test
 
@@ -41,4 +41,4 @@ A proposed feature should satisfy most of these questions:
 5. Does it remove meaningful uncertainty or friction?
 6. Is the initial commitment much smaller than the long-term platform vision?
 
-If the evidence is weak, AgentX should expose the limitation instead of filling the gap with a proprietary abstraction.
+If the evidence is weak, SessionMan should expose the limitation instead of filling the gap with a proprietary abstraction.

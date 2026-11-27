@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/agentupdate"
-	"github.com/ArcheMind/agentx/internal/drivers"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/agentupdate"
+	"github.com/ArcheMind/sessionman/internal/drivers"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 func TestSpecPiReleaseCheckUsesTheCurrentPackageSource(t *testing.T) {

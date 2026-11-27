@@ -6,10 +6,10 @@ https://github.com/ArcheMind/sessionman-protocol
 
 - Spec: `docs/unified-transcript-format.md`
 - Normative schema: `schema/unified-transcript.schema.json`
-- Go implementation (used by agentx): `github.com/ArcheMind/sessionman-protocol/go`
+- Go implementation (used by sessionman): `github.com/ArcheMind/sessionman-protocol/go`
 
-agentx imports the protocol types and defines no transcript message shapes of
-its own. Format changes land in sessionman-protocol first, then agentx upgrades
+sessionman imports the protocol types and defines no transcript message shapes of
+its own. Format changes land in sessionman-protocol first, then sessionman upgrades
 its pinned module version.
 
 ## Antigravity CLI native storage
@@ -70,7 +70,7 @@ Reparsing that standalone text block lifts it into unsigned unified thinking;
 it does not recover the original signature or ciphertext. Native source files
 and resource files remain read-only. Tool call identifiers remain linked to
 their results, including complete results recovered from local native resource
-files. The shared protocol schema is unchanged; this is an agentx output
+files. The shared protocol schema is unchanged; this is an sessionman output
 policy and does not require an `originAgent` field.
 
 See [Antigravity acceptance](agy-acceptance.md) for the conversion matrix and

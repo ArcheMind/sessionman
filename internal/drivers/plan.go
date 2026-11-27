@@ -3,9 +3,9 @@ package drivers
 import (
 	"fmt"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 func Plan(agent string, transport agentparams.Transport, request agentparams.Request) (runtime.CommandPlan, error) {

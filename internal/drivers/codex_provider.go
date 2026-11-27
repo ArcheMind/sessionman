@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 // CodexProvider delegates project and user config layering to Codex itself.

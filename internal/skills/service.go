@@ -12,8 +12,8 @@ import (
 	goruntime "runtime"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/inventory"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/inventory"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 	"gopkg.in/yaml.v3"
 )
 

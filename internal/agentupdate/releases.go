@@ -17,7 +17,7 @@ import (
 	platform "runtime"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 var packages = map[string]string{"claude": "@anthropic-ai/claude-code", "codex": "@openai/codex", "pi": "@earendil-works/pi-coding-agent"}

@@ -1,6 +1,6 @@
 # Support
 
-Use [GitHub Issues](https://github.com/ArcheMind/agentx/issues) for reproducible bugs and focused feature requests.
+Use [GitHub Issues](https://github.com/ArcheMind/sessionman/issues) for reproducible bugs and focused feature requests.
 
 Before opening an issue:
 

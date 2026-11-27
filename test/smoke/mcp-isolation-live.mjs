@@ -6,7 +6,7 @@ import {join,resolve,relative} from 'node:path'
 import {randomUUID} from 'node:crypto'
 
 const binary=resolve(process.argv[2]??'bin/ax')
-const base=await realpath(await mkdtemp(join(tmpdir(),'agentx-mcp-isolation-')))
+const base=await realpath(await mkdtemp(join(tmpdir(),'sessionman-mcp-isolation-')))
 const home=join(base,'home'),repo=join(base,'repo'),cwd=join(repo,'sub')
 for(const dir of [home,cwd])await mkdir(dir,{recursive:true})
 const git=(dir,...args)=>{const r=spawnSync('git',['-C',dir,...args],{encoding:'utf8',env:{...process.env,GIT_AUTHOR_NAME:'smoke',GIT_AUTHOR_EMAIL:'smoke@example.invalid',GIT_COMMITTER_NAME:'smoke',GIT_COMMITTER_EMAIL:'smoke@example.invalid'}});if(r.status!==0)throw Error(`git ${args.join(' ')}: ${r.stderr}`);return r.stdout.trim()}
@@ -20,8 +20,8 @@ function snapshot(){const files={};const walk=dir=>{for(const name of readdirSyn
 const before=snapshot()
 const codexHome=process.env.AX_MCP_CODEX_HOME??join(homedir(),'.codex'),piAgentDir=process.env.AX_MCP_PI_AGENT_DIR??join(homedir(),'.pi','agent')
 const codexModel=process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',piModel=process.env.AX_MCP_PI_MODEL??'openai-codex/gpt-5.6-luna'
-const presets={'iso':['codex',codexModel],'iso-pi':['pi',piModel],'iso-badmodel':['codex','agentx-no-such-model']}
-for(const [name,[agent,model]] of Object.entries(presets)){const dir=join(home,'.agentx','presets',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${model}\n${agent==='codex'?'effort: low\n':''}---\n\nIsolation acceptance ${name}\n`)}
+const presets={'iso':['codex',codexModel],'iso-pi':['pi',piModel],'iso-badmodel':['codex','sessionman-no-such-model']}
+for(const [name,[agent,model]] of Object.entries(presets)){const dir=join(home,'.sessionman','presets',name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${agent}\nmodel: ${model}\n${agent==='codex'?'effort: low\n':''}---\n\nIsolation acceptance ${name}\n`)}
 const child=spawn(binary,['mcp','serve'],{cwd,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
 let stderr='',pending='',counter=0
 const waiting=new Map()
@@ -43,7 +43,7 @@ const worktreeOf=text=>text.match(/Isolation: worktree path="([^"]+)" branch=(\S
 const shell=(cmd,marker)=>`Authorized isolation acceptance test ${marker}. Using your shell tool, run exactly this one command once, unchanged, in your current working directory: ${cmd}\nReport its exit status and output. Do not retry, request escalation, or use any other tool.`
 const results={}
 try{
- const init=await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'agentx-isolation-live-smoke',version:'1'}})
+ const init=await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'sessionman-isolation-live-smoke',version:'1'}})
  assert(init.instructions.includes('Isolation: worktree creates a new git worktree')&&!/remote/i.test(init.instructions),'initialization does not expose isolation support or still mentions remote')
  const tools=await rpc('tools/list')
  assert(JSON.stringify(tools.tools[0].inputSchema.properties.isolation.enum)===JSON.stringify(['worktree'])&&!/remote/i.test(JSON.stringify(tools.tools)),'tool schema offers more than worktree isolation or mentions remote')
@@ -101,4 +101,4 @@ try{
 const list=git(repo,'worktree','list','--porcelain')
 results.worktreesAfterServerExit=list.split('\n').filter(l=>l.startsWith('worktree ')).map(l=>l.slice(9))
 assert(results.worktreesAfterServerExit.length===6,`worktrees not all retained: ${list}`)
-console.log(JSON.stringify({passed:true,versions:{codex:spawnSync('codex',['--version'],{encoding:'utf8'}).stdout.trim(),pi:spawnSync('pi',['--version'],{encoding:'utf8'}).stdout.trim(),git:spawnSync('git',['--version'],{encoding:'utf8'}).stdout.trim()},scope:'real Codex/Pi through AgentX MCP with isolation=worktree; dirty original checkout snapshotted before/after; attempts read from Codex rollouts; worktree filesystem state checked',results,evidence:base},null,2))
+console.log(JSON.stringify({passed:true,versions:{codex:spawnSync('codex',['--version'],{encoding:'utf8'}).stdout.trim(),pi:spawnSync('pi',['--version'],{encoding:'utf8'}).stdout.trim(),git:spawnSync('git',['--version'],{encoding:'utf8'}).stdout.trim()},scope:'real Codex/Pi through SessionMan MCP with isolation=worktree; dirty original checkout snapshotted before/after; attempts read from Codex rollouts; worktree filesystem state checked',results,evidence:base},null,2))

@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/pirpc"
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/pirpc"
+	"github.com/ArcheMind/sessionman/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 var reviewPreset = presets.Preset{Name: "review", Agent: "codex", Model: "test-model", Description: "code review", Effort: "low"}

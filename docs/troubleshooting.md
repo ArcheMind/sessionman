@@ -23,7 +23,7 @@ Use `ax agent install <agent> --dry-run` to inspect the native package installat
 
 ## A model list is unsupported
 
-Model selection and model discovery are separate capabilities. Claude Code accepts model selection but does not expose a verified local catalog in the audited versions. AgentX reports that boundary instead of returning a static list that can become false.
+Model selection and model discovery are separate capabilities. Claude Code accepts model selection but does not expose a verified local catalog in the audited versions. SessionMan reports that boundary instead of returning a static list that can become false.
 
 ## No sessions are listed
 
@@ -34,7 +34,7 @@ ax session list --all
 ax session list --workspace /path/to/project
 ```
 
-Use `ax status` to see which agents AgentX detects.
+Use `ax status` to see which agents SessionMan detects.
 
 Child Agent sessions are hidden from discovery by default. Pass `--include-subagents` to bare `ax` or `ax session list` when you need to inspect them.
 

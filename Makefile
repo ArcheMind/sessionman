@@ -116,13 +116,13 @@ smoke-live: build
 	node test/smoke/transcript-cross.mjs "$(CURDIR)/bin/sm" --live
 
 smoke-clean:
-	docker build --no-cache --target agents-clean -f test/smoke/Dockerfile -t agentx-smoke-clean .
+	docker build --no-cache --target agents-clean -f test/smoke/Dockerfile -t sessionman-smoke-clean .
 
 smoke-hooks-live: build
 	sh test/smoke/hooks-live.sh "$(CURDIR)/bin/sm"
 
 smoke-skills-clean:
-	docker build --no-cache --target skills-clean -f test/smoke/Dockerfile -t agentx-smoke-skills-clean .
+	docker build --no-cache --target skills-clean -f test/smoke/Dockerfile -t sessionman-smoke-skills-clean .
 
 smoke-skills-live: build
 	sh test/smoke/skills-live.sh "$(CURDIR)/bin/sm"

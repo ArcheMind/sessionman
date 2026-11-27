@@ -6,14 +6,14 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/ArcheMind/agentx/internal/acp"
-	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/claudestream"
-	"github.com/ArcheMind/agentx/internal/codexrpc"
-	"github.com/ArcheMind/agentx/internal/headless"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
-	"github.com/ArcheMind/agentx/internal/pirpc"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/acp"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/claudestream"
+	"github.com/ArcheMind/sessionman/internal/codexrpc"
+	"github.com/ArcheMind/sessionman/internal/headless"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/pirpc"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 func Open(agent string, stream *runtime.Stream, plan agentparams.Plan, h headless.Handlers) (headless.Session, error) {

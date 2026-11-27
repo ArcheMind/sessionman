@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/clibin"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/clibin"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 type Report struct {

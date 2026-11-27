@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/subagents"
+	"github.com/ArcheMind/sessionman/internal/subagents"
 )
 
 // wait blocks until the ExternalSubagent's next event after --after exists, prints it and exits.

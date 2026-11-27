@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto'
 import {fileURLToPath} from 'node:url'
 
 const binary=resolve(process.argv[2]??'bin/ax')
-const base=await realpath(await mkdtemp(join(tmpdir(),'agentx-effort-')))
+const base=await realpath(await mkdtemp(join(tmpdir(),'sessionman-effort-')))
 const home=join(base,'home'),work=join(base,'work')
 for(const dir of [home,work])await mkdir(dir,{recursive:true})
 spawnSync('git',['init','-q'],{cwd:work})
@@ -18,7 +18,7 @@ const codexModel=process.env.AX_MCP_CODEX_MODEL??'gpt-5.6-luna',piModel=process.
 const piClampModel=process.env.AX_MCP_PI_CLAMP_MODEL??'deepseek/deepseek-flash'
 const codexLevels=['none','minimal','low','medium','high','xhigh','max','ultra'],piLevels=['low','medium','high','xhigh','max']
 const presets=[{name:'pi-clamp',agent:'pi',model:piClampModel,effort:'max'},...codexLevels.map(effort=>({name:`codex-${effort}`,agent:'codex',model:codexModel,effort})),...piLevels.map(effort=>({name:`pi-${effort}`,agent:'pi',model:piModel,effort}))]
-for(const p of presets){const dir=join(home,'.agentx','presets',p.name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${p.agent}\nmodel: ${p.model}\n${p.effort?`effort: ${p.effort}\n`:''}---\n\nEffort acceptance ${p.name}\n`)}
+for(const p of presets){const dir=join(home,'.sessionman','presets',p.name);await mkdir(dir,{recursive:true});await writeFile(join(dir,'PRESET.md'),`---\nagent: ${p.agent}\nmodel: ${p.model}\n${p.effort?`effort: ${p.effort}\n`:''}---\n\nEffort acceptance ${p.name}\n`)}
 
 const child=spawn(binary,['mcp','serve'],{cwd:work,env:{...process.env,AX_SUBAGENT_HOME:home,AX_LOG:'debug',CODEX_HOME:codexHome,PI_CODING_AGENT_DIR:piAgentDir},stdio:['pipe','pipe','pipe']})
 let stderr='',pending='',counter=0
@@ -31,14 +31,14 @@ function assert(value,message){if(!value)throw Error(message)}
 const timer=setTimeout(()=>child.kill('SIGTERM'),900000)
 const nativeCalls=()=>stderr.split('\n').filter(line=>line.startsWith('{')).map(line=>JSON.parse(line)).filter(entry=>entry.event==='external_call')
 const execFor=marker=>nativeCalls().filter(e=>(e.input.args[0]==='exec'||e.input.args.includes('--print'))&&e.stdin?.includes(marker))
-const idOf=text=>text.match(/AgentX ExternalSubagent (ax-[0-9a-f]+)/)?.[1]
-const piSession=text=>join(home,'.local','state','agentx','subagents',idOf(text),'session.jsonl')
+const idOf=text=>text.match(/SessionMan ExternalSubagent (ax-[0-9a-f]+)/)?.[1]
+const piSession=text=>join(home,'.local','state','sessionman','subagents',idOf(text),'session.jsonl')
 const piEntries=path=>readFileSync(path,'utf8').split('\n').filter(Boolean).map(line=>JSON.parse(line))
 const rollout=thread=>{const found=spawnSync('find',[join(codexHome,'sessions'),'-name',`rollout-*-${thread}.jsonl`],{encoding:'utf8'}).stdout.trim().split('\n').filter(Boolean);assert(found.length===1,`rollout for ${thread}: ${found}`);return found[0]}
 const threadOf=marker=>{const out=execFor(marker)[0]?.output??'';return out.split('\n').filter(l=>l.startsWith('{')).map(l=>JSON.parse(l)).find(e=>e.type==='thread.started')?.thread_id}
 const results={versions:{codex:spawnSync('codex',['--version'],{encoding:'utf8'}).stdout.trim(),pi:spawnSync('pi',['--version'],{encoding:'utf8'}).stdout.trim()},models:{codexModel,piModel,piClampModel},effort:{codex:{},pi:{}}}
 try{
- const init=await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'agentx-effort-live',version:'1'}})
+ const init=await rpc('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'sessionman-effort-live',version:'1'}})
  const effortRun=async(model)=>{const marker=`[effort ${model} ${randomUUID()}]`;const r=await call('ExternalSubagent',{description:`effort ${model}`,prompt:`${marker} Reply with exactly: OK`,model,run_in_background:false});return {marker,...r}}
  const [codexEffort,piEffort,clamp]=await Promise.all([
   Promise.all(codexLevels.map(level=>effortRun(`codex-${level}`).then(r=>({level,...r})))),
@@ -57,7 +57,7 @@ try{
   assert(!run.failed&&run.text.includes(`Native evidence: executed effort ${run.level} (`),`pi ${run.level}: ${run.text}`)
   const entries=piEntries(piSession(run.text))
   const thinking=entries.filter(e=>e.type==='thinking_level_change').at(-1)?.thinkingLevel
-  const sent=entries.filter(e=>e.type==='custom'&&e.customType==='agentx-provider-request').map(e=>e.data.reasoning_effort)
+  const sent=entries.filter(e=>e.type==='custom'&&e.customType==='sessionman-provider-request').map(e=>e.data.reasoning_effort)
   assert(thinking===run.level&&sent.length>0&&sent.every(e=>e===run.level),`pi ${run.level} session evidence ${thinking} ${sent}`)
   results.effort.pi[run.level]={session:piSession(run.text),thinking,sent}
  }

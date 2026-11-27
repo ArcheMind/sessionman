@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/sessions"
 )
 
 func userMsg(id, text string) sessions.Message {

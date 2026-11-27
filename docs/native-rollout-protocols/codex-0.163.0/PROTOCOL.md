@@ -54,7 +54,7 @@ codex looks up sessions in this order:
 2. **Filename scan** — walks `~/.codex/sessions/` recursively, matches UUID in filename.
 3. **File search** — fuzzy match on UUID string as a fallback.
 
-agentx does NOT write to the SQLite DB. Discovery relies on path (2).
+sessionman does NOT write to the SQLite DB. Discovery relies on path (2).
 Each resume MUST use a fresh UUID to avoid conflicts with codex-native sessions
 and stale SQLite entries from prior attempts.
 
@@ -133,8 +133,8 @@ Minimal turn sequence in the rollout (one user+assistant exchange):
     "session_id": "<uuid>",   // same as id (custom deserializer copies if absent)
     "cwd": "/path/to/cwd",
     "timestamp": "<ISO-8601>",
-    "originator": "agentx",   // required non-Option String
-    "cli_version": "agentx",  // required non-Option String
+    "originator": "sessionman",   // required non-Option String
+    "cli_version": "sessionman",  // required non-Option String
     "source": "cli"           // default is Unknown, "cli" for normal sessions
   }
 }

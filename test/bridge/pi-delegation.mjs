@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 
-const source = stripTypeScriptTypes(readFileSync(new URL('../../internal/subagents/agentx_bridge.ts', import.meta.url), 'utf8'))
+const source = stripTypeScriptTypes(readFileSync(new URL('../../internal/subagents/sessionman_bridge.ts', import.meta.url), 'utf8'))
   .replace('import { spawn } from "node:child_process";', 'const spawn = globalThis.spawn;')
   .replace('import { Type } from "typebox";', 'const Type = globalThis.Type;')
   .replace('export default function', 'globalThis.install = function');

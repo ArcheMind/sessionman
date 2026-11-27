@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 )
 
 // Isolate points HOME at a fresh temporary directory and clears every

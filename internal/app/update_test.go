@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/update"
+	"github.com/ArcheMind/sessionman/internal/update"
 )
 
 type fakeStartupUpdater struct {

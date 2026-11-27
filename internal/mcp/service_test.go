@@ -1,7 +1,7 @@
 package mcp
 
 import (
-	"github.com/ArcheMind/agentx/internal/inventory"
+	"github.com/ArcheMind/sessionman/internal/inventory"
 	"os"
 	"path/filepath"
 	"testing"

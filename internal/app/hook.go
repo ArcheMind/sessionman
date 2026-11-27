@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/hooks"
+	"github.com/ArcheMind/sessionman/internal/hooks"
 )
 
 func (a App) hook(ctx context.Context, args []string) error {

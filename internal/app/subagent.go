@@ -10,9 +10,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/drivers"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/drivers"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 func (a App) execAgent(ctx context.Context, args []string) error {

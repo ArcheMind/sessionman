@@ -8,7 +8,7 @@ Security fixes are provided for the latest released version of SessionMan.
 
 Do not open a public issue. Use GitHub's private vulnerability reporting for this repository:
 
-<https://github.com/ArcheMind/agentx/security/advisories/new>
+<https://github.com/ArcheMind/sessionman/security/advisories/new>
 
 Include the affected version, operating system, reproduction steps, impact, and any suggested mitigation. You should receive an acknowledgement within seven days. Please allow time for a fix and coordinated disclosure before publishing details.
 

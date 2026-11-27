@@ -196,7 +196,7 @@ One JSON object per LF-terminated line. A basic run:
 `message_end.message` uses the per-role shapes above; system messages appear
 in the stream since pi 0.86.0, `agent_settled.aborted` since 1.1.0.
 
-AgentX depends only on:
+SessionMan depends only on:
 
 - `session` — first line; `id` is the native session id.
 - `message_end` — only `role=assistant` content is read (text blocks joined,
@@ -205,5 +205,5 @@ AgentX depends only on:
 - `agent_settled` — completion signal; `aborted=true` is a failure.
   `agent_end` is not final.
 
-Events AgentX does not depend on may carry fields of any shape; decoding must
+Events SessionMan does not depend on may carry fields of any shape; decoding must
 not fail on them.

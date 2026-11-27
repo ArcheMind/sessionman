@@ -1,5 +1,5 @@
 name: Bug report
-description: Report reproducible AgentX behavior that is incorrect.
+description: Report reproducible SessionMan behavior that is incorrect.
 title: "bug: "
 labels:
   - bug
@@ -10,9 +10,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: AgentX version
+      label: SessionMan version
       description: Output of `ax version`.
-      placeholder: agentx 0.1.0
+      placeholder: sessionman 0.1.0
     validations:
       required: true
   - type: input

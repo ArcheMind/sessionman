@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
 )
 
 func TestRoundTripKeepsDescriptionInMarkdownBody(t *testing.T) {

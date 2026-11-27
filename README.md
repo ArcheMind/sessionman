@@ -181,10 +181,10 @@ Downloads the release artifact for the current platform, verifies its SHA-256 ch
 ### Go
 
 ```bash
-go install github.com/ArcheMind/agentx/cmd/sm@latest
+go install github.com/ArcheMind/sessionman/cmd/sm@latest
 ```
 
-The Go module retains the original `agentx` path; the installed executable is `sm`.
+The installed executable is `sm`.
 
 Prebuilt archives for macOS, Linux, and Windows are on the [releases page](https://github.com/ArcheMind/sessionMan/releases). See [installation](docs/installation.md) for version pinning, verification, Windows setup, and source builds.
 

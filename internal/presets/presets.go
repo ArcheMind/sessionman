@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
 	"gopkg.in/yaml.v3"
 )
 

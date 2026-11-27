@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/acp"
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/acp"
+	"github.com/ArcheMind/sessionman/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 const fakeAgySession = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"

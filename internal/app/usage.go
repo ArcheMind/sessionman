@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 type usageEntry struct {

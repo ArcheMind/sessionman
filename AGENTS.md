@@ -1,4 +1,4 @@
-# SessionMan (`agentx`) Agent Rules
+# SessionMan Agent Rules
 
 Repository state starts at `.agent/state/INDEX.md`.
 

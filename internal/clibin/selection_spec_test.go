@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/clibin"
+	"github.com/ArcheMind/sessionman/internal/clibin"
 )
 
 func TestSpecReleaseComparisonUsesNumericStableVersions(t *testing.T) {

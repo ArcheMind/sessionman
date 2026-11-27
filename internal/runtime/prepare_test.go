@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 )
 
 func TestPrepareAgentCalledWhenAgentSet(t *testing.T) {

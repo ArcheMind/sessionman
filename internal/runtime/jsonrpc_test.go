@@ -56,7 +56,7 @@ func TestClaudeControlHelperProcess(t *testing.T) {
 		return
 	}
 	fmt.Println(`{"type":"control_response","response":{"request_id":"other","subtype":"success"}}`)
-	fmt.Println(`{"type":"control_response","response":{"request_id":"agentx-models","subtype":"success"}}`)
+	fmt.Println(`{"type":"control_response","response":{"request_id":"sessionman-models","subtype":"success"}}`)
 }
 
 func TestExecRunnerClaudeControlWaitsForMatchingRequestID(t *testing.T) {
@@ -65,11 +65,11 @@ func TestExecRunnerClaudeControlWaitsForMatchingRequestID(t *testing.T) {
 		Executable: os.Args[0],
 		Args:       []string{"-test.run=^TestClaudeControlHelperProcess$"},
 		Env:        map[string]string{"GO_WANT_CLAUDE_CONTROL_HELPER": "1"},
-	}, json.RawMessage(`{"type":"control_request"}`), "agentx-models")
+	}, json.RawMessage(`{"type":"control_request"}`), "sessionman-models")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(response), `"request_id":"agentx-models"`) {
+	if !strings.Contains(string(response), `"request_id":"sessionman-models"`) {
 		t.Fatalf("response = %s", response)
 	}
 }

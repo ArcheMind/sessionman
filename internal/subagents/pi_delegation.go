@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed agentx_bridge.ts
+//go:embed sessionman_bridge.ts
 var piDelegationBridge []byte
 
 // PiBridgePath is the stable path of the delegation bridge extension under home.

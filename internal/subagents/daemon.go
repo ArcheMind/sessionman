@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
 
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 const DefaultLinger = 60 * time.Second

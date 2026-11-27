@@ -53,7 +53,7 @@ The endpoint's JSON contract is `tag_name`, `draft`, `prerelease`, and `assets` 
 With Go 1.25 or newer:
 
 ```bash
-go install github.com/ArcheMind/agentx/cmd/sm@latest
+go install github.com/ArcheMind/sessionman/cmd/sm@latest
 ```
 
 The binary is written to `GOBIN`, or to `GOPATH/bin` when `GOBIN` is unset.

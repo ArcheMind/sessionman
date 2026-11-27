@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/presets"
 )
 
 func installPi(t *testing.T) {

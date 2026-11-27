@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 )
 
 // CatalogError reports unreadable native entries alongside the usable catalog.

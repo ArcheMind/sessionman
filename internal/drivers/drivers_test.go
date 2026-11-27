@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 func TestRegistryContainsSupportedAgents(t *testing.T) {

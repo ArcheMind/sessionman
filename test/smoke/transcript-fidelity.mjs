@@ -10,7 +10,7 @@ import {isDeepStrictEqual} from 'node:util'
 const binary=resolve(process.argv[2]??'bin/ax')
 const protocolDir=process.argv[3]??''
 const fixtures=join(dirname(fileURLToPath(import.meta.url)),'fixtures','transcript-fidelity')
-const home=await mkdtemp(join(tmpdir(),'agentx-transcript-fidelity-'))
+const home=await mkdtemp(join(tmpdir(),'sessionman-transcript-fidelity-'))
 // Every session store and the pi resume dir are derived from HOME (os.UserHomeDir), so a temp HOME isolates them all.
 const env={...process.env,HOME:home,AX_SUBAGENT_HOME:home}
 for(const name of ['CLAUDE_CONFIG_DIR','CODEX_HOME','PI_CODING_AGENT_DIR','XDG_STATE_HOME','XDG_DATA_HOME','XDG_CONFIG_HOME'])delete env[name]
@@ -92,7 +92,7 @@ async function findFile(root,suffix){
 }
 
 const results={}
-const ws='/tmp/agentx-fidelity-ws'
+const ws='/tmp/sessionman-fidelity-ws'
 
 {
   const P='claude',id='5f0c1e2a-7b3d-4c8e-9a1f-2d3e4f5a6b7c'

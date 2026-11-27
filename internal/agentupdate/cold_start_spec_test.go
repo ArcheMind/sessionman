@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/agentupdate"
+	"github.com/ArcheMind/sessionman/internal/agentupdate"
 )
 
 const coldStartFixtureEnv = "SM_AGENTUPDATE_COLD_START_FIXTURE"

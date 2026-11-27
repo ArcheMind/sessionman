@@ -4,9 +4,9 @@ Verified on 2026-09-10 against the installed native CLIs and their bundled help/
 
 ## DeepSeek Harness
 
-DSH is registered as `dsh` with the official npm package `@deepseek-ai/dsh`. Its installed package metadata identifies the executable as `dsh`, the package as MIT-licensed, and its repository as `deepseek-ai/deepseek-harness`. Native `dsh --help` verifies `--version`, `--preset`, `--patch`, `web`, and `plugin`; the bundled README verifies the `headless`, `acp`, `sdk`, and `sdk-minimal` presets. AgentX supports detection, npm install planning, and raw native launch with working-directory and argument passthrough, so every native preset remains reachable through `ax dsh -- --preset <preset> ...`.
+DSH is registered as `dsh` with the official npm package `@deepseek-ai/dsh`. Its installed package metadata identifies the executable as `dsh`, the package as MIT-licensed, and its repository as `deepseek-ai/deepseek-harness`. Native `dsh --help` verifies `--version`, `--preset`, `--patch`, `web`, and `plugin`; the bundled README verifies the `headless`, `acp`, `sdk`, and `sdk-minimal` presets. SessionMan supports detection, npm install planning, and raw native launch with working-directory and argument passthrough, so every native preset remains reachable through `ax dsh -- --preset <preset> ...`.
 
-DSH's bundled DeepSeek catalog supplies model discovery. Its local credential provider reports the presence of `DEEPSEEK_API_KEY` in the inherited environment or `$DSH_HOME/.credentials.yaml`; AgentX reports only the provider identity and never prints the value. `ax auth login dsh` starts DSH's native Web UI, whose Models page owns credential configuration. DSH does not expose a model-selection command-line flag, so selection remains native preset configuration rather than a fabricated `ax --model` mapping. Its durable session store is compressed, versioned, preset-configurable, and has no stable standalone list/info/resume command; AgentX does not parse or modify it.
+DSH's bundled DeepSeek catalog supplies model discovery. Its local credential provider reports the presence of `DEEPSEEK_API_KEY` in the inherited environment or `$DSH_HOME/.credentials.yaml`; SessionMan reports only the provider identity and never prints the value. `ax auth login dsh` starts DSH's native Web UI, whose Models page owns credential configuration. DSH does not expose a model-selection command-line flag, so selection remains native preset configuration rather than a fabricated `ax --model` mapping. Its durable session store is compressed, versioned, preset-configurable, and has no stable standalone list/info/resume command; SessionMan does not parse or modify it.
 
 ## Authentication
 
@@ -20,17 +20,17 @@ DSH's bundled DeepSeek catalog supplies model discovery. Its local credential pr
 
 `AuthStatus.providers` is always a list. A single-account Agent returns zero or one entry; multi-provider Agents return one entry per configured provider. Status never returns credentials. Pi deliberately reports stored native providers only: environment readiness can be checked provider-by-provider with native `pi auth check`, but Pi exposes no stable command that enumerates every possible provider without credentials.
 
-Logout remains native. AgentX launches the direct command where one exists and otherwise opens the native interactive client with the exact slash-command instruction. It does not delete credential files itself.
+Logout remains native. SessionMan launches the direct command where one exists and otherwise opens the native interactive client with the exact slash-command instruction. It does not delete credential files itself.
 
 ## Agent installation
 
-AgentX owns only locate and install planning. Each Agent registry entry owns its native installer. agy uses its official platform installer rather than npm, and rejects version pinning because the native installer has no version-selection interface. There is no separate package resource or package registry because it duplicated Agent identity without adding lifecycle semantics.
+SessionMan owns only locate and install planning. Each Agent registry entry owns its native installer. agy uses its official platform installer rather than npm, and rejects version pinning because the native installer has no version-selection interface. There is no separate package resource or package registry because it duplicated Agent identity without adding lifecycle semantics.
 
-`status`, `update`, and `uninstall` are not added. Installed status is already part of `agent list`; update and uninstall remain visibly owned by the native package manager until AgentX has a stable requirement beyond forwarding npm commands.
+`status`, `update`, and `uninstall` are not added. Installed status is already part of `agent list`; update and uninstall remain visibly owned by the native package manager until SessionMan has a stable requirement beyond forwarding npm commands.
 
 ## Sessions
 
-The cross-Agent service supports `list`, `show`, `resume`, `export`, `import` and `continue`. Native session lifecycles are not uniform: Codex advertises resume/fork/archive/unarchive/delete. AgentX does not normalize destructive operations that lack a shared workflow or semantics. The source dimension is consistently named `--source` on session source filters.
+The cross-Agent service supports `list`, `show`, `resume`, `export`, `import` and `continue`. Native session lifecycles are not uniform: Codex advertises resume/fork/archive/unarchive/delete. SessionMan does not normalize destructive operations that lack a shared workflow or semantics. The source dimension is consistently named `--source` on session source filters.
 
 ## CLI grammar
 
@@ -44,7 +44,7 @@ The action-leading commands and the plural `agents`/`sessions` aliases are remov
 
 ## Structured protocols
 
-JSON and YAML apply to AgentX-owned results: Agent detection, model and session data, authentication status, version, and dry-run plans. A real install, login, logout, run, or session resume passes through native interactive output. Combining those executions with `--json` or `--yaml` is rejected; native output is never silently re-encoded.
+JSON and YAML apply to SessionMan-owned results: Agent detection, model and session data, authentication status, version, and dry-run plans. A real install, login, logout, run, or session resume passes through native interactive output. Combining those executions with `--json` or `--yaml` is rejected; native output is never silently re-encoded.
 
 Errors use the same selected format and preserve process exit behavior:
 

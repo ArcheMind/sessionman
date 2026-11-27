@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/hookmount"
+	"github.com/ArcheMind/sessionman/internal/hookmount"
 )
 
 // hookMount carries what composing an agent root needs for unified hooks:

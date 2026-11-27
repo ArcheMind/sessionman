@@ -86,8 +86,8 @@ binary `39104bc` on 2026-11-13. Evidence directories share the prefix
 | --- | --- | --- |
 | `make smoke-transcript-cross-live` | All 12 directions passed, including all six new agy directions; none skipped | `sm-transcript-cross-live-rkh5Dz` |
 | `make smoke-agy-native-live` | Four strict positives passed; the unsigned native thinking observation did not retrieve its token | `sm-agy-native-live-01JV0b` |
-| Strict transcript fidelity | Four providers' then-current message fixtures passed and the actual shared protocol schema validated | `agentx-transcript-fidelity-mqoUmD` |
-| Nonlive cross-format conversion | All 12 directions passed | `agentx-transcript-cross-7bf9iU` |
+| Strict transcript fidelity | Four providers' then-current message fixtures passed and the actual shared protocol schema validated | `sessionman-transcript-fidelity-mqoUmD` |
+| Nonlive cross-format conversion | All 12 directions passed | `sessionman-transcript-cross-7bf9iU` |
 | `make -o build smoke-agy-duplex-live` | Complete default native run passed | `sessionman-duplex-live-agy-hUjLse` |
 
 The complete duplex run verified steer, per-RPC raw usage, MessageHost while
@@ -106,8 +106,8 @@ fallback and the substantive assertions were not relaxed.
 These observations do not establish acceptance of later source changes.
 Reading a native `raw_thinking` field 16 without readable field 3 was fixed
 after binary `39104bc`. The updated five-message fixture passed on frozen
-source `56337f9`, with schema validation (`agentx-transcript-fidelity-JrYPiU`)
-and all 12 nonlive cross directions (`agentx-transcript-cross-FfpLTr`). When both readable thinking
+source `56337f9`, with schema validation (`sessionman-transcript-fidelity-JrYPiU`)
+and all 12 nonlive cross directions (`sessionman-transcript-cross-FfpLTr`). When both readable thinking
 field 3 and raw thinking field 16 are nonempty and different, parsing fails
 explicitly with a catalog warning: their mapping and signature binding are
 not established, so neither value is silently discarded.
@@ -138,7 +138,7 @@ source `1dade94`:
 (exit 0). Formatting left the tracked working tree clean. To expose the schema
 result hidden by the default smoke output redirection, the owner also ran
 `make -o build SESSIONMAN_PROTOCOL_DIR=/Users/agent/work/sessionman-protocol smoke-transcript-fidelity`
-(exit 0), evidence `agentx-transcript-fidelity-BFD9gz`. It explicitly reported
+(exit 0), evidence `sessionman-transcript-fidelity-BFD9gz`. It explicitly reported
 `validated against /Users/agent/work/sessionman-protocol/spec/schema/unified-transcript.schema.json`,
 not skipped. The agy native output had five records, and source independence,
 raw signatures, inline image and complete tool result checks were all true.

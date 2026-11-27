@@ -8,7 +8,7 @@ import {isDeepStrictEqual} from 'node:util'
 
 const binary=resolve(process.argv[2]??'bin/ax')
 const fixtures=join(dirname(fileURLToPath(import.meta.url)),'fixtures','transcript-fidelity')
-const home=await mkdtemp(join(tmpdir(),'agentx-transcript-cross-'))
+const home=await mkdtemp(join(tmpdir(),'sessionman-transcript-cross-'))
 // Every session store and the pi resume dir are derived from HOME (os.UserHomeDir), so a temp HOME isolates them all.
 const env={...process.env,HOME:home,AX_SUBAGENT_HOME:home}
 for(const name of ['CLAUDE_CONFIG_DIR','CODEX_HOME','PI_CODING_AGENT_DIR','XDG_STATE_HOME','XDG_DATA_HOME','XDG_CONFIG_HOME'])delete env[name]
@@ -26,7 +26,7 @@ async function findFile(root,suffix){
   for(const entry of await readdir(root,{recursive:true}))if(entry.endsWith(suffix))return join(root,entry)
 }
 
-const ws='/tmp/agentx-fidelity-ws'
+const ws='/tmp/sessionman-fidelity-ws'
 const providers={
   agy:{id:'d6fc410a-5e5d-4f66-b6eb-c922e61a4dc0',path:id=>`.gemini/antigravity-cli/conversations/${id}.db`},
   claude:{id:'5f0c1e2a-7b3d-4c8e-9a1f-2d3e4f5a6b7c',path:id=>`.claude/projects/${ws.replaceAll('/','-')}/${id}.jsonl`},
@@ -59,7 +59,7 @@ function normalize(unified){
 }
 
 // ---------------------------------------------------------------------------------------------
-// degrade: agentx thinking output policy plus destination losses derived from the unified spec
+// degrade: sessionman thinking output policy plus destination losses derived from the unified spec
 // (sessionman-protocol docs/unified-transcript-format.md, v0.2.0) and the native formats in docs/native-rollout-protocols/.
 // Written independently of the serializers; every rule cites its justification. "spec gap:" marks a rule the spec does not state.
 // ---------------------------------------------------------------------------------------------

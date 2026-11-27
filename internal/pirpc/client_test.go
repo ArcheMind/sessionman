@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/headless"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/headless"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 type turnControl struct {

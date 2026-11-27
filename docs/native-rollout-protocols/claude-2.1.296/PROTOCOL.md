@@ -19,7 +19,7 @@ Claude Code resolves `--resume <value>` by:
 1. Trying `UUID.parse(value)` — if valid, searches for session by UUID
 2. Otherwise, treats as session name for fuzzy matching
 
-agentx MUST write the file into Claude's own project directory with a fresh
+sessionman MUST write the file into Claude's own project directory with a fresh
 UUID. Writing to an external path and passing it as `--resume` does NOT work —
 Claude never reads arbitrary file paths.
 

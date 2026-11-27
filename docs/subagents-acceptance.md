@@ -71,8 +71,8 @@ state. Pi has no rollout of this kind, so its check is filesystem state plus an
 assertion that its session file contains no `write`/`edit`/`bash` tool call.
 Two consecutive per-probe `make smoke-mcp-policy-live` runs passed. Evidence
 directories (each with `server-debug.log`; rollout paths are listed in the
-smoke output): `/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-policy-x6i3XY`
-and `…/agentx-mcp-policy-Tjvj8i`. An earlier version put six commands in one
+smoke output): `/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sessionman-mcp-policy-x6i3XY`
+and `…/sessionman-mcp-policy-Tjvj8i`. An earlier version put six commands in one
 agent and judged only by file absence. During independent acceptance, that
 version failed once in two runs: the model miscopied a path and invented
 results. It is superseded.
@@ -80,7 +80,7 @@ results. It is superseded.
 | ID | Status | Observation |
 | --- | --- | --- |
 | A01 | Historical (superseded by 015): Pass (Codex); Pi write gap open | Codex `bounded-write` (roots `root`, `extra`): rollouts show both `printf` writes executed with exit 0, and `root/in.txt` / `extra/extra.txt` contain the requested content. Codex `read-only` in the same directory: the rollout shows the write executed and failing with `operation not permitted`, and `root/ro.txt` is absent. Pi `read-only` left `root/pi.txt` absent; Pi reported no write tool. Every report carried its actual `Grant:` line. Pi `bounded-write` is rejected at configuration time. |
-| A02 | Historical (superseded by 015): Pass (Codex) | Shell writes, OS layer: in each rollout the write was executed and failed with `operation not permitted`. Targets: new `outside/out.txt` (absent afterwards), overwrite of `outside/existing.txt` (still `original`), the `/tmp` probe (absent), and the explicitly denied target `root/.git/agentx-denied.txt` (Codex-protected inside a writable root; absent). Patch, application layer: `apply_patch` adding `outside/patched.txt` was rejected by Codex's patch approval check (`patch rejected: writing outside of the project; rejected by user approval settings`) before any write; the file is absent. This rejection is not the OS sandbox. User-configurable deny subpaths are not offered because no runtime enforcement was established. |
+| A02 | Historical (superseded by 015): Pass (Codex) | Shell writes, OS layer: in each rollout the write was executed and failed with `operation not permitted`. Targets: new `outside/out.txt` (absent afterwards), overwrite of `outside/existing.txt` (still `original`), the `/tmp` probe (absent), and the explicitly denied target `root/.git/sessionman-denied.txt` (Codex-protected inside a writable root; absent). Patch, application layer: `apply_patch` adding `outside/patched.txt` was rejected by Codex's patch approval check (`patch rejected: writing outside of the project; rejected by user approval settings`) before any write; the file is absent. This rejection is not the OS sandbox. User-configurable deny subpaths are not offered because no runtime enforcement was established. |
 | A03 | Historical (superseded by 015): Partial | Covered: the no-approver scenario (`approval:"never"`), observed above with the denial returned to the agent in both layers. Out-of-scope shell writes fail in the OS sandbox (`operation not permitted`). Out-of-scope `apply_patch` is rejected by Codex's application-level patch approval with no one asked (`rejected by user approval settings`). Pending: approve and deny scenarios. Non-interactive Codex/Pi execution has no approval route to a human, and SessionMan does not forward runtime approval requests to Claude. Non-`never` values are rejected rather than claimed. Pi's boundary is described everywhere as a tool allowlist, not an OS sandbox. |
 | A04 | Pass | Configured sources: `CODEX_HOME=~/.codex` (chatgpt) and `PI_CODING_AGENT_DIR=~/.pi/agent` (oauth), visible in reports, catalog and `status`. An empty `CODEX_HOME` failed with `Not logged in; no fallback identity`. A method mismatch (configured `api-key`, actual ChatGPT) failed. An empty Pi dir failed with `credentials_not_configured; no fallback identity`. None of these started native execution (debug log). Twelve inherited credential-like variables were removed. Seven credential values (from `OPENAI_API_KEY` and both `auth.json` files) appeared in neither debug logs nor reports. Direct check: `PI_CODING_AGENT_DIR=<empty> pi auth check --model openai/gpt-5` is `ready` via the inherited `OPENAI_API_KEY`, and `not_ready` once it is removed. This is the implicit fallback SessionMan now blocks. Identity here means source directory plus login method; the account inside a source is not verified, so switching accounts within the same `CODEX_HOME` is not detected. |
 
@@ -160,7 +160,7 @@ and Pi CLI 0.84.4 through the built SessionMan stdio MCP server (not a Claude ho
 using the real `~/.codex` (chatgpt) and `~/.pi/agent` (oauth) logins. Command:
 `make smoke-mcp-roles-effort-live`. Evidence directory (with `evidence.json`
 and `server-debug.log`):
-`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-roles-effort-aYtKo9`.
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sessionman-roles-effort-aYtKo9`.
 Rollout and Pi session paths for every run are listed in `evidence.json`.
 Agent reports alone are not evidence: each behavior check is paired with the
 native record that carried the role or effort.
@@ -187,8 +187,8 @@ Investigation that set the design (direct CLI runs, same date and versions):
 | A13 | Pass | Initialization instructions and `ExternalSubagent` metadata carry a role DATA block, and the `subagent_type` enum is `general-purpose` plus valid declared roles (live: `["general-purpose","alpha","beta"]`). Each preset's access/limits describe role carriage, the effort check and Pi's observer extension. `status` lists `roles`, `invalid_roles` and `role_behavior`. Reports show `role=` and a `Native evidence:` line. The `ax` creation flow offers Pi `low`..`max`, labelled as checked at every ExternalSubagent turn. A role or preset change after initialization adds a stale-snapshot note to call results. A role change never rebinds an existing session (A05). |
 
 Regression on the same commit: `make smoke-mcp-live`
-(`…/agentx-mcp-live-I5qQcQ`) and `make smoke-mcp-policy-live`
-(`…/agentx-mcp-policy-VeMEcW`) passed with the telemetry-based effort check
+(`…/sessionman-mcp-live-I5qQcQ`) and `make smoke-mcp-policy-live`
+(`…/sessionman-mcp-policy-VeMEcW`) passed with the telemetry-based effort check
 active. The debug log of the roles/effort run contains no `sk-` key values;
 `DEEPSEEK_API_KEY` appears only by name in `unset_env`.
 
@@ -229,11 +229,11 @@ and an untracked file (`draft.txt`). The smoke snapshots `git status
 before and after all runs. Codex sandbox evidence comes from rollouts, as in the
 G01–G03 section. Evidence directory (with `server-debug.log` and
 `smoke-output.json`):
-`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-isolation-sNefQJ`.
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sessionman-mcp-isolation-sNefQJ`.
 
 | ID | Status | Observation |
 | --- | --- | --- |
-| A06 | Historical (superseded by 015): Pass (Codex, Pi read-only) | Success: bounded-write grant with root = the repository. The native plan ran in `<worktree>/sub` with `writable_roots=["<worktree>"]` and without the repository path. Rollout `…/rollout-2026-10-21T05-10-57-01a15e5f-2a8d-7350-8b22-eda5b9b39f0b.jsonl` shows `printf isolated > agent.txt` with exit 0. The file exists only in the worktree, and the report names path, branch `agentx/<id>`, base commit and `?? sub/agent.txt`. Escape: an absolute write to the original `repo/sub/escape.txt` failed with `operation not permitted` (rollout `…-01a15e5f-2a8e-7902-a74b-7305306ed11a.jsonl`), and the file is absent. Read-only Codex in a worktree: `printf readonly > ro.txt` failed with `operation not permitted`. Failure: a nonexistent model failed natively; the report named the kept worktree. Cancellation: the agent wrote `partial.txt`, then `StopExternalSubagent` confirmed `cancelled`; the report listed `?? sub/partial.txt` and the file was still present. Pi read-only ran with its working directory inside the worktree. The original snapshot was identical afterwards (`M sub/tracked.txt`, `?? draft.txt`, edit intact). All six worktrees remained in `git worktree list` after the server exited. |
+| A06 | Historical (superseded by 015): Pass (Codex, Pi read-only) | Success: bounded-write grant with root = the repository. The native plan ran in `<worktree>/sub` with `writable_roots=["<worktree>"]` and without the repository path. Rollout `…/rollout-2026-10-21T05-10-57-01a15e5f-2a8d-7350-8b22-eda5b9b39f0b.jsonl` shows `printf isolated > agent.txt` with exit 0. The file exists only in the worktree, and the report names path, branch `sessionman/<id>`, base commit and `?? sub/agent.txt`. Escape: an absolute write to the original `repo/sub/escape.txt` failed with `operation not permitted` (rollout `…-01a15e5f-2a8e-7902-a74b-7305306ed11a.jsonl`), and the file is absent. Read-only Codex in a worktree: `printf readonly > ro.txt` failed with `operation not permitted`. Failure: a nonexistent model failed natively; the report named the kept worktree. Cancellation: the agent wrote `partial.txt`, then `StopExternalSubagent` confirmed `cancelled`; the report listed `?? sub/partial.txt` and the file was still present. Pi read-only ran with its working directory inside the worktree. The original snapshot was identical afterwards (`M sub/tracked.txt`, `?? draft.txt`, edit intact). All six worktrees remained in `git worktree list` after the server exited. |
 | A07 | Open (external) | `isolation:"remote"` is rejected before any work with the external reason; no native process starts. Investigated 2026-10-21: `codex cloud` (exec/status/list/diff/apply) has no cancel command. It also runs in a Codex Cloud environment bound to a pushed GitHub branch, not this working directory; this account lists no tasks, and the CLI cannot list environments. `codex exec-server --remote` registers a WebSocket exec server that the user must provision on a remote host; none exists here, and starting one locally would only alias a local directory. Pi 0.84.4 has no remote execution. |
 | A13 (isolation) | Historical (superseded by 015): Pass | The initialization catalog, each preset's limits (`Isolation: worktree supported …; Remote: rejected …`), the tool description and the `isolation` field description all state the same support. Reports carry the worktree path, branch, base, effective writable roots, retention and the state after the last task. Isolation is fixed per ExternalSubagent: continuation reuses the same worktree. A removed worktree fails explicitly, and the task never moves to the original directory. Unknown isolation values reject. |
 
@@ -258,7 +258,7 @@ probe passed:
 - The original snapshot was unchanged, and all 7 worktrees were kept.
 
 Evidence:
-`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-isolation-q97496`
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sessionman-mcp-isolation-q97496`
 (`server-debug.log`, `smoke-output.json`). The live probe covers the case
 variant only; NFD is covered deterministically.
 
@@ -279,7 +279,7 @@ That race first appeared in this live run. Creation is now serialized
 in-process; without the lock the test fails, with it the test passes.
 
 Live re-run of `make smoke-mcp-isolation-live` passed. Evidence:
-`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-isolation-VR8Eqe`
+`/private/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sessionman-mcp-isolation-VR8Eqe`
 (`server-debug.log`, `smoke-output.json`).
 - Grant roots `[…/REPO, …/unrelated]`: the effective roots were only the
   worktree. `printf escaped > …/REPO/sub/variant-escape.txt` failed with
@@ -335,26 +335,26 @@ presets. Claude Code 2.1.296 / `claude-fable-5-1` returned both presets with the
 correct engines/models and readonly limits, distinguished native types, and
 qualified static checks versus unverified remote availability. No tools were
 called. Safe answer/call evidence is `observed.json` under
-`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-preset-visibility-zex6J4`.
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sessionman-preset-visibility-zex6J4`.
 This is one observed response, not a deterministic language-behavior guarantee.
 Independent reviewer-owned Claude observations (2.1.296 / `claude-fable-5-1`)
 subsequently accepted natural behavior:
 
 - A different general question listed both randomized presets, default, readonly
   capabilities/limits and distinguished internal Agent types with zero tool calls
-  (`agentx-preset-visibility-6kzu6j`).
+  (`sessionman-preset-visibility-6kzu6j`).
 - An exact-model/isolation question preserved both complete configured model IDs,
   explicitly rejected isolation and qualified remote availability, with zero
-  tool calls (`agentx-preset-visibility-2JPu68`).
+  tool calls (`sessionman-preset-visibility-2JPu68`).
 - A created/continuable-session question used ToolSearch then
   `listExternalSubagentSessions`, correctly reporting an empty connection rather
   than presenting configured presets as created instances
-  (`agentx-preset-visibility-j6tjOk`).
+  (`sessionman-preset-visibility-j6tjOk`).
 
 These directories share the temporary parent path above; each contains
 `observed.json`. The first two decisive observations used an isolated temporary
 working directory. An earlier exact-model question from the repository directory
-used Bash to inspect source (`agentx-preset-visibility-Ay2AvN`); it is excluded as
+used Bash to inspect source (`sessionman-preset-visibility-Ay2AvN`); it is excluded as
 evidence that metadata alone suffices. An initial general response shortened the
 Pi model ID, motivating more precise DATA labels before the accepted observations.
 Reviewer semantic judgment, not a fixed keyword assertion, determined acceptance.
@@ -368,7 +368,7 @@ below are not relabeled as current discovery.
 | Host | Interactive Claude Code 2.1.296, first-party provider |
 | Codex | CLI 0.147.0, exact `gpt-5.6-luna`, native read-only sandbox |
 | Pi | CLI 0.84.4, exact `openai-codex/gpt-5.6-luna`, readonly tool allowlist |
-| MCP | stdio, legacy revision `2024-11-05`, server `agentx` |
+| MCP | stdio, legacy revision `2024-11-05`, server `sessionman` |
 
 `make smoke-mcp-live` passed with both real backends concurrently. Each first
 task received a distinct public fictional fruit label. Subsequent SendMessage
@@ -392,7 +392,7 @@ cover cancellation that is ignored: a completed native result stays completed
 and TaskStop returns an explicit unconfirmed-cancellation error.
 
 Raw native command/debug evidence was retained at
-`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-live-qBrdJ6/`
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sessionman-mcp-live-qBrdJ6/`
 (`mcp.jsonl`, `external-debug.jsonl`). Temporary raw files may expire; the
 observations above and reproducible source harness are the durable record.
 Debug logs contain native plans, stdin, stdout, stderr and errors.
@@ -401,7 +401,7 @@ Debug logs contain native plans, stdin, stdout, stderr and errors.
 under isolated HOME. It preserved an unrelated server, enabled twice, disabled
 and re-enabled without losing options, and rejected a conflicting user-owned
 SessionMan entry without mutation. Evidence:
-`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-management-aswCF4/`.
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sessionman-mcp-management-aswCF4/`.
 This management test did not install a live entry in normal user settings.
 Native Claude startup may update its own ordinary caches.
 
@@ -411,7 +411,7 @@ cancellation independently: ListAgents showed Pi survivor
 `ax-85a279c8e29cbd2b6fc6fffbbf42907b` both `running`; TaskStop reported only
 the target `cancelled`; Pi later completed with `SURVIVOR_COMPLETED`.
 Evidence:
-`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/agentx-mcp-live-tc7FXh/`.
+`/var/folders/34/yf5zv4k133l7nrksmz2flmw00000gn/T/sessionman-mcp-live-tc7FXh/`.
 This run also reverified real memory continuation on both engines. Cancellation
 and host notification claims are supported by their respective actual runs,
 not inferred from an all-mock suite or from the failed natural-finish attempt.

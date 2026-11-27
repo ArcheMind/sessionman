@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/runtime"
-	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/sessions"
 )
 
 func (a App) convertToAgy(detail sessions.Session) error {

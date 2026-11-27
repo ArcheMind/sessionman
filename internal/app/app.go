@@ -13,14 +13,14 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/drivers"
-	"github.com/ArcheMind/agentx/internal/hooks"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
-	"github.com/ArcheMind/agentx/internal/sessions"
-	"github.com/ArcheMind/agentx/internal/skills"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/drivers"
+	"github.com/ArcheMind/sessionman/internal/hooks"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/skills"
 	"gopkg.in/yaml.v3"
 )
 
@@ -392,15 +392,15 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 		return fmt.Errorf("working directory %s is not a directory", request.Cwd)
 	}
 	if agent.ID == "codex" {
-		injectCodexAgentX(&request)
+		injectCodexSessionMan(&request)
 	}
 	if agent.ID == "claude" {
-		if err := a.injectClaudeAgentX(&request); err != nil {
+		if err := a.injectClaudeSessionMan(&request); err != nil {
 			return err
 		}
 	}
 	if agent.ID == "pi" {
-		if err := injectPiAgentX(a.Sessions.HomeDir, &request, !dryRun); err != nil {
+		if err := injectPiSessionMan(a.Sessions.HomeDir, &request, !dryRun); err != nil {
 			return err
 		}
 	}
@@ -989,13 +989,13 @@ func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, det
 	request.Cwd, request.Session = workspace, resumeToken
 	switch agent.ID {
 	case "claude":
-		if err := a.injectClaudeAgentX(&request); err != nil {
+		if err := a.injectClaudeSessionMan(&request); err != nil {
 			return err
 		}
 	case "codex":
-		injectCodexAgentX(&request)
+		injectCodexSessionMan(&request)
 	case "pi":
-		if err := injectPiAgentX(a.Sessions.HomeDir, &request, !dryRun); err != nil {
+		if err := injectPiSessionMan(a.Sessions.HomeDir, &request, !dryRun); err != nil {
 			return err
 		}
 	}

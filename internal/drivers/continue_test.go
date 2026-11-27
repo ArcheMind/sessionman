@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
 )
 
 func TestPlanConvertsNativeTransport(t *testing.T) {

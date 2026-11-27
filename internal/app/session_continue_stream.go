@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/nativedirs"
-	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/sessions"
 )
 
 // Native stdout wakes the store reader; the timer covers stores flushed after

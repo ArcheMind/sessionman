@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/hooks"
+	"github.com/ArcheMind/sessionman/internal/hooks"
 )
 
 func TestSessionStart(t *testing.T) {

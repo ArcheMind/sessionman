@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/headless"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/headless"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 // fakeServer answers app-server requests through handle and lets tests inject notifications.

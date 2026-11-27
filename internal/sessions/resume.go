@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 )
 
 // claudeProjectsRoot returns the claude projects directory, following

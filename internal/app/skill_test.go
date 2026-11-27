@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/skills"
+	"github.com/ArcheMind/sessionman/internal/skills"
 )
 
 func TestSkillResourceGrammarAndStructuredOutput(t *testing.T) {
@@ -41,7 +41,7 @@ func TestSkillResourceGrammarAndStructuredOutput(t *testing.T) {
 	}
 }
 
-func TestSkillInstallDryRunUsesAgentXOutput(t *testing.T) {
+func TestSkillInstallDryRunUsesSessionManOutput(t *testing.T) {
 	project := t.TempDir()
 	source := filepath.Join(t.TempDir(), "source")
 	if err := os.MkdirAll(source, 0o755); err != nil {

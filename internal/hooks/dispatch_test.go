@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/hooks"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/hooks"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 func TestDispatchPresentsCanonicalCommandIOAcrossAgents(t *testing.T) {

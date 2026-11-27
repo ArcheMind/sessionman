@@ -3,7 +3,7 @@ package hooks
 import (
 	"os"
 
-	"github.com/ArcheMind/agentx/internal/hookmount"
+	"github.com/ArcheMind/sessionman/internal/hookmount"
 )
 
 // Service reads unified hooks from the User Config dir only; without it

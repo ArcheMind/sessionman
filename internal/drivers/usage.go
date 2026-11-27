@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 const usageQueryTimeout = 15 * time.Second

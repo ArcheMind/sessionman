@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/inventory"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/inventory"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 )
 
 type skillRoot struct {

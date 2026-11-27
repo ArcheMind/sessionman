@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 type gitRunner struct {

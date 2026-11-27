@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ArcheMind/agentx/internal/app"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
-	"github.com/ArcheMind/agentx/internal/update"
+	"github.com/ArcheMind/sessionman/internal/app"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/update"
 )
 
 func main() {

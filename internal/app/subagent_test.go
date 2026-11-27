@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
-func TestClaudeLaunchAttachesAgentXWithoutRegistration(t *testing.T) {
+func TestClaudeLaunchAttachesSessionManWithoutRegistration(t *testing.T) {
 	var output bytes.Buffer
 	app := New(false, strings.NewReader(""), &output, &bytes.Buffer{})
 	app.Hooks.Home = t.TempDir()

@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/hooks"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/hooks"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 	"github.com/tailscale/hujson"
 )
 

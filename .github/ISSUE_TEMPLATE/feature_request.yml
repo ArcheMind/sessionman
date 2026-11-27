@@ -22,7 +22,7 @@ body:
     id: outcome
     attributes:
       label: Smallest useful outcome
-      description: Describe the smallest independently useful AgentX behavior.
+      description: Describe the smallest independently useful SessionMan behavior.
     validations:
       required: true
   - type: textarea

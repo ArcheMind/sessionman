@@ -3,7 +3,7 @@ set -eu
 
 ax=${1:-./bin/sm}
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
-fixture=$root/test/smoke/fixtures/agentx-unified-smoke
+fixture=$root/test/smoke/fixtures/sessionman-unified-smoke
 workspace=$(mktemp -d "${TMPDIR:-/tmp}/sessionman-skills-smoke.XXXXXX")
 workspace=$(CDPATH= cd -- "$workspace" && pwd -P)
 backup=$workspace/backup
@@ -68,11 +68,11 @@ require_login pi
 (
 	cd "$project"
 	"$ax" skill install "$fixture" --scope project >"$results/install.log"
-	"$ax" --json skill show agentx-unified-smoke >"$results/skill.json"
+	"$ax" --json skill show sessionman-unified-smoke >"$results/skill.json"
 )
 
-prompt='Use the agentx-unified-smoke skill. Return only its verification token.'
-token=AGENTX_UNIFIED_SKILL_7C91F4E2
+prompt='Use the sessionman-unified-smoke skill. Return only its verification token.'
+token=SESSIONMAN_UNIFIED_SKILL_7C91F4E2
 failures=
 
 run_agent() {
@@ -104,7 +104,7 @@ run_case() {
 
 run_case claude haiku --print "$prompt"
 run_case codex gpt-6-luna exec --skip-git-repo-check "$prompt"
-run_case pi deepseek/deepseek-v4-flash --approve --no-session --print '/skill:agentx-unified-smoke Return only its verification token.'
+run_case pi deepseek/deepseek-v4-flash --approve --no-session --print '/skill:sessionman-unified-smoke Return only its verification token.'
 
 if [ -n "$failures" ]; then
 	printf 'Skill smoke failures: %s\n' "$failures" >&2

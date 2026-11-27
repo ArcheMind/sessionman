@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/hookmount"
+	"github.com/ArcheMind/sessionman/internal/hookmount"
 )
 
 func TestAgyHookSemantics(t *testing.T) {

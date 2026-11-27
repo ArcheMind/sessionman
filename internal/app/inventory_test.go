@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/inventory"
+	"github.com/ArcheMind/sessionman/internal/inventory"
 )
 
 func fixtureInventory() inventory.Result {

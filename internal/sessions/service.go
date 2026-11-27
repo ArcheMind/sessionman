@@ -3,11 +3,11 @@ package sessions
 import (
 	"errors"
 	"fmt"
-	"github.com/ArcheMind/agentx/internal/clibin"
+	"github.com/ArcheMind/sessionman/internal/clibin"
 	"os"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 	transcript "github.com/ArcheMind/sessionman-protocol/go"
 )
 
@@ -18,7 +18,7 @@ type Agent struct {
 	Root      string `json:"session_root" yaml:"session_root"`
 }
 
-// Transcript shapes are owned by the shared protocol module; agentx defines
+// Transcript shapes are owned by the shared protocol module; sessionman defines
 // no message shapes of its own.
 type (
 	ContentBlock = transcript.ContentBlock

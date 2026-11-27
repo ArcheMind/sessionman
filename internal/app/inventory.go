@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/inventory"
-	"github.com/ArcheMind/agentx/internal/mcp"
+	"github.com/ArcheMind/sessionman/internal/inventory"
+	"github.com/ArcheMind/sessionman/internal/mcp"
 )
 
 func (a App) mcp(ctx context.Context, args []string) error {

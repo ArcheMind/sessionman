@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const moduleRoot = "agentx/"
+const moduleRoot = "sessionman/"
 
 // Equal returns nil when actual matches expected, otherwise an error whose text
 // is a self-contained prompt a user can paste to a coding agent.
@@ -26,7 +26,7 @@ func Equal(name string, actual, expected, context any) error {
 	fmt.Fprintf(&b, "Actual:\n%s\n", render(actual))
 	fmt.Fprintf(&b, "Expected:\n%s\n", render(expected))
 	fmt.Fprintf(&b, "Context:\n%s\n\n", render(context))
-	b.WriteString("Task: run `sm version` to get the installed SessionMan version, read the files referenced above on this machine, find the root cause using the SessionMan source at the matching tag (https://github.com/ArcheMind/agentx), then file an issue at https://github.com/ArcheMind/agentx/issues with the evidence and root cause.")
+	b.WriteString("Task: run `sm version` to get the installed SessionMan version, read the files referenced above on this machine, find the root cause using the SessionMan source at the matching tag (https://github.com/ArcheMind/sessionman), then file an issue at https://github.com/ArcheMind/sessionman/issues with the evidence and root cause.")
 	return errors.New(b.String())
 }
 

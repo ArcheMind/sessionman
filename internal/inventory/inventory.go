@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 )
 
 type Evidence struct {

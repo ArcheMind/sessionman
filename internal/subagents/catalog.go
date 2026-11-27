@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/clibin"
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/clibin"
+	"github.com/ArcheMind/sessionman/internal/presets"
 )
 
 func StrictDecode(data []byte, value any) error {

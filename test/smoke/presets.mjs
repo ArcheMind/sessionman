@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 
 const binary=resolve(process.argv[2]??'bin/ax')
-const home=await mkdtemp(join(tmpdir(),'agentx-presets-'))
+const home=await mkdtemp(join(tmpdir(),'sessionman-presets-'))
 const workspace=join(home,'workspace')
 const bin=join(home,'bin')
 const codexHome=join(home,'codex-home')
@@ -28,7 +28,7 @@ assert(empty.status!==0&&empty.output.includes('New session · Presets')&&empty.
 evidence.P01='empty collection shows hint, create entry and recent-session sections'
 
 const create=ax('\r'+'j\r'+'smoke-model\n'+'jjj\r'+'smoke review\n'+'smoke-review\n'+'Smoke review preset for deterministic acceptance\n'+'j\r'+'q')
-const presetFile=join(home,'.agentx','presets','smoke-review','PRESET.md')
+const presetFile=join(home,'.sessionman','presets','smoke-review','PRESET.md')
 const saved=await readFile(presetFile,'utf8')
 assert(saved==='---\nagent: codex\nmodel: smoke-model\neffort: low\n---\n\nSmoke review preset for deterministic acceptance\n','saved file '+saved)
 assert(create.output.includes('Model list unavailable')&&create.output.includes('unverified for this model')&&create.output.includes('Error: Invalid name')&&create.output.includes('Saving does not run inference.'),'P05/P07/P08 create output: '+create.output)
@@ -48,14 +48,14 @@ try{
  const tools=(await rpc('tools/list')).result.tools
  assert(JSON.stringify(tools[0].inputSchema.properties.model.enum)===JSON.stringify(['smoke-review'])&&!tools[0].inputSchema.properties.effort,'P10 enum/effort schema')
   const live=ax('m'+'jjj\r'+'smoke-review-pi\n'+'j\r'+'q'+'q')
- assert(live.output.includes('1 running AgentX MCP connection(s) still show the preset list'),'P15 change note: '+live.output)
+ assert(live.output.includes('1 running SessionMan MCP connection(s) still show the preset list'),'P15 change note: '+live.output)
  await writeFile(presetFile,saved.replace('Smoke review preset for deterministic acceptance','Hand-edited description'))
- await mkdir(join(home,'.agentx','presets','broken'))
- await writeFile(join(home,'.agentx','presets','broken','PRESET.md'),'---\nagent: codex\n---\nmissing model\n')
+ await mkdir(join(home,'.sessionman','presets','broken'))
+ await writeFile(join(home,'.sessionman','presets','broken','PRESET.md'),'---\nagent: codex\n---\nmissing model\n')
  const refreshed=(await rpc('tools/list')).result.tools[0]
  assert(refreshed.description.includes('- preset smoke-review: codex "smoke-model" effort=low; callable; "Hand-edited description"')&&refreshed.description.includes('- preset broken: invalid (')&&refreshed.description.includes('model is required')&&refreshed.description.includes('- preset smoke-review-pi: codex')&&refreshed.description.length<4096&&JSON.stringify(refreshed.inputSchema.properties.model.enum)===JSON.stringify(['smoke-review','smoke-review-pi'])&&refreshed.inputSchema.properties.mode.default==='normal'&&refreshed.inputSchema.properties.write===undefined,'P14 MCP sees edited and broken items: '+refreshed.description)
  const report=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',run_in_background:false})
- assert(report.includes('preset=smoke-review; agent=codex; actual model=smoke-model; effort=low')&&report.includes('Mode: normal\n')&&report.includes(`Auth (discovered by preflight for this turn): CODEX_HOME=${JSON.stringify(codexHome)} (chatgpt)`)&&report.includes('FAKE_REPORT check')&&report.includes('reconnect AgentX MCP to refresh the preset list'),'P10/P15 call: '+report)
+ assert(report.includes('preset=smoke-review; agent=codex; actual model=smoke-model; effort=low')&&report.includes('Mode: normal\n')&&report.includes(`Auth (discovered by preflight for this turn): CODEX_HOME=${JSON.stringify(codexHome)} (chatgpt)`)&&report.includes('FAKE_REPORT check')&&report.includes('reconnect SessionMan MCP to refresh the preset list'),'P10/P15 call: '+report)
  const override=await call('ExternalSubagent',{description:'smoke',prompt:'check',model:'smoke-review',effort:'high',run_in_background:false})
  assert(override.includes('unknown field "effort"'),'per-call effort override accepted: '+override)
  const argvBefore=(await argvFiles()).length
@@ -67,7 +67,7 @@ try{
  const yoloArgv=JSON.parse(await readFile(join(home,(await argvFiles()).at(-1)),'utf8')).argv.join(' ')
  assert(yolo.includes('Mode: yolo\n')&&yoloArgv.includes('-c sandbox_mode="danger-full-access" -c approval_policy="never"'),'yolo mode: '+yolo+yoloArgv)
  evidence.W01='mode is per call: normal passes no sandbox flags (approval never only), removed write is rejected before any native run, yolo reaches Codex as danger-full-access'
- evidence.P10='initialize, tools/list enum and ExternalSubagent use ~/.agentx/presets; report names preset, agent, model, effort'
+ evidence.P10='initialize, tools/list enum and ExternalSubagent use ~/.sessionman/presets; report names preset, agent, model, effort'
  evidence.P15='TUI reports live MCP connection must reconnect; call result notes stale snapshot'
 }finally{mcp.stdin.end();await new Promise(done=>mcp.once('close',done))}
 

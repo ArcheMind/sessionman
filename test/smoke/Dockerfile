@@ -12,15 +12,15 @@ COPY --from=builder /out/ax /usr/local/bin/ax
 
 FROM runtime AS agents-clean
 
-COPY test/smoke/install-clean.sh /usr/local/bin/agentx-install-clean-smoke
-RUN sh /usr/local/bin/agentx-install-clean-smoke
+COPY test/smoke/install-clean.sh /usr/local/bin/sessionman-install-clean-smoke
+RUN sh /usr/local/bin/sessionman-install-clean-smoke
 
 CMD ["ax", "agent", "list"]
 
 FROM runtime AS skills-clean
 
-COPY test/smoke/fixtures/agentx-unified-smoke /opt/agentx-unified-smoke
-COPY test/smoke/skills-clean.sh /usr/local/bin/agentx-skills-clean-smoke
-RUN sh /usr/local/bin/agentx-skills-clean-smoke
+COPY test/smoke/fixtures/sessionman-unified-smoke /opt/sessionman-unified-smoke
+COPY test/smoke/skills-clean.sh /usr/local/bin/sessionman-skills-clean-smoke
+RUN sh /usr/local/bin/sessionman-skills-clean-smoke
 
 CMD ["ax", "skill", "list"]

@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/sessions"
 )
 
 const (

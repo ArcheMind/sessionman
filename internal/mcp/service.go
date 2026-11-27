@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ArcheMind/agentx/internal/inventory"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/inventory"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/tailscale/hujson"
 )

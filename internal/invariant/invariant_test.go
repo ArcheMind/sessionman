@@ -23,7 +23,7 @@ func TestEqualReportsPromptWhenUnequal(t *testing.T) {
 		"Actual:\n2\n",
 		"Expected:\n1\n",
 		"\"path\": \"/tmp/a.jsonl\"",
-		"https://github.com/ArcheMind/agentx/issues",
+		"https://github.com/ArcheMind/sessionman/issues",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in:\n%s", want, text)

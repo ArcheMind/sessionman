@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/runtime"
-	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/sessions"
 )
 
 type trackedSessionRunner func(runtime.CommandPlan) (runtime.CommandResult, error)

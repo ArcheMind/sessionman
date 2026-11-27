@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
-	"github.com/ArcheMind/agentx/internal/subagents"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/subagents"
 )
 
 func (a App) preset(ctx context.Context, args []string) error {
@@ -162,18 +162,18 @@ func (a App) presetHome() string {
 	return a.Hooks.Home
 }
 
-func (a App) injectClaudeAgentX(request *runtime.RunRequest) error {
+func (a App) injectClaudeSessionMan(request *runtime.RunRequest) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	mountAgentX(request, agentparams.MCPServer{Command: executable, Args: []string{"mcp", "serve"}})
+	mountSessionMan(request, agentparams.MCPServer{Command: executable, Args: []string{"mcp", "serve"}})
 	request.Flags = append([]string{"--allowedTools", "mcp__sessionman__StartExternalSubagent", "mcp__sessionman__SendExternalSubagentMessage", "mcp__sessionman__StopExternalSubagent", "mcp__sessionman__ListExternalSubagentSessions"}, request.Flags...)
 
 	return nil
 }
 
-func injectPiAgentX(home string, request *runtime.RunRequest, write bool) error {
+func injectPiSessionMan(home string, request *runtime.RunRequest, write bool) error {
 	path := subagents.PiBridgePath(home)
 	if write {
 		if err := subagents.WritePiBridge(path); err != nil {
@@ -184,7 +184,7 @@ func injectPiAgentX(home string, request *runtime.RunRequest, write bool) error 
 	return nil
 }
 
-func injectCodexAgentX(request *runtime.RunRequest) {
+func injectCodexSessionMan(request *runtime.RunRequest) {
 	bin, err := os.Executable()
 	if err != nil {
 		return
@@ -193,10 +193,10 @@ func injectCodexAgentX(request *runtime.RunRequest) {
 	if subHome := os.Getenv("SM_SUBAGENT_HOME"); subHome != "" {
 		server.Env = map[string]string{"SM_SUBAGENT_HOME": subHome}
 	}
-	mountAgentX(request, server)
+	mountSessionMan(request, server)
 }
 
-func mountAgentX(request *runtime.RunRequest, server agentparams.MCPServer) {
+func mountSessionMan(request *runtime.RunRequest, server agentparams.MCPServer) {
 	servers := make(map[string]agentparams.MCPServer, len(request.MCP.Servers)+1)
 	for name, existing := range request.MCP.Servers {
 		servers[name] = existing

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/hookmount"
-	agentruntime "github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/hookmount"
+	agentruntime "github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 type Handler = hookmount.Handler

@@ -27,7 +27,7 @@ Type `alias sm="/tmp/sm-vhs-demo"`
 Enter
 Type `export PS1="$ "`
 Enter
-Type `python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["SM_DEMO_ROOT"])/"home/.claude/projects/agentx/interactive-resume.jsonl"; rows=[json.loads(x) for x in p.read_text().splitlines()]; p.write_text("".join(json.dumps(dict(r,timestamp="2026-11-15T12:%02d:00Z" % n))+chr(10) for n in range(10) for r in rows))'`
+Type `python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["SM_DEMO_ROOT"])/"home/.claude/projects/sessionman/interactive-resume.jsonl"; rows=[json.loads(x) for x in p.read_text().splitlines()]; p.write_text("".join(json.dumps(dict(r,timestamp="2026-11-15T12:%02d:00Z" % n))+chr(10) for n in range(10) for r in rows))'`
 Enter
 Type "clear"
 Enter

@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ArcheMind/agentx/internal/clibin"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/clibin"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 //go:embed pi_sdk_login.mjs

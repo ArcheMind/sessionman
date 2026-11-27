@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/presets"
 )
 
 const (

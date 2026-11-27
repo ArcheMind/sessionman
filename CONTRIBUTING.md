@@ -1,4 +1,4 @@
-# Contributing to AgentX
+# Contributing to SessionMan
 
 Thank you for helping make coding-agent workflows simpler without weakening their native tools.
 
@@ -6,7 +6,7 @@ Thank you for helping make coding-agent workflows simpler without weakening thei
 
 Use an issue for a user-visible behavior change or a new agent capability. Small correctness, documentation, and maintenance fixes can go directly to a pull request.
 
-A capability proposal should include native evidence: the exact CLI help, stable local file, or documented protocol that AgentX would use. AgentX does not infer model catalogs, credential state, or session behavior.
+A capability proposal should include native evidence: the exact CLI help, stable local file, or documented protocol that SessionMan would use. SessionMan does not infer model catalogs, credential state, or session behavior.
 
 ## Development setup
 
@@ -16,8 +16,8 @@ Requirements:
 - The native agent CLI needed by any live integration you are changing
 
 ```bash
-git clone https://github.com/ArcheMind/agentx.git
-cd agentx
+git clone https://github.com/ArcheMind/sessionman.git
+cd sessionman
 make verify
 ```
 

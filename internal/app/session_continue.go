@@ -13,14 +13,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
-	"github.com/ArcheMind/agentx/internal/drivers"
-	"github.com/ArcheMind/agentx/internal/execution"
-	"github.com/ArcheMind/agentx/internal/headless"
-	"github.com/ArcheMind/agentx/internal/hooks"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
-	"github.com/ArcheMind/agentx/internal/runtime"
-	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/drivers"
+	"github.com/ArcheMind/sessionman/internal/execution"
+	"github.com/ArcheMind/sessionman/internal/headless"
+	"github.com/ArcheMind/sessionman/internal/hooks"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/sessions"
 )
 
 const sessionContinueUsage = "usage: sm [--json|--yaml] session continue <target-agent> [file] [--stream] [--duplex] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>] [-- <native args...>]"

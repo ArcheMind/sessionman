@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/sessions"
 	"github.com/mattn/go-runewidth"
 )
 

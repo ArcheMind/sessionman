@@ -12,12 +12,12 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/ArcheMind/agentx/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/agentparams"
 
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/runtime"
-	"github.com/ArcheMind/agentx/internal/sessions"
-	"github.com/ArcheMind/agentx/internal/subagents"
+	"github.com/ArcheMind/sessionman/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/subagents"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
@@ -358,15 +358,15 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 		return a.startFailure(ctx, reader, home, p, problem, true)
 	}
 	if agent.ID == "codex" {
-		injectCodexAgentX(&request)
+		injectCodexSessionMan(&request)
 	}
 	if agent.ID == "claude" {
-		if err := a.injectClaudeAgentX(&request); err != nil {
+		if err := a.injectClaudeSessionMan(&request); err != nil {
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}
 	}
 	if agent.ID == "pi" {
-		if err := injectPiAgentX(a.Sessions.HomeDir, &request, true); err != nil {
+		if err := injectPiSessionMan(a.Sessions.HomeDir, &request, true); err != nil {
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}
 	}

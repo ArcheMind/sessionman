@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ArcheMind/agentx/internal/agentupdate"
-	"github.com/ArcheMind/agentx/internal/clibin"
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/agentupdate"
+	"github.com/ArcheMind/sessionman/internal/clibin"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 func (a App) agentUpdates(ctx context.Context, args []string, update bool) error {

@@ -1,7 +1,7 @@
 package subagents
 
 import (
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/presets"
 	"strings"
 	"testing"
 )

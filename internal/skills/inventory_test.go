@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/inventory"
+	"github.com/ArcheMind/sessionman/internal/inventory"
 )
 
 func TestInventoryProjectionIndependentSourcesAndScopesF01F03F04F07F09F10(t *testing.T) {

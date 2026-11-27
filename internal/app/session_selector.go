@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/ArcheMind/agentx/internal/presets"
-	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/sessions"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )

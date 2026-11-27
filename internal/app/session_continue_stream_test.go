@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/runtime"
-	"github.com/ArcheMind/agentx/internal/sessions"
+	"github.com/ArcheMind/sessionman/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/sessions"
 )
 
 type continueStreamCapture struct {

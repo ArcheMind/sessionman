@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ArcheMind/agentx/internal/presets"
+	"github.com/ArcheMind/sessionman/internal/presets"
 )
 
 // AgentMeta is the durable identity of one ExternalSubagent, written by the thin shell at Start

@@ -1,4 +1,4 @@
-module github.com/ArcheMind/agentx
+module github.com/ArcheMind/sessionman
 
 go 1.26.0
 

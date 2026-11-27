@@ -12,8 +12,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/clibin"
-	"github.com/ArcheMind/agentx/internal/nativedirs"
+	"github.com/ArcheMind/sessionman/internal/clibin"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 )
 
 type ExecRunner struct {

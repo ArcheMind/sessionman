@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ArcheMind/agentx/internal/agentupdate"
+	"github.com/ArcheMind/sessionman/internal/agentupdate"
 )
 
 func TestSpecEveryInstalledAgentCanCheckWithoutInstalling(t *testing.T) {

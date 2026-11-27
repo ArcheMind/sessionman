@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/runtime"
+	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
 type overviewStatus string

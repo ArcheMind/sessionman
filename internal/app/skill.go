@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ArcheMind/agentx/internal/inventory"
-	"github.com/ArcheMind/agentx/internal/skills"
+	"github.com/ArcheMind/sessionman/internal/inventory"
+	"github.com/ArcheMind/sessionman/internal/skills"
 )
 
 func (a App) skill(ctx context.Context, args []string) error {
