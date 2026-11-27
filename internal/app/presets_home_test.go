@@ -438,12 +438,20 @@ func TestPresetLaunchAndResumeShareUnifiedParameters(t *testing.T) {
 						t.Fatalf("missing %q in %#v", want, plan.Args)
 					}
 				}
-				if item.agent == "agy" {
+				switch item.agent {
+				case "agy":
 					if plan.Env["SM_AGY_SYSTEM_PROMPT"] != p.RolePrompt() {
 						t.Fatalf("missing agy preset role prompt %q in Env %#v", p.RolePrompt(), plan.Env)
 					}
-				} else if !strings.Contains(strings.Join(plan.Args, " "), p.RolePrompt()) {
-					t.Fatalf("missing preset role prompt %q in %#v", p.RolePrompt(), plan.Args)
+				case "codex":
+					want := fmt.Sprintf("developer_instructions=%q", p.RolePrompt())
+					if !strings.Contains(strings.Join(plan.Args, " "), want) {
+						t.Fatalf("missing codex preset role prompt %q in %#v", want, plan.Args)
+					}
+				default:
+					if !strings.Contains(strings.Join(plan.Args, " "), p.RolePrompt()) {
+						t.Fatalf("missing preset role prompt %q in %#v", p.RolePrompt(), plan.Args)
+					}
 				}
 			}
 			if !strings.Contains(strings.Join(runner.plans[1].Args, " "), id) {
