@@ -123,6 +123,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.auth(ctx, args[1:])
 	case "session":
 		return a.sessions(ctx, args[1:])
+	case "last":
+		return a.lastSession(ctx, args[1:])
 	case "mcp":
 		return a.mcp(ctx, args[1:])
 	case "wait":
@@ -1155,6 +1157,7 @@ COMMON WORKFLOWS
     Recipient: sm --resume <exported-file>
 
 COMMANDS
+  sm last [-m|--manual|-t|--trim]         Resume the most recently closed session
   sm session <list|show|resume|export|import|continue> [args...]
   sm agent <list|show|install|updates|update|run|exec> [args...]
     sm agent updates <agent> [--install-root <dir>]
