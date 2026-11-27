@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/ArcheMind/sessionman/internal/sessions"
+	"gopkg.in/yaml.v3"
 )
 
 func TestOffloadRestoreTwoRoundTrips(t *testing.T) {
@@ -64,12 +65,15 @@ func TestOffloadRestoreTwoRoundTrips(t *testing.T) {
 						continue
 					}
 					pointers++
+					if !strings.HasSuffix(path, ".yaml") {
+						t.Fatalf("expected .yaml offload file, got %s", path)
+					}
 					data, err := os.ReadFile(path)
 					if err != nil {
 						t.Fatal(err)
 					}
 					var history sessions.Session
-					if err := json.Unmarshal(data, &history); err != nil {
+					if err := yaml.Unmarshal(data, &history); err != nil {
 						t.Fatal(err)
 					}
 					stats := fmt.Sprintf(" — %d lines, %d turns", bytes.Count(data, []byte("\n")), len(sessionTurns(history.Messages)))

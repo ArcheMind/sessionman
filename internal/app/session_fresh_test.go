@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ArcheMind/sessionman/internal/sessions"
+	"gopkg.in/yaml.v3"
 )
 
 func userMsg(id, text string) sessions.Message {
@@ -53,7 +53,7 @@ func TestFreshSessionDetailOffloadsAndRechains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	historyFiles, err := filepath.Glob(filepath.Join(home, ".local", "state", "sessionman", "history", "offload-*.json"))
+	historyFiles, err := filepath.Glob(filepath.Join(home, ".local", "state", "sessionman", "history", "offload-*.yaml"))
 	if err != nil || len(historyFiles) != 1 {
 		t.Fatalf("history files = %v err = %v", historyFiles, err)
 	}
@@ -70,7 +70,7 @@ func TestFreshSessionDetailOffloadsAndRechains(t *testing.T) {
 		t.Fatal(err)
 	}
 	var history sessions.Session
-	if err := json.Unmarshal(data, &history); err != nil {
+	if err := yaml.Unmarshal(data, &history); err != nil {
 		t.Fatal(err)
 	}
 	if len(history.Messages) != 6 || history.MessageCount != 6 {
@@ -123,7 +123,7 @@ func TestApplySessionTurnsKeepsOffloadsAndDeletesWholeTurns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	historyFiles, err := filepath.Glob(filepath.Join(home, ".local", "state", "sessionman", "history", "offload-*.json"))
+	historyFiles, err := filepath.Glob(filepath.Join(home, ".local", "state", "sessionman", "history", "offload-*.yaml"))
 	if err != nil || len(historyFiles) != 1 {
 		t.Fatalf("history files = %v err = %v", historyFiles, err)
 	}
@@ -133,7 +133,7 @@ func TestApplySessionTurnsKeepsOffloadsAndDeletesWholeTurns(t *testing.T) {
 		t.Fatal(err)
 	}
 	var history sessions.Session
-	if err := json.Unmarshal(data, &history); err != nil {
+	if err := yaml.Unmarshal(data, &history); err != nil {
 		t.Fatal(err)
 	}
 	if len(history.Messages) != 2 || history.MessageCount != 2 || history.Messages[0].Content[0].Text != "question 2" || history.Messages[1].Result != "complete output 2" {
@@ -163,7 +163,7 @@ func TestFreshSessionDetailKeepsShortTranscriptsWhole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	historyFiles, err := filepath.Glob(filepath.Join(home, ".local", "state", "sessionman", "history", "*.json"))
+	historyFiles, err := filepath.Glob(filepath.Join(home, ".local", "state", "sessionman", "history", "*.yaml"))
 	if err != nil || len(historyFiles) != 0 {
 		t.Fatalf("history files should not exist: %v err = %v", historyFiles, err)
 	}
@@ -270,7 +270,7 @@ func TestFreshKeyResumesAsNewNativeSessionSameAgent(t *testing.T) {
 	if plan.Executable != "codex" || token == "" || token == "orig-id" {
 		t.Fatalf("fresh resume must launch a new native session, plan = %#v", plan)
 	}
-	historyFiles, err := filepath.Glob(filepath.Join(home, ".local", "state", "sessionman", "history", "*.json"))
+	historyFiles, err := filepath.Glob(filepath.Join(home, ".local", "state", "sessionman", "history", "*.yaml"))
 	if err != nil || len(historyFiles) != 0 {
 		t.Fatalf("history files should not exist: %v err = %v", historyFiles, err)
 	}

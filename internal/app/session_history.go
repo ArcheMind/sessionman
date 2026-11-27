@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ArcheMind/sessionman/internal/sessions"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -20,14 +21,14 @@ func (a App) offloadSessionHistory(history sessions.Session) (sessions.Message, 
 	var data bytes.Buffer
 	history.Messages = sessions.RechainMessages(history.Messages)
 	history.MessageCount = len(history.Messages)
-	if err := writeStructured(&data, history, OutputJSON); err != nil {
+	if err := writeStructured(&data, history, OutputYAML); err != nil {
 		return sessions.Message{}, fmt.Errorf("encode offload history: %w", err)
 	}
 	dir := filepath.Join(a.Sessions.HomeDir, ".local", "state", "sessionman", "history")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return sessions.Message{}, fmt.Errorf("create offload directory: %w", err)
 	}
-	file, err := os.CreateTemp(dir, "offload-*.json")
+	file, err := os.CreateTemp(dir, "offload-*.yaml")
 	if err != nil {
 		return sessions.Message{}, fmt.Errorf("create offload file: %w", err)
 	}
@@ -73,7 +74,7 @@ func expandSessionHistory(messages []sessions.Message, active map[string]bool) (
 			return nil, false, fmt.Errorf("read offload history %s: %w", path, err)
 		}
 		var history sessions.Session
-		if err := json.Unmarshal(data, &history); err != nil {
+		if err := unmarshalOffloadHistory(data, &history); err != nil {
 			return nil, false, fmt.Errorf("parse offload history %s: %w", path, err)
 		}
 		if len(history.Messages) == 0 || len(sessionTurns(history.Messages)) == 0 {
@@ -107,4 +108,12 @@ func offloadHistoryPath(message sessions.Message) string {
 		}
 	}
 	return path
+}
+
+func unmarshalOffloadHistory(data []byte, out *sessions.Session) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		return json.Unmarshal(trimmed, out)
+	}
+	return yaml.Unmarshal(trimmed, out)
 }
