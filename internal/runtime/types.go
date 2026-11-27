@@ -54,6 +54,7 @@ type RunRequest = agentparams.Request
 type ExecuteOptions struct {
 	Interactive        bool
 	CancelProcessGroup bool
+	SkipNativeDirs     bool
 	Stdin              io.Reader
 	Stdout             io.Writer
 	Stderr             io.Writer

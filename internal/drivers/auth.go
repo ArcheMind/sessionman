@@ -46,7 +46,7 @@ func (d NativeAuth) Status(ctx context.Context, runner runtime.Runner) (runtime.
 	if d.StatusCommand.Executable == "" || d.ParseStatus == nil {
 		return runtime.AuthStatus{Supported: false}, nil
 	}
-	result, executeErr := runner.Execute(ctx, d.StatusCommand, runtime.ExecuteOptions{})
+	result, executeErr := runner.Execute(ctx, d.StatusCommand, runtime.ExecuteOptions{SkipNativeDirs: true})
 	return d.ParseStatus(result, executeErr)
 }
 

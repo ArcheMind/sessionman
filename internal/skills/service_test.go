@@ -245,3 +245,36 @@ func TestAgyUserInstallHasExplicitNativeProjection(t *testing.T) {
 		t.Fatal("explicit native user projection not discovered")
 	}
 }
+
+func TestAgyUserInstallRespectsSMConfigDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires symbolic-link support")
+	}
+	home, project, source := t.TempDir(), t.TempDir(), t.TempDir()
+	configDir := filepath.Join(t.TempDir(), "config")
+	t.Setenv("SM_CONFIG_DIR", configDir)
+	writeSkill(t, source, "review", "Review changes")
+	service := Service{Home: home, Project: project}
+	plan, err := service.Install(context.Background(), InstallOptions{Source: source, Scope: ScopeUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantClaude := filepath.Join(configDir, "claude", "skills", "review")
+	wantAgy := filepath.Join(configDir, "agy", "config", "skills", "review")
+	if plan.Projection != wantClaude || plan.AgyProjection != wantAgy {
+		t.Fatalf("unexpected projections: %+v", plan)
+	}
+	for _, link := range []string{wantClaude, wantAgy} {
+		target, err := os.Readlink(link)
+		if err != nil {
+			t.Fatalf("readlink %s: %v", link, err)
+		}
+		resolvedTarget := target
+		if !filepath.IsAbs(resolvedTarget) {
+			resolvedTarget = filepath.Clean(filepath.Join(filepath.Dir(link), target))
+		}
+		if resolvedTarget != plan.Destination {
+			t.Fatalf("link %s -> %q, want %q", link, resolvedTarget, plan.Destination)
+		}
+	}
+}

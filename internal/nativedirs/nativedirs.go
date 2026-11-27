@@ -877,10 +877,12 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 		ad.ConfigDir = filepath.Join(geminiDir, "config")
 		configSource := filepath.Join(dirs.ConfigDir, "agy", "config")
 		// plugins/ is not linked: it holds sm's plugin, not user config.
-		ad.Symlinks = append(ad.Symlinks, Symlink{
-			filepath.Join(geminiDir, "config", "settings.json"),
-			filepath.Join(configSource, "settings.json"),
-		})
+		ad.linkConfig(filepath.Join(geminiDir, "config"), configSource, []configEntry{
+			{"settings.json", false},
+			{"skills", true},
+			{"rules", true},
+			{"mcp_config.json", false},
+		}, true)
 		if err := mount.mountAgy(ad, geminiDir); err != nil {
 			return nil, err
 		}

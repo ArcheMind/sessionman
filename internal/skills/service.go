@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ArcheMind/sessionman/internal/inventory"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 	"github.com/ArcheMind/sessionman/internal/runtime"
 	"gopkg.in/yaml.v3"
 )
@@ -154,7 +155,11 @@ func (s Service) Install(ctx context.Context, options InstallOptions) (InstallPl
 	plan.Destination = filepath.Join(canonicalRoot, metadata.Name)
 	plan.Projection = filepath.Join(claudeRoot, metadata.Name)
 	if options.Scope == ScopeUser {
-		plan.AgyProjection = filepath.Join(s.Home, ".gemini", "config", "skills", metadata.Name)
+		if dirs := nativedirs.FromEnv(); dirs.ConfigDir != "" {
+			plan.AgyProjection = filepath.Join(dirs.ConfigDir, "agy", "config", "skills", metadata.Name)
+		} else {
+			plan.AgyProjection = filepath.Join(s.Home, ".gemini", "config", "skills", metadata.Name)
+		}
 	}
 	paths := []string{plan.Destination, plan.Projection}
 	if plan.AgyProjection != "" {
@@ -223,11 +228,13 @@ func (s Service) Install(ctx context.Context, options InstallOptions) (InstallPl
 }
 
 func (s Service) roots(scope Scope) (string, string) {
-	base := s.Project
 	if scope == ScopeUser {
-		base = s.Home
+		if dirs := nativedirs.FromEnv(); dirs.ConfigDir != "" {
+			return filepath.Join(s.Home, ".agents", "skills"), filepath.Join(dirs.ConfigDir, "claude", "skills")
+		}
+		return filepath.Join(s.Home, ".agents", "skills"), filepath.Join(s.Home, ".claude", "skills")
 	}
-	return filepath.Join(base, ".agents", "skills"), filepath.Join(base, ".claude", "skills")
+	return filepath.Join(s.Project, ".agents", "skills"), filepath.Join(s.Project, ".claude", "skills")
 }
 
 func (s Service) resolveSource(ctx context.Context, source, subpath string) (string, string, func(), error) {

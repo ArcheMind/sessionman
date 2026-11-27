@@ -73,8 +73,10 @@ func (r ExecRunner) Execute(ctx context.Context, plan CommandPlan, options Execu
 	if err := r.resolveAgent(ctx, &plan); err != nil {
 		return CommandResult{ExitCode: -1}, err
 	}
-	if err := prepareAgent(&plan); err != nil {
-		return CommandResult{ExitCode: -1}, err
+	if !options.SkipNativeDirs {
+		if err := prepareAgent(&plan); err != nil {
+			return CommandResult{ExitCode: -1}, err
+		}
 	}
 	cmd := exec.CommandContext(ctx, plan.Executable, plan.Args...)
 	cmd.Dir = plan.Cwd

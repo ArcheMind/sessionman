@@ -187,3 +187,40 @@ func TestCachedErrorOpenCode(t *testing.T) {
 		t.Errorf("unexpected cached error for claude: %v", err)
 	}
 }
+
+func TestAgyLinksSkillsAndConfigEntriesToC(t *testing.T) {
+	c := filepath.Join(t.TempDir(), "config")
+	ad, err := Resolve("agy", Dirs{ConfigDir: c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLinks := map[string]string{
+		filepath.Join(ad.ConfigDir, "settings.json"):   filepath.Join(c, "agy", "config", "settings.json"),
+		filepath.Join(ad.ConfigDir, "skills"):          filepath.Join(c, "agy", "config", "skills"),
+		filepath.Join(ad.ConfigDir, "rules"):           filepath.Join(c, "agy", "config", "rules"),
+		filepath.Join(ad.ConfigDir, "mcp_config.json"): filepath.Join(c, "agy", "config", "mcp_config.json"),
+	}
+	gotLinks := map[string]string{}
+	for _, link := range ad.Symlinks {
+		gotLinks[link.Link] = link.Target
+	}
+	for link, target := range wantLinks {
+		if gotLinks[link] != target {
+			t.Errorf("symlink %s = %q, want %q", link, gotLinks[link], target)
+		}
+	}
+	wantCDirs := map[string]bool{
+		filepath.Join(c, "agy", "config", "skills"): false,
+		filepath.Join(c, "agy", "config", "rules"):  false,
+	}
+	for _, dir := range ad.CDirs {
+		if _, ok := wantCDirs[dir]; ok {
+			wantCDirs[dir] = true
+		}
+	}
+	for dir, found := range wantCDirs {
+		if !found {
+			t.Errorf("missing CDir %s", dir)
+		}
+	}
+}

@@ -46,7 +46,7 @@ func (AGYAuth) Status(ctx context.Context, runner runtime.Runner) (runtime.AuthS
 type AGYModels struct{}
 
 func (AGYModels) ListModels(ctx context.Context, runner runtime.Runner) ([]runtime.Model, error) {
-	result, err := runner.Execute(ctx, runtime.CommandPlan{Executable: "agy", Args: []string{"models"}, Agent: "agy"}, runtime.ExecuteOptions{})
+	result, err := runner.Execute(ctx, runtime.CommandPlan{Executable: "agy", Args: []string{"models"}, Agent: "agy"}, runtime.ExecuteOptions{SkipNativeDirs: true})
 	if err != nil {
 		return nil, fmt.Errorf("read Antigravity account models: %w", err)
 	}
