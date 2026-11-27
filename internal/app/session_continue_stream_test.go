@@ -69,9 +69,9 @@ func decodeContinueEvents(t *testing.T, output string) ([]sessions.ProtocolMessa
 	decoder := json.NewDecoder(strings.NewReader(output))
 	for {
 		var event struct {
-			Type    string                   `json:"type"`
-			ProtocolMessage   sessions.ProtocolMessage           `json:"message"`
-			Session sessions.ProtocolSession `json:"session"`
+			Type            string                   `json:"type"`
+			ProtocolMessage sessions.ProtocolMessage `json:"message"`
+			Session         sessions.ProtocolSession `json:"session"`
 		}
 		err := decoder.Decode(&event)
 		if err == io.EOF {

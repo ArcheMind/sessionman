@@ -217,9 +217,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		Workspace:       workspace,
 		StartedAt:       full.StartedAt,
 		UpdatedAt:       full.UpdatedAt,
-		MessageCount:      len(delta),
+		MessageCount:    len(delta),
 		Source:          "continue",
-		Messages:         delta,
+		Messages:        delta,
 		RuntimeEvents:   runtimeEvents,
 	}
 	if out.ID == "" {

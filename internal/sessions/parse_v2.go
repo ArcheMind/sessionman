@@ -220,12 +220,12 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 			subtype := stringValue(record["subtype"])
 			if strings.HasPrefix(subtype, "model_refusal") {
 				ps.RuntimeEvents = append(ps.RuntimeEvents, RuntimeEvent{
-					ID:           firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-rt-%d", idx)),
+					ID:             firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-rt-%d", idx)),
 					AfterMessageID: lastID,
-					Provider:     "claude",
-					Kind:         transcript.RuntimeSafetyRefusal,
-					Message:      firstNonEmpty(stringValue(record["content"]), subtype),
-					Timestamp:    ts,
+					Provider:       "claude",
+					Kind:           transcript.RuntimeSafetyRefusal,
+					Message:        firstNonEmpty(stringValue(record["content"]), subtype),
+					Timestamp:      ts,
 				})
 				continue
 			}
@@ -266,14 +266,14 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 					code = "reasoning_extraction"
 				}
 				ps.RuntimeEvents = append(ps.RuntimeEvents, RuntimeEvent{
-					ID:           firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-rt-%d", idx)),
+					ID:             firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-rt-%d", idx)),
 					AfterMessageID: lastID,
-					Provider:     "claude",
-					Model:        model,
-					Kind:         rtKind,
-					Code:         code,
-					Message:      textSummary,
-					Timestamp:    ts,
+					Provider:       "claude",
+					Model:          model,
+					Kind:           rtKind,
+					Code:           code,
+					Message:        textSummary,
+					Timestamp:      ts,
 				})
 				continue
 			}

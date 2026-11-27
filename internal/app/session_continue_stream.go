@@ -279,7 +279,7 @@ func (s *continueTranscriptStream) emit(entries []sessions.ProtocolMessage) erro
 			continue
 		}
 		if err := s.streamWriter().WriteEvent(struct {
-			Type  string         `json:"type"`
+			Type            string                   `json:"type"`
 			ProtocolMessage sessions.ProtocolMessage `json:"message"`
 		}{"message", entry}); err != nil {
 			return err

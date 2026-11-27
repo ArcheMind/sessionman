@@ -496,7 +496,7 @@ func TestSessionContinueClaudeProtocol20PreventsReasoningExtraction(t *testing.T
 		"id":              "wake-chats-91",
 		"provider":        "agy",
 		"workspace":       workspace,
-		"messageCount":      5,
+		"messageCount":    5,
 		"messages": []any{
 			map[string]any{
 				"id": "s1-identity", "source": "s1", "mutability": "constant", "slot": "identity",

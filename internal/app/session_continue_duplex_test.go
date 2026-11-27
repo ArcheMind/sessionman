@@ -21,12 +21,12 @@ import (
 )
 
 type duplexEvent struct {
-	Type        string                   `json:"type"`
-	ID          string                   `json:"id"`
-	Disposition string                   `json:"disposition"`
-	Error       string                   `json:"error"`
-	ProtocolMessage       sessions.ProtocolMessage           `json:"message"`
-	Session     sessions.ProtocolSession `json:"session"`
+	Type            string                   `json:"type"`
+	ID              string                   `json:"id"`
+	Disposition     string                   `json:"disposition"`
+	Error           string                   `json:"error"`
+	ProtocolMessage sessions.ProtocolMessage `json:"message"`
+	Session         sessions.ProtocolSession `json:"session"`
 }
 
 func decodeDuplexEvents(t *testing.T, output string) ([]sessions.ProtocolMessage, []duplexEvent, *sessions.ProtocolSession) {
