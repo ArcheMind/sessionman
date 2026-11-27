@@ -51,10 +51,35 @@ func (r *continueRunner) StartStream(plan runtime.CommandPlan) (*runtime.Stream,
 func (r *continueRunner) storeTurn(plan runtime.CommandPlan, sessionID, prompt string) error {
 	if r.agent == "claude" {
 		path := sessions.ClaudeProjectFile(r.home, plan.Cwd, sessionID)
-		return r.appendTurn(path, "claude", prompt, func(detail sessions.Session) []map[string]any {
-			detail.ID = sessionID
-			return sessions.SerializeClaude(detail)
+		ps := sessions.ProtocolSession{ProtocolVersion: "2.0", ID: sessionID, Provider: "claude", Workspace: plan.Cwd}
+		if _, err := os.Stat(path); err == nil {
+			parsed, err := sessions.ParseNativeProtocolFile("claude", path)
+			if err != nil {
+				return err
+			}
+			ps = parsed
+			ps.ID = sessionID
+		}
+		ps.Entries = append(ps.Entries, sessions.Entry{
+			ID: "echo-user", Source: "user", Mutability: "delta",
+			Content: []sessions.ContentBlock{{Type: "text", Text: prompt}},
 		})
+		replyPS, err := sessions.ToProtocolSession(sessions.Session{ID: sessionID, Provider: "claude", Messages: r.reply})
+		if err != nil {
+			return err
+		}
+		ps.Entries = append(ps.Entries, replyPS.Entries...)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return err
+		}
+		var buffer bytes.Buffer
+		encoder := json.NewEncoder(&buffer)
+		for _, record := range sessions.SerializeClaudeProtocol(ps) {
+			if err := encoder.Encode(record); err != nil {
+				return err
+			}
+		}
+		return os.WriteFile(path, buffer.Bytes(), 0o600)
 	}
 	codexHome := plan.Env["CODEX_HOME"]
 	if codexHome == "" {
@@ -457,6 +482,71 @@ func TestSessionContinueRequiresModelForPi(t *testing.T) {
 	err := application.Run(context.Background(), []string{"session", "continue", "pi"})
 	if err == nil || !strings.Contains(err.Error(), "--model is required for pi") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSessionContinueClaudeProtocol20PreventsReasoningExtraction(t *testing.T) {
+	workspace := testWorkspace(t)
+	ps := map[string]any{
+		"protocolVersion": "2.0",
+		"id":              "wake-chats-91",
+		"provider":        "agy",
+		"workspace":       workspace,
+		"entryCount":      5,
+		"entries": []any{
+			map[string]any{
+				"id": "s1-identity", "source": "s1", "mutability": "constant", "slot": "identity",
+				"content": []any{map[string]any{"type": "text", "text": "Identity: philia093"}},
+			},
+			map[string]any{
+				"id": "world-rules", "source": "world", "mutability": "constant", "slot": "rules",
+				"content": []any{map[string]any{"type": "text", "text": "AGENTS.md static rules"}},
+			},
+			map[string]any{
+				"id": "u-prev", "source": "user", "mutability": "delta",
+				"content": []any{map[string]any{"type": "text", "text": "previous question"}},
+			},
+			map[string]any{
+				"id": "a-agy", "parentId": "u-prev", "source": "s2", "mutability": "delta",
+				"producer": map[string]any{"provider": "agy", "model": "gemini-3"},
+				"content": []any{
+					map[string]any{"type": "thinking", "text": "Initial hypothesis pointed toward foreign reasoning"},
+					map[string]any{"type": "text", "text": "agy normal reply"},
+				},
+			},
+			map[string]any{
+				"id": "u-now", "parentId": "a-agy", "source": "user", "mutability": "delta",
+				"content": []any{map[string]any{"type": "text", "text": "new prompt"}},
+			},
+		},
+		"runtimeEvents": []any{
+			map[string]any{
+				"id": "rt-1", "provider": "claude", "kind": "safety_refusal",
+				"code": "reasoning_extraction", "message": "safeguards flagged this message",
+			},
+		},
+	}
+	input, err := json.Marshal(ps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, _, runner := continueApp(t, "claude", "", string(input))
+	runner.reply = []sessions.Message{{ID: "reply-1", Role: "assistant", Content: []sessions.ContentBlock{{Type: "text", Text: "clean reply"}}}}
+	if err := application.Run(context.Background(), []string{"session", "continue", "claude"}); err != nil {
+		t.Fatalf("session continue claude failed: %v", err)
+	}
+	rawBytes, err := os.ReadFile(sessions.ClaudeProjectFile(runner.home, workspace, runner.resumedIDs[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := string(rawBytes)
+	for _, forbidden := range []string{"Initial hypothesis", "AGENTS.md static rules", "safeguards flagged", "※", "<think>"} {
+		if strings.Contains(encoded, forbidden) {
+			t.Fatalf("forbidden content %q reached Claude native session: %s", forbidden, encoded)
+		}
+	}
+	if !strings.Contains(encoded, `"isMeta":true`) || !strings.Contains(encoded, "Identity: philia093") {
+		t.Fatalf("s1 identity missing or not marked isMeta:true in Claude native session: %s", encoded)
 	}
 }
 

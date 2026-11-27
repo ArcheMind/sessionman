@@ -66,22 +66,18 @@ type duplexSteerAck struct {
 	Error       string `json:"error,omitempty"`
 }
 
-// readDuplexTranscript reads the single-line initial canonical session JSON
-// from stdin without waiting for EOF.
-func readDuplexTranscript(r *bufio.Reader) (sessions.Session, error) {
+// readDuplexProtocolTranscript reads the single-line initial canonical session
+// JSON (v1 or v2) from stdin without waiting for EOF.
+func readDuplexProtocolTranscript(r *bufio.Reader) (sessions.ProtocolSession, error) {
 	line, err := r.ReadBytes('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
-		return sessions.Session{}, fmt.Errorf("read stdin: %w", err)
+		return sessions.ProtocolSession{}, fmt.Errorf("read stdin: %w", err)
 	}
 	trimmed := bytes.TrimSpace(line)
 	if len(trimmed) == 0 {
-		return sessions.Session{}, fmt.Errorf("parse unified transcript JSON: unexpected empty first line")
+		return sessions.ProtocolSession{}, fmt.Errorf("parse unified transcript JSON: unexpected empty first line")
 	}
-	var detail sessions.Session
-	if err := json.Unmarshal(trimmed, &detail); err != nil {
-		return sessions.Session{}, fmt.Errorf("parse unified transcript JSON: %w", err)
-	}
-	return detail, nil
+	return parseContinueProtocolSession(trimmed)
 }
 
 const (

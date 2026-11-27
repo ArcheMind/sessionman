@@ -13,13 +13,25 @@ import (
 )
 
 func (a App) convertToAgy(detail sessions.Session) error {
+	return a.writeAgyTempDB(func(path string) error {
+		return sessions.WriteAgyDatabaseFile(detail, path)
+	})
+}
+
+func (a App) convertToAgyProtocol(detail sessions.ProtocolSession) error {
+	return a.writeAgyTempDB(func(path string) error {
+		return sessions.WriteProtocolAgyDatabaseFile(detail, path)
+	})
+}
+
+func (a App) writeAgyTempDB(write func(path string) error) error {
 	root, err := os.MkdirTemp("", "sessionman-agy-convert-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(root)
 	path := filepath.Join(root, "conversation.db")
-	if err := sessions.WriteAgyDatabaseFile(detail, path); err != nil {
+	if err := write(path); err != nil {
 		return err
 	}
 	data, err := os.ReadFile(path)

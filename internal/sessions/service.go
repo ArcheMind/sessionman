@@ -19,12 +19,86 @@ type Agent struct {
 }
 
 // Transcript shapes are owned by the shared protocol module; sessionman defines
-// no message shapes of its own.
+// no message shapes of its own. ProtocolSession/Entry/RuntimeEvent are the 2.0
+// canonical shapes; Message/Session remain temporarily as v1 transition views
+// until all native parsers and callers finish migrating to 2.0.
 type (
-	ContentBlock = transcript.ContentBlock
-	Message      = transcript.Message
-	Session      = transcript.Session
+	ContentBlock    = transcript.ContentBlock
+	ProtocolSession = transcript.Session
+	Entry           = transcript.Entry
+	RuntimeEvent    = transcript.RuntimeEvent
+	ToolResult      = transcript.ToolResult
+	Producer        = transcript.Producer
 )
+
+// Message is the legacy v1 message shape retained during the 2.0 migration.
+type Message struct {
+	ID         string         `json:"id" yaml:"id"`
+	ParentID   string         `json:"parentId,omitempty" yaml:"parentId,omitempty"`
+	Role       string         `json:"role" yaml:"role"`
+	Content    []ContentBlock `json:"content,omitempty" yaml:"content,omitempty"`
+	Result     any            `json:"result,omitempty" yaml:"result,omitempty"`
+	Timestamp  string         `json:"timestamp,omitempty" yaml:"timestamp,omitempty"`
+	RecordedAt string         `json:"recordedAt,omitempty" yaml:"recordedAt,omitempty"`
+	Model      string         `json:"model,omitempty" yaml:"model,omitempty"`
+	StopReason string         `json:"stopReason,omitempty" yaml:"stopReason,omitempty"`
+	ToolUseID  string         `json:"toolUseId,omitempty" yaml:"toolUseId,omitempty"`
+	ToolName   string         `json:"toolName,omitempty" yaml:"toolName,omitempty"`
+	IsError    bool           `json:"isError,omitempty" yaml:"isError,omitempty"`
+}
+
+// Session is the legacy v1 session envelope retained during the 2.0 migration.
+type Session struct {
+	ID           string    `json:"id" yaml:"id"`
+	Provider     string    `json:"provider" yaml:"provider"`
+	IsSubagent   bool      `json:"isSubagent,omitempty" yaml:"isSubagent,omitempty"`
+	Workspace    string    `json:"workspace,omitempty" yaml:"workspace,omitempty"`
+	Title        string    `json:"title,omitempty" yaml:"title,omitempty"`
+	StartedAt    string    `json:"startedAt,omitempty" yaml:"startedAt,omitempty"`
+	UpdatedAt    string    `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty"`
+	MessageCount int       `json:"messageCount" yaml:"messageCount"`
+	Source       string    `json:"source,omitempty" yaml:"source,omitempty"`
+	Messages     []Message `json:"messages" yaml:"messages"`
+}
+
+// ToProtocolSession converts a legacy v1 Session into a validated Protocol 2.0
+// Session via transcript.UpgradeFromV1.
+func ToProtocolSession(v1 Session) (ProtocolSession, error) {
+	msgs := make([]transcript.V1Message, len(v1.Messages))
+	for i, m := range v1.Messages {
+		var parent *string
+		if m.ParentID != "" {
+			p := m.ParentID
+			parent = &p
+		}
+		msgs[i] = transcript.V1Message{
+			ID:         m.ID,
+			ParentID:   parent,
+			Role:       m.Role,
+			Content:    m.Content,
+			Result:     m.Result,
+			Timestamp:  m.Timestamp,
+			RecordedAt: m.RecordedAt,
+			Model:      m.Model,
+			StopReason: m.StopReason,
+			ToolUseID:  m.ToolUseID,
+			ToolName:   m.ToolName,
+			IsError:    m.IsError,
+		}
+	}
+	return transcript.UpgradeFromV1(transcript.V1Session{
+		ID:           v1.ID,
+		Provider:     v1.Provider,
+		IsSubagent:   v1.IsSubagent,
+		Workspace:    v1.Workspace,
+		Title:        v1.Title,
+		StartedAt:    v1.StartedAt,
+		UpdatedAt:    v1.UpdatedAt,
+		MessageCount: v1.MessageCount,
+		Source:       v1.Source,
+		Messages:     msgs,
+	})
+}
 
 const SubagentMarker = "[sm:subagent]"
 

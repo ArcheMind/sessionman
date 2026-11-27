@@ -21,6 +21,7 @@ import (
 	"github.com/ArcheMind/sessionman/internal/nativedirs"
 	"github.com/ArcheMind/sessionman/internal/runtime"
 	"github.com/ArcheMind/sessionman/internal/sessions"
+	transcript "github.com/ArcheMind/sessionman-protocol/go"
 )
 
 const sessionContinueUsage = "usage: sm [--json|--yaml] session continue <target-agent> [file] [--stream] [--duplex] [--model <model>] [--effort <level>] [--append-system-prompt <text>] [--mcp-config <file|json>] [--mode <normal|yolo>] [--user-config <true|false>] [--workspace <path>] [-- <native args...>]"
@@ -90,18 +91,18 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if agent.ID == "pi" && model == "" {
 		return fmt.Errorf("--model is required for pi (provider/model)")
 	}
-	var detail sessions.Session
+	var detail sessions.ProtocolSession
 	var duplexReader *bufio.Reader
 	if duplex {
 		duplexReader = bufio.NewReader(a.Stdin)
-		detail, err = readDuplexTranscript(duplexReader)
+		detail, err = readDuplexProtocolTranscript(duplexReader)
 	} else {
-		detail, err = a.readTranscript(file)
+		detail, err = a.readProtocolTranscript(file)
 	}
 	if err != nil {
 		return err
 	}
-	prompt, history, err := splitContinuePrompt(detail.Messages)
+	prompt, history, err := splitContinuePromptEntries(detail.Entries)
 	if err != nil {
 		return err
 	}
@@ -111,9 +112,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	}
 	detail.Workspace = workspace
 	if agent.ID == "pi" {
-		var imported sessions.Session
-		imported, request.SystemPrompt = sessions.PreparePiTranscript(sessions.Session{Messages: history}, request.SystemPrompt)
-		history = imported.Messages
+		var imported sessions.ProtocolSession
+		imported, request.SystemPrompt = sessions.PreparePiProtocolTranscript(sessions.ProtocolSession{Entries: history}, request.SystemPrompt)
+		history = imported.Entries
 	}
 
 	token := ""
@@ -122,15 +123,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	// both resumes and records, and the recorded file is the delta source.
 	if len(history) > 0 || agent.ID == "pi" {
 		imported := detail
-		// Claude's session scanner rejects records without a parseable
-		// timestamp ("No conversation found"), so empty ones are filled; the
-		// parent chain is rewritten positionally so delta-appended history
-		// stays on one native ancestor chain; tool ids the native APIs would
-		// reject are mapped to deterministic safe ids, and message ids over
-		// the Codex item id cap are shortened.
-		imported.Messages = sessions.SanitizeMessageIDs(sessions.SanitizeToolIDs(sessions.RechainMessages(fillTimestamps(history))))
-		imported.MessageCount = len(history)
-		token, err = a.writeResumeSession(ctx, imported, agent.ID, request)
+		imported.Entries = sessions.SanitizeEntryIDs(sessions.SanitizeEntryToolIDs(sessions.RechainEntries(fillEntryTimestamps(history))))
+		imported.EntryCount = len(imported.Entries)
+		token, err = a.writeProtocolResumeSession(ctx, imported, agent.ID, request)
 		if err != nil {
 			return err
 		}
@@ -246,6 +241,60 @@ func continueDelta(messages []sessions.Message, prefix int) []sessions.Message {
 		delta = delta[1:]
 	}
 	return delta
+}
+
+func (a App) writeProtocolResumeSession(ctx context.Context, detail sessions.ProtocolSession, agentID string, request runtime.RunRequest) (string, error) {
+	if agentID == "codex" {
+		codexHome := nativedirs.CodexHome()
+		provider, err := drivers.CodexProvider(ctx, a.Runner, runtime.CommandPlan{Cwd: detail.Workspace, Agent: "codex"}, request)
+		if err != nil {
+			return "", err
+		}
+		return sessions.WriteProtocolCodexSessionFile(detail, codexHome, provider)
+	}
+	if agentID == "agy" {
+		return sessions.WriteProtocolAgySessionFile(detail, nativedirs.AgyAppDataDir(a.Sessions.HomeDir))
+	}
+	return sessions.WriteProtocolSessionFile(detail, agentID, resumeStateDir(a.Sessions.HomeDir), a.Sessions.HomeDir)
+}
+
+func fillEntryTimestamps(entries []sessions.Entry) []sessions.Entry {
+	now := time.Now().UTC().Format(time.RFC3339)
+	out := make([]sessions.Entry, len(entries))
+	for i, entry := range entries {
+		if entry.Timestamp == "" {
+			entry.Timestamp = entry.RecordedAt
+		}
+		if entry.Timestamp == "" {
+			entry.Timestamp = now
+		}
+		out[i] = entry
+	}
+	return out
+}
+
+func splitContinuePromptEntries(entries []sessions.Entry) (string, []sessions.Entry, error) {
+	if len(entries) == 0 {
+		return "", nil, fmt.Errorf("transcript has no messages; nothing to continue")
+	}
+	last := entries[len(entries)-1]
+	if last.Source != transcript.SourceUser || last.Mutability != transcript.MutabilityDelta {
+		return "", nil, fmt.Errorf("transcript must end with a user message (user×delta); got %s×%s", last.Source, last.Mutability)
+	}
+	var parts []string
+	for _, block := range last.Content {
+		if block.Type != transcript.BlockText {
+			return "", nil, fmt.Errorf("the trailing user message allows only text blocks; got %q", block.Type)
+		}
+		if block.Text != "" {
+			parts = append(parts, block.Text)
+		}
+	}
+	prompt := strings.Join(parts, "\n")
+	if strings.TrimSpace(prompt) == "" {
+		return "", nil, fmt.Errorf("the trailing user message has no text to send")
+	}
+	return prompt, entries[:len(entries)-1], nil
 }
 
 // writeResumeSession materializes a transcript as a native session file.

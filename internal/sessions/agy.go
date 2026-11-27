@@ -522,6 +522,14 @@ func SerializeAgy(detail Session) ([][]byte, error) {
 
 // WriteAgyDatabaseFile creates a standalone native database at a new path.
 func WriteAgyDatabaseFile(detail Session, path string) error {
+	steps, err := SerializeAgy(detail)
+	if err != nil {
+		return err
+	}
+	return writeAgyStepsDatabase(detail.ID, detail.Workspace, detail.StartedAt, steps, path)
+}
+
+func writeAgyStepsDatabase(sessionID, workspace, startedAt string, steps [][]byte, path string) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -553,10 +561,9 @@ func WriteAgyDatabaseFile(detail Session, path string) error {
 	if _, err = tx.Exec(`PRAGMA user_version=1`); err != nil {
 		return err
 	}
-	if detail.ID == "" {
-		detail.ID = newUUID()
+	if sessionID == "" {
+		sessionID = newUUID()
 	}
-	workspace := detail.Workspace
 	if workspace == "" {
 		workspace, err = os.Getwd()
 		if err != nil {
@@ -569,15 +576,11 @@ func WriteAgyDatabaseFile(detail Session, path string) error {
 	}
 	workspaceURL := agyFileURL(workspace)
 	uri := workspaceURL.String()
-	metadata := agyJoin(agyBytes(1, agyText(1, uri)), agyBytes(2, agyTimestamp(detail.StartedAt)), agyText(3, newUUID()), agyText(6, detail.ID), agyText(7, uri), agyText(18, "default-cli-project"))
-	if _, err = tx.Exec(`INSERT INTO trajectory_meta VALUES (?,?,4,17)`, newUUID(), detail.ID); err != nil {
+	metadata := agyJoin(agyBytes(1, agyText(1, uri)), agyBytes(2, agyTimestamp(startedAt)), agyText(3, newUUID()), agyText(6, sessionID), agyText(7, uri), agyText(18, "default-cli-project"))
+	if _, err = tx.Exec(`INSERT INTO trajectory_meta VALUES (?,?,4,17)`, newUUID(), sessionID); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(`INSERT INTO trajectory_metadata_blob VALUES ('main',?)`, metadata); err != nil {
-		return err
-	}
-	steps, err := SerializeAgy(detail)
-	if err != nil {
 		return err
 	}
 	for i, step := range steps {
@@ -609,41 +612,42 @@ func WriteAgySessionFile(detail Session, appDataDir string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return "", err
 	}
-	if err := WriteAgyDatabaseFile(detail, path); err != nil {
-		return "", err
-	}
-	ok := false
-	defer func() {
-		if !ok {
-			_ = os.Remove(path)
-		}
-	}()
-	db, err := agyOpen(filepath.Join(appDataDir, "conversation_summaries.db"), false)
-	if err != nil {
-		return "", err
-	}
-	defer db.Close()
-	if _, err = db.Exec(strings.Replace(agySummaryDDL, "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)); err != nil {
-		return "", err
-	}
-	workspace := detail.Workspace
-	if workspace == "" {
-		workspace, err = os.Getwd()
-		if err != nil {
-			return "", err
-		}
-	}
-	workspace, err = filepath.Abs(workspace)
-	if err != nil {
-		return "", err
-	}
-	workspaceURL := agyFileURL(workspace)
-	uris, _ := json.Marshal([]string{workspaceURL.String()})
 	steps, err := SerializeAgy(detail)
 	if err != nil {
 		return "", err
 	}
+	if err := writeAgyStepsDatabase(detail.ID, detail.Workspace, detail.StartedAt, steps, path); err != nil {
+		return "", err
+	}
 	summary := SummaryOf(detail)
+	if err := upsertAgySummary(appDataDir, id, detail.Workspace, firstNonEmpty(detail.Title, summary.FirstUserMessage), summary.LatestUserMessage, steps); err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+	return id, nil
+}
+
+func upsertAgySummary(appDataDir, id, workspace, title, preview string, steps [][]byte) error {
+	db, err := agyOpen(filepath.Join(appDataDir, "conversation_summaries.db"), false)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if _, err = db.Exec(strings.Replace(agySummaryDDL, "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)); err != nil {
+		return err
+	}
+	if workspace == "" {
+		workspace, err = os.Getwd()
+		if err != nil {
+			return err
+		}
+	}
+	workspace, err = filepath.Abs(workspace)
+	if err != nil {
+		return err
+	}
+	workspaceURL := agyFileURL(workspace)
+	uris, _ := json.Marshal([]string{workspaceURL.String()})
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	lastUser := -1
 	for i, step := range steps {
@@ -652,10 +656,6 @@ func WriteAgySessionFile(detail Session, appDataDir string) (string, error) {
 			lastUser = i
 		}
 	}
-	_, err = db.Exec(`INSERT INTO conversation_summaries(conversation_id,title,preview,step_count,last_modified_time,workspace_uris,last_user_input_time,last_user_input_step_index,project_id) VALUES (?,?,?,?,?,?,?,?,?)`, id, firstNonEmpty(detail.Title, summary.FirstUserMessage), summary.LatestUserMessage, len(steps), now, string(uris), now, lastUser, "default-cli-project")
-	if err != nil {
-		return "", err
-	}
-	ok = true
-	return id, nil
+	_, err = db.Exec(`INSERT INTO conversation_summaries(conversation_id,title,preview,step_count,last_modified_time,workspace_uris,last_user_input_time,last_user_input_step_index,project_id) VALUES (?,?,?,?,?,?,?,?,?)`, id, title, preview, len(steps), now, string(uris), now, lastUser, "default-cli-project")
+	return err
 }

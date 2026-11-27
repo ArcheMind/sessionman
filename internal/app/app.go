@@ -21,6 +21,7 @@ import (
 	"github.com/ArcheMind/sessionman/internal/runtime"
 	"github.com/ArcheMind/sessionman/internal/sessions"
 	"github.com/ArcheMind/sessionman/internal/skills"
+	transcript "github.com/ArcheMind/sessionman-protocol/go"
 	"gopkg.in/yaml.v3"
 )
 
@@ -863,25 +864,60 @@ func (a App) sessionImport(ctx context.Context, args []string) error {
 	return nil
 }
 
-func (a App) readTranscript(path string) (sessions.Session, error) {
-	var data []byte
-	var err error
+func (a App) readTranscriptBytes(path string) ([]byte, error) {
 	if path == "" || path == "-" {
-		data, err = io.ReadAll(a.Stdin)
+		data, err := io.ReadAll(a.Stdin)
 		if err != nil {
-			return sessions.Session{}, fmt.Errorf("read stdin: %w", err)
+			return nil, fmt.Errorf("read stdin: %w", err)
 		}
-	} else {
-		data, err = os.ReadFile(path)
-		if err != nil {
-			return sessions.Session{}, fmt.Errorf("read transcript file: %w", err)
-		}
+		return data, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read transcript file: %w", err)
+	}
+	return data, nil
+}
+
+func (a App) readTranscript(path string) (sessions.Session, error) {
+	data, err := a.readTranscriptBytes(path)
+	if err != nil {
+		return sessions.Session{}, err
 	}
 	var detail sessions.Session
 	if err := json.Unmarshal(data, &detail); err != nil {
 		return sessions.Session{}, fmt.Errorf("parse unified transcript JSON: %w", err)
 	}
 	return detail, nil
+}
+
+func (a App) readProtocolTranscript(path string) (sessions.ProtocolSession, error) {
+	data, err := a.readTranscriptBytes(path)
+	if err != nil {
+		return sessions.ProtocolSession{}, err
+	}
+	return parseContinueProtocolSession(data)
+}
+
+func parseContinueProtocolSession(data []byte) (sessions.ProtocolSession, error) {
+	detail, err := transcript.ParseSession(data)
+	if err == nil {
+		return detail, nil
+	}
+	// Legacy v1 callers (e.g. Harness wake inputs) may omit top-level id/provider.
+	var v1 sessions.Session
+	if json.Unmarshal(data, &v1) == nil && len(v1.Messages) > 0 {
+		if v1.ID == "" {
+			v1.ID = "continue"
+		}
+		if v1.Provider == "" {
+			v1.Provider = "harness"
+		}
+		if upgraded, upErr := sessions.ToProtocolSession(v1); upErr == nil {
+			return upgraded, nil
+		}
+	}
+	return sessions.ProtocolSession{}, fmt.Errorf("parse unified transcript: %w", err)
 }
 
 func (a App) resumeTranscriptFile(ctx context.Context, path string) error {
@@ -1181,6 +1217,21 @@ func (a App) convertTo(provider string) error {
 	data, err := io.ReadAll(a.Stdin)
 	if err != nil {
 		return fmt.Errorf("read stdin: %w", err)
+	}
+	ps, err := parseContinueProtocolSession(data)
+	if err == nil {
+		switch provider {
+		case "agy":
+			return a.convertToAgyProtocol(ps)
+		case "claude":
+			return writeJSONL(a.Stdout, sessions.SerializeClaudeProtocol(ps))
+		case "codex":
+			return writeJSONL(a.Stdout, sessions.SerializeCodexProtocol(ps))
+		case "pi":
+			return writeJSONL(a.Stdout, sessions.SerializePiProtocol(ps))
+		case "opencode":
+			return fmt.Errorf("opencode requires a directory target; use session resume instead")
+		}
 	}
 	var detail sessions.Session
 	if err := json.Unmarshal(data, &detail); err != nil {
