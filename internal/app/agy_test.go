@@ -196,7 +196,7 @@ func TestAgyContinueReparsesProjectedHistoryPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	delta := decodeDelta(t, &stdout)
-	if len(delta.Entries) != 1 || transcript.TextContent(delta.Entries[0]) != "new answer" || runner.prompt != "new prompt\nwith special \"quotes\"" || runner.plan.Env["SM_MCP_CWD"] != workspace {
+	if len(delta.Messages) != 1 || transcript.TextContent(delta.Messages[0]) != "new answer" || runner.prompt != "new prompt\nwith special \"quotes\"" || runner.plan.Env["SM_MCP_CWD"] != workspace {
 		t.Fatalf("delta=%+v prompt=%q plan=%+v", delta, runner.prompt, runner.plan)
 	}
 	if runner.modelSet != "native-future-model" || len(runner.plan.Args) < 2 || runner.plan.Args[0] != "acp" || runner.plan.Args[1] != "--stdio" {

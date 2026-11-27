@@ -25,13 +25,13 @@ type duplexEvent struct {
 	ID          string                   `json:"id"`
 	Disposition string                   `json:"disposition"`
 	Error       string                   `json:"error"`
-	Entry       sessions.Entry           `json:"entry"`
+	ProtocolMessage       sessions.ProtocolMessage           `json:"message"`
 	Session     sessions.ProtocolSession `json:"session"`
 }
 
-func decodeDuplexEvents(t *testing.T, output string) ([]sessions.Entry, []duplexEvent, *sessions.ProtocolSession) {
+func decodeDuplexEvents(t *testing.T, output string) ([]sessions.ProtocolMessage, []duplexEvent, *sessions.ProtocolSession) {
 	t.Helper()
-	var entries []sessions.Entry
+	var entries []sessions.ProtocolMessage
 	var acks []duplexEvent
 	var result *sessions.ProtocolSession
 	scanner := bufio.NewScanner(strings.NewReader(output))
@@ -49,11 +49,11 @@ func decodeDuplexEvents(t *testing.T, output string) ([]sessions.Entry, []duplex
 			t.Fatalf("event after terminal result: %s", line)
 		}
 		switch ev.Type {
-		case "entry":
-			if err := transcript.ValidateEntry(ev.Entry); err != nil {
+		case "message":
+			if err := transcript.ValidateMessage(ev.ProtocolMessage); err != nil {
 				t.Fatalf("invalid streamed 2.0 entry: %v", err)
 			}
-			entries = append(entries, ev.Entry)
+			entries = append(entries, ev.ProtocolMessage)
 		case "steer_ack":
 			acks = append(acks, ev)
 		case "result":
@@ -262,7 +262,7 @@ func TestSessionContinueDuplexPiRPCSteerAndCancel(t *testing.T) {
 		if len(acks) != 1 || acks[0].ID != "p1" || acks[0].Disposition != "steered" {
 			t.Fatalf("unexpected pi acks: %+v", acks)
 		}
-		if final == nil || len(msgs) != 3 || !reflect.DeepEqual(msgs, final.Entries) {
+		if final == nil || len(msgs) != 3 || !reflect.DeepEqual(msgs, final.Messages) {
 			t.Fatalf("expected 3 chronological pi entries, got %d: %+v", len(msgs), msgs)
 		}
 		if msgs[1].Source != transcript.SourceUser || transcript.TextContent(msgs[1]) != "check pi" {

@@ -85,8 +85,8 @@ func upgradeAgyLegacy(legacy Session) (ProtocolSession, error) {
 	if err != nil {
 		return ProtocolSession{}, err
 	}
-	for i := range ps.Entries {
-		e := &ps.Entries[i]
+	for i := range ps.Messages {
+		e := &ps.Messages[i]
 		if e.Source != transcript.SourceS2 {
 			continue
 		}
@@ -122,13 +122,13 @@ func finishProtocolSession(ps ProtocolSession) (ProtocolSession, bool) {
 	if ps.ID == "" {
 		return ProtocolSession{}, false
 	}
-	for i := range ps.Entries {
-		if ps.Entries[i].Source == transcript.SourceS2 {
-			liftThinkTags(ps.Entries[i].Content)
+	for i := range ps.Messages {
+		if ps.Messages[i].Source == transcript.SourceS2 {
+			liftThinkTags(ps.Messages[i].Content)
 		}
 	}
-	ps.EntryCount = len(ps.Entries)
-	for _, e := range ps.Entries {
+	ps.MessageCount = len(ps.Messages)
+	for _, e := range ps.Messages {
 		if e.Source == transcript.SourceUser && e.Mutability == transcript.MutabilityDelta {
 			text := transcript.TextContent(e)
 			if isSessionPreview(text) {
@@ -186,7 +186,7 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 			case "relevant_memories":
 				if content := extractText(att["content"]); content != "" {
 					id := firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-att-%d", idx))
-					ps.Entries = append(ps.Entries, Entry{
+					ps.Messages = append(ps.Messages, ProtocolMessage{
 						ID: id, ParentID: strPtr(lastID), Source: transcript.SourceS1,
 						Mutability: transcript.MutabilityCurrent, Slot: "relevant-memories",
 						Content:   []ContentBlock{{Type: transcript.BlockText, Text: content}},
@@ -197,7 +197,7 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 			case "instructions":
 				if content := extractText(att["content"]); content != "" {
 					id := firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-att-%d", idx))
-					ps.Entries = append(ps.Entries, Entry{
+					ps.Messages = append(ps.Messages, ProtocolMessage{
 						ID: id, ParentID: strPtr(lastID), Source: transcript.SourceWorld,
 						Mutability: transcript.MutabilityConstant, Slot: "instructions",
 						Content:   []ContentBlock{{Type: transcript.BlockText, Text: content}},
@@ -221,7 +221,7 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 			if strings.HasPrefix(subtype, "model_refusal") {
 				ps.RuntimeEvents = append(ps.RuntimeEvents, RuntimeEvent{
 					ID:           firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-rt-%d", idx)),
-					AfterEntryID: lastID,
+					AfterMessageID: lastID,
 					Provider:     "claude",
 					Kind:         transcript.RuntimeSafetyRefusal,
 					Message:      firstNonEmpty(stringValue(record["content"]), subtype),
@@ -233,8 +233,8 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 			if strings.TrimSpace(text) == "" {
 				continue
 			}
-			msgID := firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-%d", len(ps.Entries)))
-			ps.Entries = append(ps.Entries, Entry{
+			msgID := firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-%d", len(ps.Messages)))
+			ps.Messages = append(ps.Messages, ProtocolMessage{
 				ID: msgID, ParentID: strPtr(parentID), Source: transcript.SourceS1, Mutability: transcript.MutabilityDelta,
 				Content: []ContentBlock{{Type: transcript.BlockText, Text: text}}, Timestamp: ts,
 			})
@@ -267,7 +267,7 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 				}
 				ps.RuntimeEvents = append(ps.RuntimeEvents, RuntimeEvent{
 					ID:           firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-rt-%d", idx)),
-					AfterEntryID: lastID,
+					AfterMessageID: lastID,
 					Provider:     "claude",
 					Model:        model,
 					Kind:         rtKind,
@@ -280,8 +280,8 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 			if len(blocks) == 0 {
 				continue
 			}
-			msgID := firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-%d", len(ps.Entries)))
-			ps.Entries = append(ps.Entries, Entry{
+			msgID := firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-%d", len(ps.Messages)))
+			ps.Messages = append(ps.Messages, ProtocolMessage{
 				ID: msgID, ParentID: strPtr(parentID), Source: transcript.SourceS2, Mutability: transcript.MutabilityDelta,
 				Content: blocks, Timestamp: ts,
 				Producer:   &Producer{Provider: "claude", Model: model},
@@ -308,9 +308,9 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 			blockType := stringValue(obj["type"])
 			if blockType == "tool_result" {
 				toolUseID := stringValue(obj["tool_use_id"])
-				toolMsgID := fmt.Sprintf("claude-%d", len(ps.Entries))
+				toolMsgID := fmt.Sprintf("claude-%d", len(ps.Messages))
 				isError, _ := obj["is_error"].(bool)
-				ps.Entries = append(ps.Entries, Entry{
+				ps.Messages = append(ps.Messages, ProtocolMessage{
 					ID: toolMsgID, ParentID: strPtr(lastID), Source: transcript.SourceWorld, Mutability: transcript.MutabilityDelta,
 					ToolResult: &ToolResult{
 						ToolUseID: toolUseID,
@@ -341,8 +341,8 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 		if len(userBlocks) == 0 {
 			continue
 		}
-		msgID := firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-%d", len(ps.Entries)))
-		entry := Entry{
+		msgID := firstNonEmpty(stringValue(record["uuid"]), fmt.Sprintf("claude-%d", len(ps.Messages)))
+		entry := ProtocolMessage{
 			ID: msgID, ParentID: strPtr(parentID), Source: transcript.SourceUser, Mutability: transcript.MutabilityDelta,
 			Content: userBlocks, Timestamp: ts,
 		}
@@ -353,7 +353,7 @@ func parseClaudeProtocol(path string, records []map[string]any) (ProtocolSession
 		} else if isMeta {
 			entry.Source = transcript.SourceS1
 		}
-		ps.Entries = append(ps.Entries, entry)
+		ps.Messages = append(ps.Messages, entry)
 		updateProtocolTimeBounds(&ps, ts)
 		lastID = msgID
 	}
@@ -397,7 +397,7 @@ func parseCodexProtocol(path string, records []map[string]any) (ProtocolSession,
 		if kind == "compacted" {
 			if msg := stringValue(payload["message"]); msg != "" {
 				id := fmt.Sprintf("codex-compact-%d", idx)
-				ps.Entries = append(ps.Entries, Entry{
+				ps.Messages = append(ps.Messages, ProtocolMessage{
 					ID: id, ParentID: strPtr(lastID), Source: transcript.SourceS1,
 					Mutability: transcript.MutabilityCurrent, Slot: "compaction-summary",
 					Content: []ContentBlock{{Type: transcript.BlockText, Text: msg}}, Timestamp: ts,
@@ -429,11 +429,11 @@ func parseCodexProtocol(path string, records []map[string]any) (ProtocolSession,
 				}
 			}
 			block := ContentBlock{Type: transcript.BlockToolUse, ID: callID, Name: name, Input: input}
-			if n := len(ps.Entries); n > 0 && ps.Entries[n-1].Source == transcript.SourceS2 {
-				ps.Entries[n-1].Content = append(ps.Entries[n-1].Content, block)
+			if n := len(ps.Messages); n > 0 && ps.Messages[n-1].Source == transcript.SourceS2 {
+				ps.Messages[n-1].Content = append(ps.Messages[n-1].Content, block)
 			} else {
-				msgID := fmt.Sprintf("codex-%d", len(ps.Entries))
-				ps.Entries = append(ps.Entries, Entry{
+				msgID := fmt.Sprintf("codex-%d", len(ps.Messages))
+				ps.Messages = append(ps.Messages, ProtocolMessage{
 					ID: msgID, ParentID: strPtr(lastID), Source: transcript.SourceS2, Mutability: transcript.MutabilityDelta,
 					Content: []ContentBlock{block}, Timestamp: ts, Producer: &Producer{Provider: "codex"},
 				})
@@ -455,11 +455,11 @@ func parseCodexProtocol(path string, records []map[string]any) (ProtocolSession,
 				Type: transcript.BlockThinking, Text: strings.Join(summary, "\n"),
 				Signature: stringValue(payload["encrypted_content"]), ID: stringValue(payload["id"]),
 			}
-			if n := len(ps.Entries); n > 0 && ps.Entries[n-1].Source == transcript.SourceS2 {
-				ps.Entries[n-1].Content = append(ps.Entries[n-1].Content, block)
+			if n := len(ps.Messages); n > 0 && ps.Messages[n-1].Source == transcript.SourceS2 {
+				ps.Messages[n-1].Content = append(ps.Messages[n-1].Content, block)
 			} else {
-				msgID := fmt.Sprintf("codex-%d", len(ps.Entries))
-				ps.Entries = append(ps.Entries, Entry{
+				msgID := fmt.Sprintf("codex-%d", len(ps.Messages))
+				ps.Messages = append(ps.Messages, ProtocolMessage{
 					ID: msgID, ParentID: strPtr(lastID), Source: transcript.SourceS2, Mutability: transcript.MutabilityDelta,
 					Content: []ContentBlock{block}, Timestamp: ts, Producer: &Producer{Provider: "codex"},
 				})
@@ -468,8 +468,8 @@ func parseCodexProtocol(path string, records []map[string]any) (ProtocolSession,
 			}
 		case "function_call_output", "custom_tool_call_output":
 			callID := stringValue(payload["call_id"])
-			msgID := fmt.Sprintf("codex-%d", len(ps.Entries))
-			ps.Entries = append(ps.Entries, Entry{
+			msgID := fmt.Sprintf("codex-%d", len(ps.Messages))
+			ps.Messages = append(ps.Messages, ProtocolMessage{
 				ID: msgID, ParentID: strPtr(lastID), Source: transcript.SourceWorld, Mutability: transcript.MutabilityDelta,
 				ToolResult: &ToolResult{ToolUseID: callID, ToolName: callNames[callID], Result: payload["output"]},
 				Timestamp:  ts,
@@ -491,8 +491,8 @@ func parseCodexProtocol(path string, records []map[string]any) (ProtocolSession,
 				if strings.HasPrefix(trimmed, "<environment_context>") {
 					continue
 				}
-				msgID := firstNonEmpty(stringValue(payload["id"]), fmt.Sprintf("codex-%d", len(ps.Entries)))
-				entry := Entry{
+				msgID := firstNonEmpty(stringValue(payload["id"]), fmt.Sprintf("codex-%d", len(ps.Messages)))
+				entry := ProtocolMessage{
 					ID: msgID, ParentID: strPtr(lastID), Source: transcript.SourceUser, Mutability: transcript.MutabilityDelta,
 					Content: blocks, Timestamp: ts,
 				}
@@ -503,7 +503,7 @@ func parseCodexProtocol(path string, records []map[string]any) (ProtocolSession,
 				} else if strings.HasPrefix(trimmed, "<subagent_notification>") {
 					entry.Source = transcript.SourceWorld
 				}
-				ps.Entries = append(ps.Entries, entry)
+				ps.Messages = append(ps.Messages, entry)
 				updateProtocolTimeBounds(&ps, ts)
 				lastID = msgID
 				continue
@@ -511,7 +511,7 @@ func parseCodexProtocol(path string, records []map[string]any) (ProtocolSession,
 			if role == "developer" {
 				if strings.HasPrefix(trimmed, "<turn_aborted>") {
 					ps.RuntimeEvents = append(ps.RuntimeEvents, RuntimeEvent{
-						ID: fmt.Sprintf("codex-rt-%d", idx), AfterEntryID: lastID,
+						ID: fmt.Sprintf("codex-rt-%d", idx), AfterMessageID: lastID,
 						Provider: "codex", Kind: transcript.RuntimeTurnAborted, Message: trimmed, Timestamp: ts,
 					})
 					continue
@@ -519,8 +519,8 @@ func parseCodexProtocol(path string, records []map[string]any) (ProtocolSession,
 				if isCodexCarrierDeveloper(trimmed) {
 					continue
 				}
-				msgID := firstNonEmpty(stringValue(payload["id"]), fmt.Sprintf("codex-%d", len(ps.Entries)))
-				ps.Entries = append(ps.Entries, Entry{
+				msgID := firstNonEmpty(stringValue(payload["id"]), fmt.Sprintf("codex-%d", len(ps.Messages)))
+				ps.Messages = append(ps.Messages, ProtocolMessage{
 					ID: msgID, ParentID: strPtr(lastID), Source: transcript.SourceS1, Mutability: transcript.MutabilityDelta,
 					Content: blocks, Timestamp: ts,
 				})
@@ -528,8 +528,8 @@ func parseCodexProtocol(path string, records []map[string]any) (ProtocolSession,
 				lastID = msgID
 				continue
 			}
-			msgID := firstNonEmpty(stringValue(payload["id"]), fmt.Sprintf("codex-%d", len(ps.Entries)))
-			ps.Entries = append(ps.Entries, Entry{
+			msgID := firstNonEmpty(stringValue(payload["id"]), fmt.Sprintf("codex-%d", len(ps.Messages)))
+			ps.Messages = append(ps.Messages, ProtocolMessage{
 				ID: msgID, ParentID: strPtr(lastID), Source: transcript.SourceS2, Mutability: transcript.MutabilityDelta,
 				Content: blocks, Timestamp: ts, Producer: &Producer{Provider: "codex"},
 			})

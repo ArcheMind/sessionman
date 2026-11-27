@@ -46,17 +46,17 @@ func TestParseClaudeProtocolClassificationAndRuntimeEvents(t *testing.T) {
 	if !ok {
 		t.Fatal("ParseProtocolRecords(claude) returned false")
 	}
-	if len(ps.Entries) != 4 {
-		t.Fatalf("got %d entries, want 4 (mem, u-meta, u-1, a-1): %+v", len(ps.Entries), ps.Entries)
+	if len(ps.Messages) != 4 {
+		t.Fatalf("got %d entries, want 4 (mem, u-meta, u-1, a-1): %+v", len(ps.Messages), ps.Messages)
 	}
-	if ps.Entries[0].Source != transcript.SourceS1 || ps.Entries[0].Mutability != transcript.MutabilityCurrent {
-		t.Fatalf("relevant_memories = %s×%s, want s1×current", ps.Entries[0].Source, ps.Entries[0].Mutability)
+	if ps.Messages[0].Source != transcript.SourceS1 || ps.Messages[0].Mutability != transcript.MutabilityCurrent {
+		t.Fatalf("relevant_memories = %s×%s, want s1×current", ps.Messages[0].Source, ps.Messages[0].Mutability)
 	}
-	if ps.Entries[1].Source != transcript.SourceS1 || ps.Entries[1].Mutability != transcript.MutabilityDelta {
-		t.Fatalf("isMeta user = %s×%s, want s1×delta", ps.Entries[1].Source, ps.Entries[1].Mutability)
+	if ps.Messages[1].Source != transcript.SourceS1 || ps.Messages[1].Mutability != transcript.MutabilityDelta {
+		t.Fatalf("isMeta user = %s×%s, want s1×delta", ps.Messages[1].Source, ps.Messages[1].Mutability)
 	}
-	if ps.Entries[2].Source != transcript.SourceUser || ps.Title != "hello world" {
-		t.Fatalf("user entry/title = %+v title=%q", ps.Entries[2], ps.Title)
+	if ps.Messages[2].Source != transcript.SourceUser || ps.Title != "hello world" {
+		t.Fatalf("user entry/title = %+v title=%q", ps.Messages[2], ps.Title)
 	}
 	if len(ps.RuntimeEvents) != 1 || ps.RuntimeEvents[0].Kind != transcript.RuntimeSafetyRefusal || ps.RuntimeEvents[0].Code != "reasoning_extraction" {
 		t.Fatalf("runtimeEvents = %+v, want 1 safety_refusal(reasoning_extraction)", ps.RuntimeEvents)
@@ -76,14 +76,14 @@ func TestParseCodexProtocolStripsCarrierAndSeparatesTurnAborted(t *testing.T) {
 	if !ok {
 		t.Fatal("ParseProtocolRecords(codex) returned false")
 	}
-	if len(ps.Entries) != 2 {
-		t.Fatalf("got %d entries, want 2 (world×constant + user×delta): %+v", len(ps.Entries), ps.Entries)
+	if len(ps.Messages) != 2 {
+		t.Fatalf("got %d entries, want 2 (world×constant + user×delta): %+v", len(ps.Messages), ps.Messages)
 	}
-	if ps.Entries[0].Source != transcript.SourceWorld || ps.Entries[0].Mutability != transcript.MutabilityConstant {
-		t.Fatalf("AGENTS.md = %s×%s, want world×constant", ps.Entries[0].Source, ps.Entries[0].Mutability)
+	if ps.Messages[0].Source != transcript.SourceWorld || ps.Messages[0].Mutability != transcript.MutabilityConstant {
+		t.Fatalf("AGENTS.md = %s×%s, want world×constant", ps.Messages[0].Source, ps.Messages[0].Mutability)
 	}
-	if ps.Entries[1].Source != transcript.SourceUser || transcript.TextContent(ps.Entries[1]) != "real question" {
-		t.Fatalf("user entry = %+v", ps.Entries[1])
+	if ps.Messages[1].Source != transcript.SourceUser || transcript.TextContent(ps.Messages[1]) != "real question" {
+		t.Fatalf("user entry = %+v", ps.Messages[1])
 	}
 	if len(ps.RuntimeEvents) != 1 || ps.RuntimeEvents[0].Kind != transcript.RuntimeTurnAborted {
 		t.Fatalf("runtimeEvents = %+v, want 1 turn_aborted", ps.RuntimeEvents)
@@ -105,8 +105,8 @@ func TestUpgradeAgyLegacyLiftsUnclosedThink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ps.Entries[1].Content[0].Type != transcript.BlockThinking {
-		t.Fatalf("unclosed <think> was not lifted to thinking: %+v", ps.Entries[1].Content)
+	if ps.Messages[1].Content[0].Type != transcript.BlockThinking {
+		t.Fatalf("unclosed <think> was not lifted to thinking: %+v", ps.Messages[1].Content)
 	}
 	// When serialized to Claude, that lifted thinking must be omitted completely.
 	records := SerializeClaudeProtocol(ps)

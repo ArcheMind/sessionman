@@ -25,7 +25,7 @@ type Agent struct {
 type (
 	ContentBlock    = transcript.ContentBlock
 	ProtocolSession = transcript.Session
-	Entry           = transcript.Entry
+	ProtocolMessage           = transcript.Message
 	RuntimeEvent    = transcript.RuntimeEvent
 	ToolResult      = transcript.ToolResult
 	Producer        = transcript.Producer

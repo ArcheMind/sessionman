@@ -15,9 +15,9 @@ import (
 // PreparePiProtocolTranscript lifts s1 / non-delta user / world.current entries
 // into Pi's systemPrompt argument, matching PreparePiTranscript for 2.0 sessions.
 func PreparePiProtocolTranscript(detail ProtocolSession, appended string) (ProtocolSession, string) {
-	var entries []Entry
+	var entries []ProtocolMessage
 	var instructions []string
-	for _, e := range detail.Entries {
+	for _, e := range detail.Messages {
 		if e.Source == transcript.SourceS1 ||
 			(e.Source == transcript.SourceUser && e.Mutability != transcript.MutabilityDelta) ||
 			(e.Source == transcript.SourceWorld && e.Mutability == transcript.MutabilityCurrent) {
@@ -31,19 +31,19 @@ func PreparePiProtocolTranscript(detail ProtocolSession, appended string) (Proto
 	if appended != "" {
 		instructions = append(instructions, appended)
 	}
-	detail.Entries = RechainEntries(entries)
-	detail.EntryCount = len(entries)
+	detail.Messages = RechainProtocolMessages(entries)
+	detail.MessageCount = len(entries)
 	return detail, strings.Join(instructions, "\n\n")
 }
 
-func entryParentID(e Entry) string {
+func protocolMessageParentID(e ProtocolMessage) string {
 	if e.ParentID == nil {
 		return ""
 	}
 	return *e.ParentID
 }
 
-func isSameProviderThinking(detail ProtocolSession, entry Entry, b ContentBlock) bool {
+func isSameProviderThinking(detail ProtocolSession, entry ProtocolMessage, b ContentBlock) bool {
 	if b.Signature == "" {
 		return false
 	}
@@ -54,7 +54,7 @@ func isSameProviderThinking(detail ProtocolSession, entry Entry, b ContentBlock)
 	return provider != "" && provider == detail.Provider
 }
 
-func isClaudeLocalCommandEntry(e Entry) bool {
+func isClaudeLocalCommandProtocolMessage(e ProtocolMessage) bool {
 	if e.Source != transcript.SourceUser || e.Mutability != transcript.MutabilityDelta || len(e.Content) == 0 {
 		return false
 	}
@@ -66,11 +66,11 @@ func isClaudeLocalCommandEntry(e Entry) bool {
 	return isClaudeLocalCommandText(transcript.TextContent(e))
 }
 
-func materializeEntries(detail ProtocolSession) []Entry {
+func materializeProtocolMessages(detail ProtocolSession) []ProtocolMessage {
 	raw := transcript.Materialize(detail)
-	out := make([]Entry, 0, len(raw))
+	out := make([]ProtocolMessage, 0, len(raw))
 	for _, e := range raw {
-		if isClaudeLocalCommandEntry(e) {
+		if isClaudeLocalCommandProtocolMessage(e) {
 			continue
 		}
 		out = append(out, e)
@@ -78,10 +78,10 @@ func materializeEntries(detail ProtocolSession) []Entry {
 	return out
 }
 
-// RechainEntries rewrites parentId positionally across materialized entries so
+// RechainProtocolMessages rewrites parentId positionally across materialized entries so
 // delta-appended or filtered transcripts always form a single ancestor chain.
-func RechainEntries(entries []Entry) []Entry {
-	out := make([]Entry, len(entries))
+func RechainProtocolMessages(entries []ProtocolMessage) []ProtocolMessage {
+	out := make([]ProtocolMessage, len(entries))
 	previous := ""
 	for i, e := range entries {
 		if previous == "" {
@@ -96,10 +96,10 @@ func RechainEntries(entries []Entry) []Entry {
 	return out
 }
 
-// SanitizeEntryToolIDs rewrites tool ids native APIs would reject into
+// SanitizeProtocolToolIDs rewrites tool ids native APIs would reject into
 // deterministic API-safe ids on the 2.0 continue path.
-func SanitizeEntryToolIDs(entries []Entry) []Entry {
-	out := make([]Entry, len(entries))
+func SanitizeProtocolToolIDs(entries []ProtocolMessage) []ProtocolMessage {
+	out := make([]ProtocolMessage, len(entries))
 	for i, e := range entries {
 		if e.ToolResult != nil && e.ToolResult.ToolUseID != "" && !safeToolID.MatchString(e.ToolResult.ToolUseID) {
 			tr := *e.ToolResult
@@ -125,9 +125,9 @@ func SanitizeEntryToolIDs(entries []Entry) []Entry {
 	return out
 }
 
-// SanitizeEntryIDs maps entry ids Codex would reject to "msg_" + 60 hex chars.
-func SanitizeEntryIDs(entries []Entry) []Entry {
-	out := make([]Entry, len(entries))
+// SanitizeProtocolIDs maps entry ids Codex would reject to "msg_" + 60 hex chars.
+func SanitizeProtocolIDs(entries []ProtocolMessage) []ProtocolMessage {
+	out := make([]ProtocolMessage, len(entries))
 	for i, e := range entries {
 		e.ID = sanitizedMessageID(e.ID)
 		if e.ParentID != nil {
@@ -139,7 +139,7 @@ func SanitizeEntryIDs(entries []Entry) []Entry {
 	return out
 }
 
-func isHarnessVisibleChannel(e Entry) bool {
+func isHarnessVisibleChannel(e ProtocolMessage) bool {
 	if e.ToolResult != nil {
 		return false
 	}
@@ -170,14 +170,14 @@ func SerializeClaudeProtocol(detail ProtocolSession) []map[string]any {
 		}
 	}
 	lastUUID := ""
-	nextParent := func(e Entry) string {
+	nextParent := func(e ProtocolMessage) string {
 		if lastUUID != "" {
 			return lastUUID
 		}
-		return entryParentID(e)
+		return protocolMessageParentID(e)
 	}
 
-	for _, e := range materializeEntries(detail) {
+	for _, e := range materializeProtocolMessages(detail) {
 		if isHarnessVisibleChannel(e) {
 			content := claudeSerializeUserContent(e.Content)
 			if content == nil {
@@ -323,7 +323,7 @@ func SerializeCodexProtocol(detail ProtocolSession) []map[string]any {
 		})
 	}
 
-	for _, e := range materializeEntries(detail) {
+	for _, e := range materializeProtocolMessages(detail) {
 		if isHarnessVisibleChannel(e) {
 			var content []any
 			for _, b := range e.Content {
@@ -456,11 +456,11 @@ func SerializePiProtocol(detail ProtocolSession) []map[string]any {
 		"timestamp": detail.StartedAt,
 	}}
 	lastID := ""
-	envelope := func(id string, e Entry, msg map[string]any) map[string]any {
+	envelope := func(id string, e ProtocolMessage, msg map[string]any) map[string]any {
 		var parent any
 		if lastID != "" {
 			parent = lastID
-		} else if p := entryParentID(e); p != "" {
+		} else if p := protocolMessageParentID(e); p != "" {
 			parent = p
 		}
 		if parsed, err := time.Parse(time.RFC3339Nano, e.Timestamp); err == nil {
@@ -477,7 +477,7 @@ func SerializePiProtocol(detail ProtocolSession) []map[string]any {
 		}
 	}
 
-	for _, e := range materializeEntries(detail) {
+	for _, e := range materializeProtocolMessages(detail) {
 		if isHarnessVisibleChannel(e) {
 			text := transcript.TextContent(e)
 			if strings.TrimSpace(text) != "" {
@@ -576,7 +576,7 @@ func SerializePiProtocol(detail ProtocolSession) []map[string]any {
 // SerializeAgyProtocol converts a Protocol 2.0 Session into AGY Step protobuf payloads.
 func SerializeAgyProtocol(detail ProtocolSession) ([][]byte, error) {
 	var steps [][]byte
-	for _, e := range materializeEntries(detail) {
+	for _, e := range materializeProtocolMessages(detail) {
 		stamp := agyTimestamp(e.Timestamp)
 		meta := agyJoin(agyBytes(1, stamp), agyBytes(6, stamp), agyBytes(7, stamp), agyBytes(8, stamp), agyBytes(32, stamp))
 		if isHarnessVisibleChannel(e) {

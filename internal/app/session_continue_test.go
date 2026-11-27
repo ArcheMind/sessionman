@@ -61,7 +61,7 @@ func (r *continueRunner) storeTurn(plan runtime.CommandPlan, sessionID, prompt s
 			ps = parsed
 			ps.ID = sessionID
 		}
-		ps.Entries = append(ps.Entries, sessions.Entry{
+		ps.Messages = append(ps.Messages, sessions.ProtocolMessage{
 			ID: "echo-user", Source: "user", Mutability: "delta",
 			Content: []sessions.ContentBlock{{Type: "text", Text: prompt}},
 		})
@@ -69,7 +69,7 @@ func (r *continueRunner) storeTurn(plan runtime.CommandPlan, sessionID, prompt s
 		if err != nil {
 			return err
 		}
-		ps.Entries = append(ps.Entries, replyPS.Entries...)
+		ps.Messages = append(ps.Messages, replyPS.Messages...)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return err
 		}
@@ -382,10 +382,10 @@ func TestSessionContinueClaudeEmitsNamespacedDelta(t *testing.T) {
 	if delta.ProtocolVersion != transcript.ProtocolVersion || delta.Provider != "claude" || delta.Source != "continue" || delta.Workspace != workspace {
 		t.Fatalf("delta = %+v", delta)
 	}
-	if len(delta.Entries) != 1 || delta.EntryCount != 1 {
-		t.Fatalf("delta entries = %+v", delta.Entries)
+	if len(delta.Messages) != 1 || delta.MessageCount != 1 {
+		t.Fatalf("delta entries = %+v", delta.Messages)
 	}
-	entry := delta.Entries[0]
+	entry := delta.Messages[0]
 	if entry.Source != transcript.SourceS2 || entry.Mutability != transcript.MutabilityDelta || transcript.TextContent(entry) != "the answer" {
 		t.Fatalf("entry = %+v", entry)
 	}
@@ -422,8 +422,8 @@ func TestSessionContinueClaudeFreshSessionWithoutHistory(t *testing.T) {
 	if delta.ID != runner.fresh {
 		t.Fatalf("delta.ID = %q", delta.ID)
 	}
-	if len(delta.Entries) != 1 || transcript.TextContent(delta.Entries[0]) != "welcome" {
-		t.Fatalf("delta = %+v", delta.Entries)
+	if len(delta.Messages) != 1 || transcript.TextContent(delta.Messages[0]) != "welcome" {
+		t.Fatalf("delta = %+v", delta.Messages)
 	}
 }
 
@@ -435,11 +435,11 @@ func TestSessionContinueCodexEmitsDeltaFromConfiguredHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	delta := decodeDelta(t, stdout)
-	if delta.Provider != "codex" || len(delta.Entries) != 1 {
+	if delta.Provider != "codex" || len(delta.Messages) != 1 {
 		t.Fatalf("delta = %+v", delta)
 	}
-	if transcript.TextContent(delta.Entries[0]) != "codex answer" {
-		t.Fatalf("entry = %+v", delta.Entries[0])
+	if transcript.TextContent(delta.Messages[0]) != "codex answer" {
+		t.Fatalf("entry = %+v", delta.Messages[0])
 	}
 	if len(runner.plans) != 1 {
 		t.Fatalf("expected 1 plan, got %d", len(runner.plans))
@@ -463,8 +463,8 @@ func TestSessionContinuePiEmitsDelta(t *testing.T) {
 	if delta.Provider != "pi" || delta.ID != "pi-native" {
 		t.Fatalf("delta = %+v", delta)
 	}
-	if len(delta.Entries) != 1 || transcript.TextContent(delta.Entries[0]) != "pi answer" {
-		t.Fatalf("entries = %+v", delta.Entries)
+	if len(delta.Messages) != 1 || transcript.TextContent(delta.Messages[0]) != "pi answer" {
+		t.Fatalf("entries = %+v", delta.Messages)
 	}
 }
 
@@ -496,8 +496,8 @@ func TestSessionContinueClaudeProtocol20PreventsReasoningExtraction(t *testing.T
 		"id":              "wake-chats-91",
 		"provider":        "agy",
 		"workspace":       workspace,
-		"entryCount":      5,
-		"entries": []any{
+		"messageCount":      5,
+		"messages": []any{
 			map[string]any{
 				"id": "s1-identity", "source": "s1", "mutability": "constant", "slot": "identity",
 				"content": []any{map[string]any{"type": "text", "text": "Identity: philia093"}},
@@ -573,10 +573,10 @@ func TestSessionContinueRoundTripAppendsDeltaAsIs(t *testing.T) {
 		ID:              "turn-1",
 		Provider:        "harness",
 		Workspace:       workspace,
-		Entries: []sessions.Entry{
+		Messages: []sessions.ProtocolMessage{
 			{ID: "u1", Source: transcript.SourceUser, Mutability: transcript.MutabilityDelta, Content: []sessions.ContentBlock{{Type: "text", Text: secret}}},
 		},
-		EntryCount: 1,
+		MessageCount: 1,
 	}
 	firstInput, err := json.Marshal(first)
 	if err != nil {
@@ -590,11 +590,11 @@ func TestSessionContinueRoundTripAppendsDeltaAsIs(t *testing.T) {
 	delta1 := decodeDelta(t, stdout)
 
 	second := first
-	second.Entries = append(append([]sessions.Entry{}, first.Entries...), delta1.Entries...)
-	second.Entries = append(second.Entries, sessions.Entry{
+	second.Messages = append(append([]sessions.ProtocolMessage{}, first.Messages...), delta1.Messages...)
+	second.Messages = append(second.Messages, sessions.ProtocolMessage{
 		ID: "u2", Source: transcript.SourceUser, Mutability: transcript.MutabilityDelta, Content: []sessions.ContentBlock{{Type: "text", Text: "What was the passphrase?"}},
 	})
-	second.EntryCount = len(second.Entries)
+	second.MessageCount = len(second.Messages)
 	secondInput, err := json.Marshal(second)
 	if err != nil {
 		t.Fatal(err)
@@ -607,8 +607,8 @@ func TestSessionContinueRoundTripAppendsDeltaAsIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	delta2 := decodeDelta(t, stdout2)
-	if len(delta2.Entries) != 1 || transcript.TextContent(delta2.Entries[0]) != "PINEAPPLE-77" {
-		t.Fatalf("second delta = %+v", delta2.Entries)
+	if len(delta2.Messages) != 1 || transcript.TextContent(delta2.Messages[0]) != "PINEAPPLE-77" {
+		t.Fatalf("second delta = %+v", delta2.Messages)
 	}
 
 	if len(runner2.resumedIDs) == 0 || runner2.resumedIDs[len(runner2.resumedIDs)-1] == "" {

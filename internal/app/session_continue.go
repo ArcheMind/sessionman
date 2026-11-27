@@ -102,7 +102,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	prompt, history, err := splitContinuePromptEntries(detail.Entries)
+	prompt, history, err := splitContinuePromptMessages(detail.Messages)
 	if err != nil {
 		return err
 	}
@@ -113,8 +113,8 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	detail.Workspace = workspace
 	if agent.ID == "pi" {
 		var imported sessions.ProtocolSession
-		imported, request.SystemPrompt = sessions.PreparePiProtocolTranscript(sessions.ProtocolSession{Entries: history}, request.SystemPrompt)
-		history = imported.Entries
+		imported, request.SystemPrompt = sessions.PreparePiProtocolTranscript(sessions.ProtocolSession{Messages: history}, request.SystemPrompt)
+		history = imported.Messages
 	}
 
 	token := ""
@@ -124,8 +124,8 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	// both resumes and records, and the recorded file is the delta source.
 	if len(history) > 0 || agent.ID == "pi" {
 		imported := detail
-		imported.Entries = sessions.SanitizeEntryIDs(sessions.SanitizeEntryToolIDs(sessions.RechainEntries(fillEntryTimestamps(history))))
-		imported.EntryCount = len(imported.Entries)
+		imported.Messages = sessions.SanitizeProtocolIDs(sessions.SanitizeProtocolToolIDs(sessions.RechainProtocolMessages(fillProtocolMessageTimestamps(history))))
+		imported.MessageCount = len(imported.Messages)
 		token, err = a.writeProtocolResumeSession(ctx, imported, agent.ID, request)
 		if err != nil {
 			return err
@@ -138,7 +138,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		prefix = len(before.Entries)
+		prefix = len(before.Messages)
 		runtimePrefix = len(before.RuntimeEvents)
 	}
 
@@ -197,12 +197,12 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(full.Entries) < prefix {
-		return fmt.Errorf("%s recorded fewer entries (%d) than the imported history (%d)", agent.ID, len(full.Entries), prefix)
+	if len(full.Messages) < prefix {
+		return fmt.Errorf("%s recorded fewer entries (%d) than the imported history (%d)", agent.ID, len(full.Messages), prefix)
 	}
-	delta := continueDeltaEntries(full.Entries, prefix)
+	delta := continueDeltaMessages(full.Messages, prefix)
 	if agent.ID == "pi" {
-		delta = sessions.RechainEntries(delta)
+		delta = sessions.RechainProtocolMessages(delta)
 	}
 	if len(delta) == 0 {
 		return fmt.Errorf("%s completed the turn but recorded no new entries", agent.ID)
@@ -217,9 +217,9 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 		Workspace:       workspace,
 		StartedAt:       full.StartedAt,
 		UpdatedAt:       full.UpdatedAt,
-		EntryCount:      len(delta),
+		MessageCount:      len(delta),
 		Source:          "continue",
-		Entries:         delta,
+		Messages:         delta,
 		RuntimeEvents:   runtimeEvents,
 	}
 	if out.ID == "" {
@@ -235,7 +235,7 @@ func (a App) sessionContinue(ctx context.Context, args []string) error {
 	return writeStructured(a.Stdout, out, a.structuredDefault())
 }
 
-func continueDeltaEntries(entries []sessions.Entry, prefix int) []sessions.Entry {
+func continueDeltaMessages(entries []sessions.ProtocolMessage, prefix int) []sessions.ProtocolMessage {
 	if len(entries) < prefix {
 		return nil
 	}
@@ -263,9 +263,9 @@ func (a App) writeProtocolResumeSession(ctx context.Context, detail sessions.Pro
 	return sessions.WriteProtocolSessionFile(detail, agentID, resumeStateDir(a.Sessions.HomeDir), a.Sessions.HomeDir)
 }
 
-func fillEntryTimestamps(entries []sessions.Entry) []sessions.Entry {
+func fillProtocolMessageTimestamps(entries []sessions.ProtocolMessage) []sessions.ProtocolMessage {
 	now := time.Now().UTC().Format(time.RFC3339)
-	out := make([]sessions.Entry, len(entries))
+	out := make([]sessions.ProtocolMessage, len(entries))
 	for i, entry := range entries {
 		if entry.Timestamp == "" {
 			entry.Timestamp = entry.RecordedAt
@@ -278,7 +278,7 @@ func fillEntryTimestamps(entries []sessions.Entry) []sessions.Entry {
 	return out
 }
 
-func splitContinuePromptEntries(entries []sessions.Entry) (string, []sessions.Entry, error) {
+func splitContinuePromptMessages(entries []sessions.ProtocolMessage) (string, []sessions.ProtocolMessage, error) {
 	if len(entries) == 0 {
 		return "", nil, fmt.Errorf("transcript has no messages; nothing to continue")
 	}
@@ -416,14 +416,14 @@ func continueRunID(agentID, token, sessionID string) string {
 	return sessionID
 }
 
-func namespaceEntryDelta(entries []sessions.Entry, runID string) ([]sessions.Entry, map[string]string) {
+func namespaceProtocolMessageDelta(entries []sessions.ProtocolMessage, runID string) ([]sessions.ProtocolMessage, map[string]string) {
 	local := make(map[string]string, len(entries))
 	for _, entry := range entries {
 		if entry.ID != "" {
 			local[entry.ID] = runID + ":" + entry.ID
 		}
 	}
-	out := make([]sessions.Entry, len(entries))
+	out := make([]sessions.ProtocolMessage, len(entries))
 	for i, entry := range entries {
 		if mapped, ok := local[entry.ID]; ok {
 			entry.ID = mapped
@@ -442,17 +442,17 @@ func namespaceEntryDelta(entries []sessions.Entry, runID string) ([]sessions.Ent
 	return out, local
 }
 
-func namespaceProtocolDelta(entries []sessions.Entry, events []sessions.RuntimeEvent, runtimePrefix int, runID string) ([]sessions.Entry, []sessions.RuntimeEvent) {
-	outEntries, local := namespaceEntryDelta(entries, runID)
+func namespaceProtocolDelta(entries []sessions.ProtocolMessage, events []sessions.RuntimeEvent, runtimePrefix int, runID string) ([]sessions.ProtocolMessage, []sessions.RuntimeEvent) {
+	outEntries, local := namespaceProtocolMessageDelta(entries, runID)
 	if len(events) <= runtimePrefix {
 		return outEntries, nil
 	}
 	tail := events[runtimePrefix:]
 	outEvents := make([]sessions.RuntimeEvent, len(tail))
 	for i, ev := range tail {
-		if ev.AfterEntryID != "" {
-			if mapped, ok := local[ev.AfterEntryID]; ok {
-				ev.AfterEntryID = mapped
+		if ev.AfterMessageID != "" {
+			if mapped, ok := local[ev.AfterMessageID]; ok {
+				ev.AfterMessageID = mapped
 			}
 		}
 		outEvents[i] = ev

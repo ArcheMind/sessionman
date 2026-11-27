@@ -65,14 +65,14 @@ func TestPiContinueProjectsHistoryInstructionsWithStreamParity(t *testing.T) {
 			var delta sessions.ProtocolSession
 			if stream {
 				entries, final := decodeContinueEvents(t, stdout.String())
-				if final == nil || !reflect.DeepEqual(entries, final.Entries) {
+				if final == nil || !reflect.DeepEqual(entries, final.Messages) {
 					t.Fatal(stdout.String())
 				}
 				delta = *final
 			} else {
 				delta = decodeDelta(t, stdout)
 			}
-			if len(delta.Entries) != 3 || delta.Entries[0].Source != "s2" || delta.Entries[1].ToolResult == nil || delta.Entries[1].ToolResult.ToolName != "bash" {
+			if len(delta.Messages) != 3 || delta.Messages[0].Source != "s2" || delta.Messages[1].ToolResult == nil || delta.Messages[1].ToolResult.ToolName != "bash" {
 				t.Fatalf("delta=%+v", delta)
 			}
 		})
@@ -205,7 +205,7 @@ func TestPiStreamBuffersReplaceableSystemTail(t *testing.T) {
 				t.Fatal(err)
 			}
 			entries, final := decodeContinueEvents(t, capture.snapshot())
-			if final == nil || !reflect.DeepEqual(entries, final.Entries) {
+			if final == nil || !reflect.DeepEqual(entries, final.Messages) {
 				t.Fatalf("stream/final mismatch: %s", capture.snapshot())
 			}
 			_, prompt := sessions.PreparePiProtocolTranscript(*final, "")

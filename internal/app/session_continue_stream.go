@@ -208,15 +208,15 @@ func (s *continueTranscriptStream) readStore() error {
 		return nil
 	}
 	full, ok := sessions.ParseProtocolRecords(s.agent, s.records, s.path)
-	if !ok || len(full.Entries) < s.prefix {
+	if !ok || len(full.Messages) < s.prefix {
 		return nil
 	}
 	if s.agent != "pi" && s.sessionID != "" && full.ID != s.sessionID {
 		return fmt.Errorf("%s streaming store identity %s differs from %s", s.agent, full.ID, s.sessionID)
 	}
-	delta := continueDeltaEntries(full.Entries, s.prefix)
+	delta := continueDeltaMessages(full.Messages, s.prefix)
 	if s.agent == "pi" {
-		delta = sessions.RechainEntries(delta)
+		delta = sessions.RechainProtocolMessages(delta)
 	}
 	if s.agent == "pi" && len(delta) > 0 {
 		// Section replacements can remove an earlier system projection. Hold that tail
@@ -252,7 +252,7 @@ func (s *continueTranscriptStream) readStore() error {
 	if s.agent == "codex" && len(delta) > 0 && delta[len(delta)-1].Source == transcript.SourceS2 {
 		delta = delta[:len(delta)-1]
 	}
-	namespaced, _ := namespaceEntryDelta(delta, continueRunID(s.agent, s.token, full.ID))
+	namespaced, _ := namespaceProtocolMessageDelta(delta, continueRunID(s.agent, s.token, full.ID))
 	return s.emit(namespaced)
 }
 
@@ -263,7 +263,7 @@ func (s *continueTranscriptStream) streamWriter() *continueStreamWriter {
 	return s.writer
 }
 
-func (s *continueTranscriptStream) emit(entries []sessions.Entry) error {
+func (s *continueTranscriptStream) emit(entries []sessions.ProtocolMessage) error {
 	if len(entries) < len(s.emitted) {
 		return fmt.Errorf("%s streaming transcript lost previously emitted entries", s.agent)
 	}
@@ -280,8 +280,8 @@ func (s *continueTranscriptStream) emit(entries []sessions.Entry) error {
 		}
 		if err := s.streamWriter().WriteEvent(struct {
 			Type  string         `json:"type"`
-			Entry sessions.Entry `json:"entry"`
-		}{"entry", entry}); err != nil {
+			ProtocolMessage sessions.ProtocolMessage `json:"message"`
+		}{"message", entry}); err != nil {
 			return err
 		}
 		s.emitted = append(s.emitted, encoded)
@@ -301,7 +301,7 @@ func (s *continueTranscriptStream) stop() error {
 }
 
 func (s *continueTranscriptStream) finish(out sessions.ProtocolSession) error {
-	if err := s.emit(out.Entries); err != nil {
+	if err := s.emit(out.Messages); err != nil {
 		return err
 	}
 	return s.streamWriter().WriteTerminal(struct {

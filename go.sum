@@ -1,5 +1,7 @@
 github.com/ArcheMind/sessionman-protocol/go v0.5.1-0.20261127101425-4f2424e70456 h1:m3aAgNnc5/z0Pgg0GbjtxIhaCVF8pGBNMKFLRY1qheo=
 github.com/ArcheMind/sessionman-protocol/go v0.5.1-0.20261127101425-4f2424e70456/go.mod h1:AaOepqkfoty4F2JhIMqSFQ2PpbGIGhI0Q1CUbCJwfec=
+github.com/ArcheMind/sessionman-protocol/go v0.5.1-0.20261127114608-b54b53e3fa6e h1:PVCi+A0KR0fDVo3V8pe54IaB4lsUQvMLhrcutztsWso=
+github.com/ArcheMind/sessionman-protocol/go v0.5.1-0.20261127114608-b54b53e3fa6e/go.mod h1:AaOepqkfoty4F2JhIMqSFQ2PpbGIGhI0Q1CUbCJwfec=
 github.com/clipperhouse/uax29/v2 v2.2.0 h1:ChwIKnQN3kcZteTXMgb1wztSgaU+ZemkgWdohwgs8tY=
 github.com/clipperhouse/uax29/v2 v2.2.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=

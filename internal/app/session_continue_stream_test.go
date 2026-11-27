@@ -30,7 +30,7 @@ func (c *continueStreamCapture) Write(p []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	n, err := c.Buffer.Write(p)
-	if bytes.Contains(p, []byte(`"type":"entry"`)) && c.message != nil {
+	if bytes.Contains(p, []byte(`"type":"message"`)) && c.message != nil {
 		select {
 		case c.message <- struct{}{}:
 		default:
@@ -62,15 +62,15 @@ func (r continueStreamTestRunner) StartStream(plan runtime.CommandPlan) (*runtim
 	return r.continueRunner.startClaudeStream(plan, r.nativeHook)
 }
 
-func decodeContinueEvents(t *testing.T, output string) ([]sessions.Entry, *sessions.ProtocolSession) {
+func decodeContinueEvents(t *testing.T, output string) ([]sessions.ProtocolMessage, *sessions.ProtocolSession) {
 	t.Helper()
-	var entries []sessions.Entry
+	var entries []sessions.ProtocolMessage
 	var result *sessions.ProtocolSession
 	decoder := json.NewDecoder(strings.NewReader(output))
 	for {
 		var event struct {
 			Type    string                   `json:"type"`
-			Entry   sessions.Entry           `json:"entry"`
+			ProtocolMessage   sessions.ProtocolMessage           `json:"message"`
 			Session sessions.ProtocolSession `json:"session"`
 		}
 		err := decoder.Decode(&event)
@@ -84,11 +84,11 @@ func decodeContinueEvents(t *testing.T, output string) ([]sessions.Entry, *sessi
 			t.Fatal("event after terminal result")
 		}
 		switch event.Type {
-		case "entry":
-			if err := transcript.ValidateEntry(event.Entry); err != nil {
+		case "message":
+			if err := transcript.ValidateMessage(event.ProtocolMessage); err != nil {
 				t.Fatalf("invalid streamed 2.0 entry: %v", err)
 			}
-			entries = append(entries, event.Entry)
+			entries = append(entries, event.ProtocolMessage)
 		case "result":
 			if err := transcript.ValidateSession(event.Session); err != nil {
 				t.Fatalf("invalid terminal 2.0 session: %v", err)
@@ -137,10 +137,10 @@ func TestContinueStreamMessagesBeforeRunnerFinishes(t *testing.T) {
 				t.Fatal(err)
 			}
 			entries, final := decodeContinueEvents(t, capture.snapshot())
-			if final == nil || len(entries) != 3 || !reflect.DeepEqual(entries, final.Entries) {
+			if final == nil || len(entries) != 3 || !reflect.DeepEqual(entries, final.Messages) {
 				t.Fatalf("stream/final mismatch: %s", capture.snapshot())
 			}
-			if final.EntryCount != 3 || final.ProtocolVersion != transcript.ProtocolVersion {
+			if final.MessageCount != 3 || final.ProtocolVersion != transcript.ProtocolVersion {
 				t.Fatalf("final=%+v", final)
 			}
 			if entries[0].ID == "call" || !strings.Contains(entries[0].ID, ":") {
@@ -157,7 +157,7 @@ func TestContinueStreamMessagesBeforeRunnerFinishes(t *testing.T) {
 			if err := json.Unmarshal([]byte(firstLine), &wire); err != nil {
 				t.Fatal(err)
 			}
-			block := wire["entry"].(map[string]any)["content"].([]any)[0].(map[string]any)
+			block := wire["message"].(map[string]any)["content"].([]any)[0].(map[string]any)
 			if value, present := block["text"]; !present || value != "" {
 				t.Fatal("empty text omitted on wire")
 			}
@@ -271,7 +271,7 @@ func TestContinueStreamAgyDeferredUntilSuccess(t *testing.T) {
 				t.Fatal(err)
 			}
 			entries, final := decodeContinueEvents(t, stdout.String())
-			if final == nil || !reflect.DeepEqual(entries, final.Entries) || len(entries) != 1 || transcript.TextContent(entries[0]) != "new answer" {
+			if final == nil || !reflect.DeepEqual(entries, final.Messages) || len(entries) != 1 || transcript.TextContent(entries[0]) != "new answer" {
 				t.Fatalf("invalid deferred transcript: %s", &stdout)
 			}
 		})
@@ -396,8 +396,8 @@ func TestContinueStreamCodexWithholdsGrowingAssistant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	full.Entries, _ = namespaceEntryDelta(continueDeltaEntries(full.Entries, 0), "thread")
-	full.EntryCount = len(full.Entries)
+	full.Messages, _ = namespaceProtocolMessageDelta(continueDeltaMessages(full.Messages, 0), "thread")
+	full.MessageCount = len(full.Messages)
 	// Serialize final writes with the ticker, just as stop/finish do in production.
 	s.mu.Lock()
 	err = s.finish(full)
@@ -406,7 +406,7 @@ func TestContinueStreamCodexWithholdsGrowingAssistant(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries, result := decodeContinueEvents(t, capture.snapshot())
-	if result == nil || !reflect.DeepEqual(entries, result.Entries) {
+	if result == nil || !reflect.DeepEqual(entries, result.Messages) {
 		t.Fatal(capture.snapshot())
 	}
 }
@@ -415,14 +415,14 @@ func TestContinueStreamChangedFutureParentFailsWithoutResult(t *testing.T) {
 	capture := &continueStreamCapture{}
 	s := &continueTranscriptStream{app: New(false, strings.NewReader(""), capture, &bytes.Buffer{}), agent: "claude"}
 	future := "future"
-	entries := []sessions.Entry{{ID: "a", ParentID: &future, Source: transcript.SourceS2, Mutability: transcript.MutabilityDelta, Content: []sessions.ContentBlock{{Type: "text", Text: "answer"}}}}
-	first, _ := namespaceEntryDelta(entries, "run")
+	entries := []sessions.ProtocolMessage{{ID: "a", ParentID: &future, Source: transcript.SourceS2, Mutability: transcript.MutabilityDelta, Content: []sessions.ContentBlock{{Type: "text", Text: "answer"}}}}
+	first, _ := namespaceProtocolMessageDelta(entries, "run")
 	if err := s.emit(first); err != nil {
 		t.Fatal(err)
 	}
-	entries = append(entries, sessions.Entry{ID: "future", Source: transcript.SourceS2, Mutability: transcript.MutabilityDelta, Content: []sessions.ContentBlock{{Type: "text", Text: "next"}}})
-	second, _ := namespaceEntryDelta(entries, "run")
-	if err := s.finish(sessions.ProtocolSession{ProtocolVersion: transcript.ProtocolVersion, ID: "s", Provider: "claude", Entries: second, EntryCount: len(second)}); err == nil {
+	entries = append(entries, sessions.ProtocolMessage{ID: "future", Source: transcript.SourceS2, Mutability: transcript.MutabilityDelta, Content: []sessions.ContentBlock{{Type: "text", Text: "next"}}})
+	second, _ := namespaceProtocolMessageDelta(entries, "run")
+	if err := s.finish(sessions.ProtocolSession{ProtocolVersion: transcript.ProtocolVersion, ID: "s", Provider: "claude", Messages: second, MessageCount: len(second)}); err == nil {
 		t.Fatal("changed parent accepted")
 	}
 	_, result := decodeContinueEvents(t, capture.snapshot())

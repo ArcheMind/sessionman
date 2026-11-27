@@ -18,7 +18,7 @@ func TestSerializeClaudeProtocolV2SafetyAndVisibility(t *testing.T) {
 		Provider:        "agy",
 		Workspace:       "/w",
 		StartedAt:       "2026-11-27T00:00:00Z",
-		Entries: []Entry{
+		Messages: []ProtocolMessage{
 			{
 				ID:         "s1-id",
 				Source:     transcript.SourceS1,
@@ -132,7 +132,7 @@ func TestSerializeCodexAndPiProtocolV2Channels(t *testing.T) {
 		Provider:        "claude",
 		Workspace:       "/w",
 		StartedAt:       "2026-11-27T00:00:00Z",
-		Entries: []Entry{
+		Messages: []ProtocolMessage{
 			{
 				ID:         "s1-1",
 				Source:     transcript.SourceS1,
