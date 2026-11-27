@@ -405,6 +405,13 @@ func (a App) runAgent(ctx context.Context, args []string) error {
 			return err
 		}
 	}
+	if agent.ID == "agy" {
+		release, err := injectAgySessionMan(a.Sessions.HomeDir, !dryRun)
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	plan, err := agent.Launch.PlanRun(request)
 	if err == nil {
 		prepareAgyNativePlan(agent.ID, &plan)
@@ -1034,6 +1041,12 @@ func (a App) resumePreparedSession(ctx context.Context, agent runtime.Agent, det
 		if err := injectPiSessionMan(a.Sessions.HomeDir, &request, !dryRun); err != nil {
 			return err
 		}
+	case "agy":
+		release, err := injectAgySessionMan(a.Sessions.HomeDir, !dryRun)
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 	plan, err := agent.Launch.PlanRun(request)
 	if err == nil {

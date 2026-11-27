@@ -249,3 +249,86 @@ func TestAgyWizardEffortIsAlwaysUnverifiedPerModel(t *testing.T) {
 		}
 	}
 }
+
+func TestInjectAgySessionManLeasesAndUnlinksOnLastExit(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SM_CONFIG_DIR", "")
+	linkPath := filepath.Join(home, ".gemini", "config", "plugins", "sessionman")
+
+	release1, err := injectAgySessionMan(home, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(linkPath)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected symlink at %s, got info=%v err=%v", linkPath, info, err)
+	}
+	mcpData, err := os.ReadFile(filepath.Join(linkPath, "mcp_config.json"))
+	if err != nil || !strings.Contains(string(mcpData), `"__agy_serve"`) {
+		t.Fatalf("mcp_config.json = %q, err=%v", mcpData, err)
+	}
+	if _, err := os.Stat(filepath.Join(linkPath, "hooks.json")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected hooks.json: %v", err)
+	}
+
+	// Second concurrent session keeps the link alive when the first exits.
+	release2, err := injectAgySessionMan(home, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stale dead-PID lease should be pruned on release.
+	stale := filepath.Join(home, ".local", "state", "sessionman", "agy-plugin", "leases", "99999999-stale.lease")
+	if err := os.WriteFile(stale, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	release1()
+	if _, err := os.Lstat(linkPath); err != nil {
+		t.Fatalf("link removed while second session still active: %v", err)
+	}
+
+	release2()
+	if _, err := os.Lstat(linkPath); !os.IsNotExist(err) {
+		t.Fatalf("expected link unlinked after last session exited, got err=%v", err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("expected stale lease pruned, got err=%v", err)
+	}
+}
+
+func TestInjectAgySessionManSkipsWhenConfigDirSetOrDryRun(t *testing.T) {
+	home := t.TempDir()
+	linkPath := filepath.Join(home, ".gemini", "config", "plugins", "sessionman")
+
+	t.Setenv("SM_CONFIG_DIR", t.TempDir())
+	release, err := injectAgySessionMan(home, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if _, err := os.Lstat(linkPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no native link when SM_CONFIG_DIR is set, got %v", err)
+	}
+
+	t.Setenv("SM_CONFIG_DIR", "")
+	release, err = injectAgySessionMan(home, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if _, err := os.Lstat(linkPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no native link on dry-run, got %v", err)
+	}
+}
+
+func TestInjectAgySessionManRefusesNonSessionManPlugin(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SM_CONFIG_DIR", "")
+	linkPath := filepath.Join(home, ".gemini", "config", "plugins", "sessionman")
+	if err := os.MkdirAll(linkPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := injectAgySessionMan(home, true); err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Fatalf("expected refusal error, got %v", err)
+	}
+}

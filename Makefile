@@ -1,4 +1,4 @@
-.PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build install smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
+.PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build install check-main-branch smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
 .PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-duplex test-mcp-race test-mcp-syntax
 .PHONY: smoke-mcp-contract smoke-transcript-fidelity smoke-transcript-cross smoke-continue-live
 .PHONY: smoke-mcp-presets smoke-presets smoke-mcp-effort-live smoke-mcp-isolation-live
@@ -44,7 +44,14 @@ build:
 	mkdir -p bin
 	go build -trimpath -o bin/sm ./cmd/sm
 
-install: build
+check-main-branch:
+	@branch="$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"; \
+	if [ "$$branch" != "main" ]; then \
+		echo "Error: make install must be run from the main branch (current: $${branch:-unknown}). Please merge your changes into main before installing to prevent divergence." >&2; \
+		exit 1; \
+	fi
+
+install: check-main-branch build
 	install -m 0755 bin/sm "$${SM_INSTALL_DIR:-$$HOME/.local/bin}/sm"
 
 e2e: build

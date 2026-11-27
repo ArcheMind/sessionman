@@ -5,8 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
 
 	"github.com/ArcheMind/sessionman/internal/agentparams"
+	"github.com/ArcheMind/sessionman/internal/hookmount"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 	"github.com/ArcheMind/sessionman/internal/presets"
 	"github.com/ArcheMind/sessionman/internal/runtime"
 	"github.com/ArcheMind/sessionman/internal/subagents"
@@ -203,4 +209,170 @@ func mountSessionMan(request *runtime.RunRequest, server agentparams.MCPServer) 
 	}
 	servers["sessionman"] = server
 	request.MCP.Servers = servers
+}
+
+const agyPluginOwner = "sessionman native agy plugin\n"
+
+// injectAgySessionMan mounts SessionMan's MCP-only agy plugin via a symlink at
+// ~/.gemini/config/plugins/sessionman when SM_CONFIG_DIR is unset, and returns
+// a release function that unlinks it once the last sm agy session exits.
+func injectAgySessionMan(home string, write bool) (func(), error) {
+	noop := func() {}
+	if !write || nativedirs.FromEnv().ConfigDir != "" {
+		return noop, nil
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return noop, err
+	}
+	files, err := hookmount.AgyPlugin(executable, nil)
+	if err != nil {
+		return noop, err
+	}
+	stateDir := filepath.Join(home, ".local", "state", "sessionman", "agy-plugin")
+	pluginDir := filepath.Join(stateDir, "plugin")
+	leasesDir := filepath.Join(stateDir, "leases")
+	lockPath := filepath.Join(stateDir, "lock")
+	linkPath := filepath.Join(home, ".gemini", "config", "plugins", "sessionman")
+
+	var leasePath string
+	err = withAgyPluginLock(lockPath, func() error {
+		if err := writeAgyPluginFiles(pluginDir, files); err != nil {
+			return err
+		}
+		if err := ensureAgyPluginLink(linkPath, pluginDir); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(leasesDir, 0o700); err != nil {
+			return err
+		}
+		f, err := os.CreateTemp(leasesDir, fmt.Sprintf("%d-*.lease", os.Getpid()))
+		if err != nil {
+			return err
+		}
+		leasePath = f.Name()
+		return f.Close()
+	})
+	if err != nil {
+		return noop, err
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			_ = withAgyPluginLock(lockPath, func() error {
+				_ = os.Remove(leasePath)
+				if countLiveAgyLeases(leasesDir) == 0 {
+					if target, err := os.Readlink(linkPath); err == nil && target == pluginDir {
+						_ = os.Remove(linkPath)
+					}
+				}
+				return nil
+			})
+		})
+	}, nil
+}
+
+func withAgyPluginLock(lockPath string, fn func() error) error {
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := lockAgyPluginFile(f); err != nil {
+		return err
+	}
+	defer unlockAgyPluginFile(f)
+	return fn()
+}
+
+func writeAgyPluginFiles(pluginDir string, files map[string][]byte) error {
+	if err := os.MkdirAll(pluginDir, 0o700); err != nil {
+		return err
+	}
+	for name, data := range files {
+		f, err := os.CreateTemp(pluginDir, ".sessionman-")
+		if err != nil {
+			return err
+		}
+		tmp := f.Name()
+		if _, err = f.Write(data); err == nil {
+			err = f.Close()
+		} else {
+			_ = f.Close()
+		}
+		if err == nil {
+			err = os.Rename(tmp, filepath.Join(pluginDir, name))
+		}
+		_ = os.Remove(tmp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureAgyPluginLink(linkPath, pluginDir string) error {
+	info, err := os.Lstat(linkPath)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(linkPath)
+			if err == nil && target == pluginDir {
+				return nil
+			}
+			return fmt.Errorf("refusing to overwrite non-SessionMan plugin %s", linkPath)
+		}
+		if info.IsDir() {
+			data, err := os.ReadFile(filepath.Join(linkPath, ".sessionman-owned"))
+			if err == nil && string(data) == agyPluginOwner {
+				if err := os.RemoveAll(linkPath); err != nil {
+					return err
+				}
+				return os.Symlink(pluginDir, linkPath)
+			}
+		}
+		return fmt.Errorf("refusing to overwrite non-SessionMan plugin %s", linkPath)
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o700); err != nil {
+		return err
+	}
+	return os.Symlink(pluginDir, linkPath)
+}
+
+func countLiveAgyLeases(leasesDir string) int {
+	entries, err := os.ReadDir(leasesDir)
+	if err != nil {
+		return 0
+	}
+	live := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".lease") {
+			continue
+		}
+		pidStr, _, ok := strings.Cut(entry.Name(), "-")
+		if !ok {
+			continue
+		}
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil || pid <= 0 || !agyLeaseProcessAlive(pid) {
+			_ = os.Remove(filepath.Join(leasesDir, entry.Name()))
+			continue
+		}
+		live++
+	}
+	return live
+}
+
+func agyLeaseProcessAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil || err == syscall.EPERM
 }

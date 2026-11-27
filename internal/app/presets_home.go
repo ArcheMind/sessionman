@@ -370,6 +370,13 @@ func (a App) startPreset(ctx context.Context, reader *bufio.Reader, home string,
 			return a.startFailure(ctx, reader, home, p, err.Error(), false)
 		}
 	}
+	if agent.ID == "agy" {
+		release, err := injectAgySessionMan(a.Sessions.HomeDir, true)
+		if err != nil {
+			return a.startFailure(ctx, reader, home, p, err.Error(), false)
+		}
+		defer release()
+	}
 	plan, err := agent.Launch.PlanRun(request)
 	if err == nil {
 		prepareAgyNativePlan(agent.ID, &plan)
