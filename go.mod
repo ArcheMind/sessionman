@@ -9,17 +9,16 @@ require (
 
 require (
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.31
-	github.com/ncruces/go-strftime v0.1.9 // indirect
+	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
-	modernc.org/libc v1.66.10 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.39.1
+	modernc.org/memory v1.12.1 // indirect
+	modernc.org/sqlite v1.63.0
 )
 
 require (
@@ -28,3 +27,5 @@ require (
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
 	golang.org/x/sys v0.49.0
 )
+
+require github.com/google/go-cmp v0.6.0 // indirect
