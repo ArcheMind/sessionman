@@ -330,3 +330,25 @@ func TestInjectAgySessionManRefusesNonSessionManPlugin(t *testing.T) {
 		t.Fatalf("expected refusal error, got %v", err)
 	}
 }
+
+func TestAgyRoleHookEmitsInjectSteps(t *testing.T) {
+	t.Setenv("SM_AGY_SYSTEM_PROMPT", "Role: reviewer\nReview carefully.")
+	var stdout bytes.Buffer
+	app := App{Stdout: &stdout}
+	if err := app.Run(context.Background(), []string{"hook", "__agy_role"}); err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		InjectSteps []struct {
+			SystemMessage struct {
+				SystemMessage string `json:"systemMessage"`
+			} `json:"systemMessage"`
+		} `json:"injectSteps"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid json %q: %v", stdout.String(), err)
+	}
+	if len(payload.InjectSteps) != 1 || payload.InjectSteps[0].SystemMessage.SystemMessage != "Role: reviewer\nReview carefully." {
+		t.Fatalf("payload = %+v", payload)
+	}
+}

@@ -116,14 +116,17 @@ func (a App) dispatchHook(ctx context.Context, args []string) error {
 }
 
 func (a App) emitAgyRoleContext() error {
-	role := os.Getenv("SM_AGY_SYSTEM_PROMPT")
+	role := strings.TrimSpace(os.Getenv("SM_AGY_SYSTEM_PROMPT"))
 	if role == "" {
 		return nil
 	}
 	return json.NewEncoder(a.Stdout).Encode(map[string]any{
-		"hookSpecificOutput": map[string]string{
-			"hookEventName":     "SessionStart",
-			"additionalContext": role,
+		"injectSteps": []any{
+			map[string]any{
+				"systemMessage": map[string]string{
+					"systemMessage": role,
+				},
+			},
 		},
 	})
 }
