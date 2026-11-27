@@ -14,6 +14,7 @@ import (
 	"github.com/ArcheMind/sessionman/internal/execution"
 	"github.com/ArcheMind/sessionman/internal/headless"
 	"github.com/ArcheMind/sessionman/internal/hooks"
+	"github.com/ArcheMind/sessionman/internal/nativedirs"
 	"github.com/ArcheMind/sessionman/internal/runtime"
 )
 
@@ -152,6 +153,23 @@ func (d *Daemon) launchPlan(req agentparams.Request, mapped agentparams.Plan) (r
 	agent := d.agent.Option.Agent
 	plan := runtime.CommandPlan{Executable: mapped.Executable, Args: mapped.Args, Cwd: req.Cwd, Env: map[string]string{}, Agent: agent}
 	var auth Auth
+	if os.Getenv("SM_CONFIG_DIR") == "" && d.agent.Option.EffectiveUnifiedConfig() && d.Home != "" {
+		configDir := filepath.Join(d.Home, ".sessionman", "config")
+		ad, err := nativedirs.Resolve(agent, nativedirs.Dirs{SessionDir: os.Getenv("SM_SESSION_DIR"), ConfigDir: configDir})
+		if err != nil {
+			return plan, auth, err
+		}
+		if err := nativedirs.Prepare(ad); err != nil {
+			return plan, auth, err
+		}
+		for k, v := range nativedirs.MergeEnv(ad) {
+			plan.Env[k] = v
+		}
+		plan.Env["SM_CONFIG_DIR"] = configDir
+		if len(ad.Args) > 0 {
+			plan.Args = append(append([]string(nil), ad.Args...), plan.Args...)
+		}
+	}
 	switch agent {
 	case "agy":
 		for k, v := range d.agyEnvironment() {
@@ -162,7 +180,11 @@ func (d *Daemon) launchPlan(req agentparams.Request, mapped agentparams.Plan) (r
 		plan.Env["RUST_LOG"] = codexTelemetryFilter
 		// Codex colors its log lines even into a pipe, which breaks the telemetry parser.
 		plan.Env["NO_COLOR"] = "1"
-		auth = Auth{Key: "CODEX_HOME", Dir: os.Getenv("CODEX_HOME")}
+		codexHome := plan.Env["CODEX_HOME"]
+		if codexHome == "" {
+			codexHome = os.Getenv("CODEX_HOME")
+		}
+		auth = Auth{Key: "CODEX_HOME", Dir: codexHome}
 	case "pi":
 		if err := d.injectPiDelegation(&plan); err != nil {
 			return plan, auth, err
@@ -177,7 +199,11 @@ func (d *Daemon) launchPlan(req agentparams.Request, mapped agentparams.Plan) (r
 				plan.Env[key] = value
 			}
 		}
-		auth = Auth{Key: "PI_CODING_AGENT_DIR", Dir: os.Getenv("PI_CODING_AGENT_DIR")}
+		piDir := plan.Env["PI_CODING_AGENT_DIR"]
+		if piDir == "" {
+			piDir = os.Getenv("PI_CODING_AGENT_DIR")
+		}
+		auth = Auth{Key: "PI_CODING_AGENT_DIR", Dir: piDir}
 	}
 	return plan, auth, nil
 }

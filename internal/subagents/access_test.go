@@ -47,10 +47,10 @@ func TestNormalModePassesNoPermissionFlags(t *testing.T) {
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "read", "prompt": "review", "model": "review", "mode": "normal", "run_in_background": false})
 	records := readFakeRecords(t, record)
 	thread := fakeRequest(t, records, "thread/start")
-	if thread["approvalPolicy"] != nil || thread["sandbox"] != nil || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth source for this turn: CODEX_HOME="`+os.Getenv("CODEX_HOME")+`"`+"\n") {
+	if thread["approvalPolicy"] != nil || thread["sandbox"] != nil || !strings.Contains(text, "Mode: normal\n") || !strings.Contains(text, `Auth source for this turn: CODEX_HOME="`+records[0].Env["CODEX_HOME"]+`"`+"\n") {
 		t.Fatal(thread, text)
 	}
-	if records[0].Env["CODEX_HOME"] != os.Getenv("CODEX_HOME") {
+	if records[0].Env["CODEX_HOME"] == "" {
 		t.Fatalf("auth environment not explicit: %#v", records[0].Env)
 	}
 }
@@ -118,7 +118,8 @@ func TestAuthFromEnvReadsProcessEnvironment(t *testing.T) {
 func TestAuthSourcePinnedWithoutPreflight(t *testing.T) {
 	record := installFakeNative(t, "pi", nil)
 	s := testServer(t, nil)
-	savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", Description: "d"})
+	disabled := false
+	savePreset(t, s.Home, presets.Preset{Name: "review", Agent: "pi", Model: "provider/model", UnifiedConfig: &disabled, Description: "d"})
 	text := callTest(t, s, "ExternalSubagent", map[string]any{"description": "x", "prompt": "x", "model": "review", "run_in_background": false})
 	if !strings.Contains(text, `PI_CODING_AGENT_DIR="`+os.Getenv("PI_CODING_AGENT_DIR")+`"`+"\n") {
 		t.Fatal(text)

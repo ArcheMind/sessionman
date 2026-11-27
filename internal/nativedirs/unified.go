@@ -9,9 +9,19 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ArcheMind/sessionman/internal/agentparams"
 	"github.com/pelletier/go-toml/v2"
 )
+
+type unifiedMCPServer struct {
+	Command        string            `json:"command"`
+	Args           []string          `json:"args,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	EnvPassthrough []string          `json:"envPassthrough,omitempty"`
+}
+
+type unifiedMCPConfig struct {
+	Servers map[string]unifiedMCPServer `json:"mcpServers"`
+}
 
 // mountUnifiedSkills composes <home>/skills with symlinks from:
 //  1. <configSource>/skills (agent-specific in C, highest priority)
@@ -108,7 +118,7 @@ func mountUnifiedMCP(ad *AgentDirs, agent, configDir, home, configSource string)
 
 	switch agent {
 	case "claude":
-		raw, err := agentparams.ClaudeMCPJSON(unified)
+		raw, err := claudeUnifiedMCPJSON(unified)
 		if err != nil {
 			return fmt.Errorf("render claude unified MCP config: %w", err)
 		}
@@ -134,27 +144,42 @@ func mountUnifiedMCP(ad *AgentDirs, agent, configDir, home, configSource string)
 	return nil
 }
 
-func readMCPConfigFile(path string) (agentparams.MCPConfig, bool, error) {
+func readMCPConfigFile(path string) (unifiedMCPConfig, bool, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return agentparams.MCPConfig{}, false, nil
+		return unifiedMCPConfig{}, false, nil
 	}
 	if err != nil {
-		return agentparams.MCPConfig{}, false, fmt.Errorf("read MCP config %s: %w", path, err)
+		return unifiedMCPConfig{}, false, fmt.Errorf("read MCP config %s: %w", path, err)
 	}
-	var cfg agentparams.MCPConfig
+	var cfg unifiedMCPConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return agentparams.MCPConfig{}, false, fmt.Errorf("parse MCP config %s: %w", path, err)
+		return unifiedMCPConfig{}, false, fmt.Errorf("parse MCP config %s: %w", path, err)
 	}
 	for name, server := range cfg.Servers {
 		if name == "" || server.Command == "" {
-			return agentparams.MCPConfig{}, false, fmt.Errorf("MCP config %s: server %q requires a name and command", path, name)
+			return unifiedMCPConfig{}, false, fmt.Errorf("MCP config %s: server %q requires a name and command", path, name)
 		}
 	}
 	return cfg, true, nil
 }
 
-func mergeCodexMCP(agentConfigPath string, unified agentparams.MCPConfig) ([]byte, error) {
+func claudeUnifiedMCPJSON(m unifiedMCPConfig) ([]byte, error) {
+	servers := map[string]any{}
+	for name, s := range m.Servers {
+		entry := map[string]any{"type": "stdio", "command": s.Command}
+		if len(s.Args) > 0 {
+			entry["args"] = s.Args
+		}
+		if len(s.Env) > 0 {
+			entry["env"] = s.Env
+		}
+		servers[name] = entry
+	}
+	return json.Marshal(map[string]any{"mcpServers": servers})
+}
+
+func mergeCodexMCP(agentConfigPath string, unified unifiedMCPConfig) ([]byte, error) {
 	root := map[string]any{}
 	data, err := os.ReadFile(agentConfigPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -171,10 +196,21 @@ func mergeCodexMCP(agentConfigPath string, unified agentparams.MCPConfig) ([]byt
 			servers[k] = v
 		}
 	}
-	for name, entry := range agentparams.CodexMCPConfig(unified) {
-		if _, exists := servers[name]; !exists {
-			servers[name] = entry
+	for name, s := range unified.Servers {
+		if _, exists := servers[name]; exists {
+			continue
 		}
+		entry := map[string]any{"command": s.Command}
+		if len(s.Args) > 0 {
+			entry["args"] = s.Args
+		}
+		if len(s.Env) > 0 {
+			entry["env"] = s.Env
+		}
+		if len(s.EnvPassthrough) > 0 {
+			entry["env_vars"] = s.EnvPassthrough
+		}
+		servers[name] = entry
 	}
 	root["mcp_servers"] = servers
 	out, err := toml.Marshal(root)
@@ -184,7 +220,7 @@ func mergeCodexMCP(agentConfigPath string, unified agentparams.MCPConfig) ([]byt
 	return out, nil
 }
 
-func mergeAgyMCP(agentConfigPath string, unified agentparams.MCPConfig) ([]byte, error) {
+func mergeAgyMCP(agentConfigPath string, unified unifiedMCPConfig) ([]byte, error) {
 	root := map[string]any{}
 	data, err := os.ReadFile(agentConfigPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

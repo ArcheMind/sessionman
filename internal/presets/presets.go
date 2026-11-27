@@ -24,23 +24,30 @@ var NamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 var ErrExists = errors.New("a preset with this name already exists")
 
 type Preset struct {
-	Name        string   `json:"name" yaml:"-"`
-	Description string   `json:"description" yaml:"-"`
-	Agent       string   `json:"agent" yaml:"agent"`
-	Model       string   `json:"model" yaml:"model"`
-	Effort      string   `json:"effort,omitempty" yaml:"effort,omitempty"`
-	Mode        string   `json:"mode,omitempty" yaml:"mode,omitempty"`
-	UserConfig  *bool    `json:"user_config,omitempty" yaml:"user_config,omitempty"`
-	Flags       []string `json:"flags,omitempty" yaml:"flags,omitempty"`
+	Name          string   `json:"name" yaml:"-"`
+	Description   string   `json:"description" yaml:"-"`
+	Agent         string   `json:"agent" yaml:"agent"`
+	Model         string   `json:"model" yaml:"model"`
+	Effort        string   `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Mode          string   `json:"mode,omitempty" yaml:"mode,omitempty"`
+	UserConfig    *bool    `json:"user_config,omitempty" yaml:"user_config,omitempty"`
+	UnifiedConfig *bool    `json:"unified_config,omitempty" yaml:"unified_config,omitempty"`
+	Flags         []string `json:"flags,omitempty" yaml:"flags,omitempty"`
 }
 
 func (p Preset) Equal(o Preset) bool {
 	return p.Name == o.Name && p.Description == o.Description && p.Agent == o.Agent && p.Model == o.Model && p.Effort == o.Effort &&
-		p.Mode == o.Mode && boolEqual(p.UserConfig, o.UserConfig) && slices.Equal(p.Flags, o.Flags)
+		p.Mode == o.Mode && boolEqual(p.UserConfig, o.UserConfig) && boolEqual(p.UnifiedConfig, o.UnifiedConfig) && slices.Equal(p.Flags, o.Flags)
 }
 
 func (p Preset) EffectiveMode() string {
 	return agentparams.EffectiveMode(p.Agent, p.Mode)
+}
+
+// EffectiveUnifiedConfig reports whether subagents using this preset take over
+// the unified config directory C. Defaults to true when omitted.
+func (p Preset) EffectiveUnifiedConfig() bool {
+	return p.UnifiedConfig == nil || *p.UnifiedConfig
 }
 
 func (p Preset) Request() agentparams.Request {
@@ -203,13 +210,13 @@ func Parse(name string, data []byte) (Preset, error) {
 			if !ok {
 				return p, fmt.Errorf("%s field %q must be a string", FileName, key)
 			}
-		case "user_config", "flags":
+		case "user_config", "unified_config", "flags":
 		case "name":
 			return p, fmt.Errorf("%s must not set name; the directory name is the preset name", FileName)
 		case "description":
 			return p, fmt.Errorf("%s must not set description in front matter; write it below the front matter", FileName)
 		default:
-			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort, mode, user_config, flags", FileName, key)
+			return p, fmt.Errorf("%s has unknown field %q; allowed: agent, model, effort, mode, user_config, unified_config, flags", FileName, key)
 		}
 		switch key {
 		case "agent":
@@ -226,6 +233,12 @@ func Parse(name string, data []byte) (Preset, error) {
 				return p, fmt.Errorf("%s field %q must be a boolean", FileName, key)
 			}
 			p.UserConfig = &b
+		case "unified_config":
+			b, ok := fields[key].(bool)
+			if !ok {
+				return p, fmt.Errorf("%s field %q must be a boolean", FileName, key)
+			}
+			p.UnifiedConfig = &b
 		case "flags":
 			raw, ok := fields[key].([]any)
 			if !ok {

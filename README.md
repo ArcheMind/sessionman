@@ -127,10 +127,18 @@ Exact inputs, limits, and acceptance evidence: [docs/subagents.md](docs/subagent
 ## Configure once, every agent follows
 
 ```text
-~/.agents/skills/<name>/SKILL.md      codex · dsh · pi, Claude via .claude/skills
-~/.agents/hooks.json                  claude · codex · pi; agy SessionStart/Stop
+~/.agents/skills/<name>/SKILL.md        shared user skills (projected on takeover)
+<C>/skills/<name>/SKILL.md              unified skills under --config-dir / SM_CONFIG_DIR
+<C>/mcp_config.json                     unified MCP servers (claude · codex · agy)
+<C>/hooks.json                          portable hooks (claude · codex · pi · agy)
 ~/.sessionman/presets/<name>/PRESET.md  sm · the ExternalSubagent tools above
 ```
+
+When `--config-dir <C>` (`SM_CONFIG_DIR`) is set — or when a subagent runs with `unified_config` enabled (the default, using `~/.sessionman/config` when `SM_CONFIG_DIR` is unset) — SessionMan composes an isolated shadow root per agent without polluting your native `~/.claude`, `~/.codex`, `~/.pi`, or `~/.gemini` directories:
+
+- **Skills**: `~/.agents/skills/*` and `<C>/skills/*` are uniformly symlinked into each agent's managed `skills/` directory (`claude`, `codex`, `pi`, `agy`), with agent-specific `<C>/<agent>/skills/*` taking precedence on name collisions.
+- **MCP**: `<C>/mcp_config.json` (`mcpServers`) is mounted into `claude` (via a generated `--mcp-config`), `codex` (merged into shadow `config.toml`), and `agy` (merged into shadow `mcp_config.json`), preserving agent-specific overrides.
+- **Hooks**: `<C>/hooks.json` is compiled into each agent's isolated/shadow root.
 
 ```console
 $ sm skill install https://github.com/example/agent-skills.git --path skills/review --scope user
@@ -157,8 +165,11 @@ Launch, resume, and headless continuation share parameter handling. Use
 `--model`, `--effort`, `--mode normal|yolo`, `--user-config true|false`,
 `--append-system-prompt`, and `--mcp-config` where the target agent and transport
 support them; native arguments follow `--`. Preset launches and resumes also
-forward the saved `flags` and `user_config`. Unsupported combinations and known
-conflicts between unified fields and native flags are reported explicitly.
+forward the saved `flags` and `user_config`. Subagents default to `unified_config: true`
+(taking over `SM_CONFIG_DIR` or `~/.sessionman/config`); set `unified_config: false`
+in `PRESET.md` or the interactive preset editor to keep native directories directly.
+Unsupported combinations and known conflicts between unified fields and native flags
+are reported explicitly.
 Codex CLI YOLO uses `--dangerously-bypass-approvals-and-sandbox`; its app-server
 uses the corresponding thread policy fields. `approval_policy="never"` alone
 only disables approval prompts and does not remove a sandbox.
@@ -191,7 +202,7 @@ Run `sm update` to immediately check for and install the latest stable release, 
 
 | Agent | Sessions | Continue in it | Reads `~/.agents/skills` | Portable hooks |
 | --- | --- | --- | --- | --- |
-| Antigravity CLI (`agy`) | yes | yes | project roots; user install projection | `SessionStart`, `Stop` |
+| Antigravity CLI (`agy`) | yes | yes | project roots; user install projection; unified `SM_CONFIG_DIR` | `SessionStart`, `Stop` |
 | Claude Code | yes | yes | yes, via `.claude/skills` | yes |
 | Codex CLI | yes | yes | yes | yes |
 | DeepSeek Harness | — | — | yes | — |
@@ -266,7 +277,7 @@ are emitted while Agy is running.
 
 SessionMan owns the workflow around agents, not the agents:
 
-- no universal agent settings file beyond the documented skills, hooks, and presets;
+- no universal agent settings file beyond the documented skills, hooks, unified `mcp_config.json` (in isolated `SM_CONFIG_DIR` roots), and presets;
 - no credential storage or proxying;
 - no replacement package managers or session databases;
 - no invented capabilities or fallbacks when a native source is missing.

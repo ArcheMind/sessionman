@@ -66,7 +66,8 @@ func AgyMCPServers(config MCPConfig) []AgyMCPServer {
 	return result
 }
 
-func claudeMCP(m MCPConfig) (string, error) {
+// ClaudeMCPJSON renders MCPConfig as a Claude --mcp-config JSON string.
+func ClaudeMCPJSON(m MCPConfig) (string, error) {
 	servers := map[string]any{}
 	for _, name := range serverNames(m) {
 		s := m.Servers[name]
@@ -102,7 +103,8 @@ func codexMCPArgs(m MCPConfig) ([]string, error) {
 	return args, nil
 }
 
-func codexMCPConfig(m MCPConfig) map[string]any {
+// CodexMCPConfig renders MCPConfig as a Codex mcp_servers table map.
+func CodexMCPConfig(m MCPConfig) map[string]any {
 	servers := map[string]any{}
 	for _, name := range serverNames(m) {
 		s := m.Servers[name]

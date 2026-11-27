@@ -51,7 +51,11 @@ func testServer(t *testing.T, r runtime.Runner) *Server {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	home := t.TempDir()
-	t.Setenv("CODEX_HOME", t.TempDir())
+	codexHome := t.TempDir()
+	if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", codexHome)
 	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 	savePreset(t, home, reviewPreset)
 	s := &Server{Home: home, Cwd: t.TempDir(), Runner: r, ctx: context.Background(), out: io.Discard, agents: map[string]*ExternalSubagentState{}, names: map[string]string{}}

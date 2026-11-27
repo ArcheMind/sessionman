@@ -518,7 +518,7 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 	if mode == wizardCreate || mode == wizardCopy {
 		fields = append(fields, "Name")
 	}
-	fields = append(fields, "User config", "Flags", "Description", "Return to summary")
+	fields = append(fields, "User config", "Unified config", "Flags", "Description", "Return to summary")
 	choice, err := a.pick(reader, "Change which entry?", fields)
 	if err != nil {
 		return err
@@ -546,6 +546,8 @@ func (a App) changeField(ctx context.Context, reader *bufio.Reader, home string,
 		err = a.askName(reader, home, draft)
 	case "User config":
 		err = a.askUserConfig(reader, draft)
+	case "Unified config":
+		err = a.askUnifiedConfig(reader, draft)
 	case "Flags":
 		err = a.askFlags(reader, draft)
 	case "Description":
@@ -875,6 +877,41 @@ func (a App) askUserConfig(reader *bufio.Reader, draft *presetDraft) error {
 	return nil
 }
 
+func (a App) askUnifiedConfig(reader *bufio.Reader, draft *presetDraft) error {
+	labels := []string{
+		"Enabled — take over unified config directory C (skills & MCP)",
+		"Disabled — use agent native config directory",
+		"Default — enabled (same as omitting from preset file)",
+	}
+	selected := 2
+	if draft.preset.UnifiedConfig != nil {
+		if *draft.preset.UnifiedConfig {
+			selected = 0
+		} else {
+			selected = 1
+		}
+	}
+	rows := make([]contentRow, len(labels))
+	for i, label := range labels {
+		rows[i] = contentRow{text: label, itemIndex: i}
+	}
+	index, _, err := a.runSelector(reader, selector{title: "Unified config:", help: selectorHelp, marker: "> ", selected: selected}, rows, len(rows), nil)
+	if err != nil {
+		return err
+	}
+	switch index {
+	case 0:
+		t := true
+		draft.preset.UnifiedConfig = &t
+	case 1:
+		f := false
+		draft.preset.UnifiedConfig = &f
+	case 2:
+		draft.preset.UnifiedConfig = nil
+	}
+	return nil
+}
+
 func (a App) askFlags(reader *bufio.Reader, draft *presetDraft) error {
 	current := ""
 	if len(draft.preset.Flags) > 0 {
@@ -1034,6 +1071,15 @@ func (a App) printPresetFields(p presets.Preset, effort string) {
 		}
 	} else {
 		field("User config", "default (loaded)")
+	}
+	if p.UnifiedConfig != nil {
+		if *p.UnifiedConfig {
+			field("Unified config", "enabled")
+		} else {
+			field("Unified config", "disabled")
+		}
+	} else {
+		field("Unified config", "default (enabled)")
 	}
 	if len(p.Flags) > 0 {
 		field("Flags", strings.Join(p.Flags, " "))

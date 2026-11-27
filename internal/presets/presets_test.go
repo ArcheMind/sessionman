@@ -191,7 +191,7 @@ func TestRequestPreservesPresetParameters(t *testing.T) {
 }
 
 func TestParsePresetWithNewFields(t *testing.T) {
-	data := []byte("---\nagent: codex\nmodel: test\nuser_config: false\nflags:\n  - --custom\n  - value\n---\nA test preset\n")
+	data := []byte("---\nagent: codex\nmodel: test\nuser_config: false\nunified_config: true\nflags:\n  - --custom\n  - value\n---\nA test preset\n")
 	p, err := Parse("test", data)
 	if err != nil {
 		t.Fatal(err)
@@ -201,6 +201,9 @@ func TestParsePresetWithNewFields(t *testing.T) {
 	}
 	if p.UserConfig == nil || *p.UserConfig != false {
 		t.Fatal("user_config not parsed")
+	}
+	if p.UnifiedConfig == nil || !*p.UnifiedConfig {
+		t.Fatal("unified_config not parsed")
 	}
 	if len(p.Flags) != 2 || p.Flags[0] != "--custom" || p.Flags[1] != "value" {
 		t.Fatal("flags not parsed", p.Flags)

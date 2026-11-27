@@ -782,6 +782,12 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		if err := mount.mount(ad, "claude", claudeHome, configSource); err != nil {
 			return nil, err
 		}
+		if err := mountUnifiedSkills(ad, dirs.ConfigDir, claudeHome, configSource, "skills"); err != nil {
+			return nil, err
+		}
+		if err := mountUnifiedMCP(ad, "claude", dirs.ConfigDir, claudeHome, configSource); err != nil {
+			return nil, err
+		}
 		// .claude.json holds account/state (credentials); always link to true native
 		ad.Symlinks = append(ad.Symlinks, Symlink{
 			filepath.Join(claudeHome, ".claude.json"), nativeClaudeJSON,
@@ -793,6 +799,12 @@ func resolveClaude(dirs Dirs) (*AgentDirs, error) {
 		ad.SessionRoots = []string{filepath.Join(native, "projects")}
 		ad.linkConfig(shadow, configSource, configEntries, true)
 		if err := mount.mount(ad, "claude", shadow, configSource); err != nil {
+			return nil, err
+		}
+		if err := mountUnifiedSkills(ad, dirs.ConfigDir, shadow, configSource, "skills"); err != nil {
+			return nil, err
+		}
+		if err := mountUnifiedMCP(ad, "claude", dirs.ConfigDir, shadow, configSource); err != nil {
 			return nil, err
 		}
 		// .claude.json holds account/state (credentials); always link to true native
@@ -880,6 +892,13 @@ func resolveAgy(dirs Dirs) (*AgentDirs, error) {
 			{"mcp_config.json", false},
 		}, true)
 		if err := mount.mountAgy(ad, geminiDir); err != nil {
+			return nil, err
+		}
+		agyConfig := filepath.Join(geminiDir, "config")
+		if err := mountUnifiedSkills(ad, dirs.ConfigDir, agyConfig, configSource, "config/skills"); err != nil {
+			return nil, err
+		}
+		if err := mountUnifiedMCP(ad, "agy", dirs.ConfigDir, agyConfig, configSource); err != nil {
 			return nil, err
 		}
 	}
