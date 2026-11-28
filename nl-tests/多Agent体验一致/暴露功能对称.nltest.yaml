@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=../../../nl-test/schema/nl-test.v1.schema.json
+version: "1"
+
+defaults:
+  agent: pi
+  model: deepseek/deepseek-flash
+  isolation: readonly
+  timeout: 5m
+
+tests:
+  - id: agent-capability-symmetry
+    title: 对外暴露的功能与命令必须在核心 Agent 之间保持对称（除非通过 Capability 显式声明）
+    origin:
+      date: "2026-11-28"
+      quote: "暴露功能全部要Agent对称（除非通过Capability声明）"
+    context:
+      - README.md
+    watch:
+      - cmd/**
+      - internal/app/**
+      - internal/drivers/**
+      - internal/agentparams/**
+      - internal/sessions/**
+      - internal/subagents/**
+      - internal/nativedirs/**
+      - internal/hooks/**
+      - internal/skills/**
+      - internal/mcp/**
+    preflight:
+      run: |
+        set -eu
+        SM_BIN=$(mktemp /tmp/sm-nltest.XXXXXX)
+        trap 'rm -f "$SM_BIN"' EXIT
+        go build -o "$SM_BIN" ./cmd/sm
+
+        echo "=== 1. agent list (capabilities) ==="
+        "$SM_BIN" --json agent list
+
+        echo "=== 2. agent run --dry-run ==="
+        for a in agy claude codex pi; do
+          echo "--- $a ---"
+          "$SM_BIN" --json agent run "$a" --dry-run 2>&1 || true
+        done
+
+        echo "=== 3. agent exec --dry-run ==="
+        for a in agy claude codex pi; do
+          echo "--- $a ---"
+          "$SM_BIN" --json agent exec "$a" --model test-model --dry-run 2>&1 || true
+        done
+
+        echo "=== 4. session continue (probe) ==="
+        for a in agy claude codex pi; do
+          echo "--- $a ---"
+          "$SM_BIN" --json session continue "$a" --model p/m </dev/null 2>&1 || true
+        done
+
+        echo "=== 5. sm help ==="
+        "$SM_BIN" help 2>&1 || true
+      if_exit_0: continue
+      if_nonzero: fail
+    spec: |
+      使用**纯黑盒方式**验证对外暴露功能的 Agent 对称性：直接依据上方 `preflight` 采集的真实 CLI 黑盒输出矩阵与 `README.md` 进行核查，**禁止翻阅 `.go` 源码文件**（无需白盒逐行审计）。
+
+      审计对象为 4 个核心 Agent：`agy`、`claude`、`codex`、`pi`。
+
+      检查要点：
+      1. 对比 `agent list` 返回的 `capabilities` 与 `agent run`、`agent exec`、`session continue` 等命令的实际黑盒响应：
+         是否存在某个核心 Agent 被拒绝或行为缺失，且未通过 `capabilities` 显式声明的情况？
+      2. 对已通过 `capabilities` 显式声明不支持的能力（例如 `pi` 不含 `usage`），视为合规，不判 FAIL。
+      3. 核查 `sm help`、`README.md` 中的命令示例与核心 Agent 列表是否与黑盒实际结果一致（不得出现“文档写了但黑盒报错不支持”的冲突）。
+
+      若一切对称（或差异已通过 `capabilities` 显式声明且与文档/help 一致），直接判 PASS；否则判 FAIL 并列出具体命令与输出证据。

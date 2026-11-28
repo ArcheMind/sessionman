@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+unformatted="$(gofmt -l cmd internal)"
+if [ -n "$unformatted" ]; then
+	echo "The following Go files are not gofmt-formatted:" >&2
+	echo "$unformatted" >&2
+	echo "Run 'make fmt' to format them." >&2
+	exit 1
+fi
+
+go vet ./...
+sh -n install.sh test/smoke/install-clean.sh test/smoke/record-hook.sh test/smoke/hooks-live.sh test/smoke/skills-clean.sh test/smoke/skills-live.sh
+
+if command -v node >/dev/null 2>&1; then
+	for file in test/smoke/*.mjs test/bridge/*.mjs test/e2e/*.mjs; do
+		[ -e "$file" ] || continue
+		node --check "$file"
+	done
+fi
+
+if command -v python3 >/dev/null 2>&1 && [ -f test/smoke/pty-host.py ]; then
+	python3 -c 'import ast; from pathlib import Path; ast.parse(Path("test/smoke/pty-host.py").read_text())'
+fi

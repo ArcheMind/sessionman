@@ -1170,9 +1170,9 @@ COMMANDS
   sm version                 Show version
 
   Non-interactive execution:
-    sm agent exec <agy|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
+    sm agent exec <agy|claude|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt
     sm --json session continue <agy|claude|codex|pi> [--stream] [--duplex] [--model <model>] [--append-system-prompt <text>] [--mcp-config <file>] [--mode yolo] < transcript.json
-    agy emits stream events after the turn and wraps the appended system prompt in <system-prompt> tags in the user message.
+    agy emits stream events after the turn and wraps the appended system prompt in <system-prompt> tags in the user message; pi requires --model <provider/model>.
 
 AGENT OPTIONS
   --model <model>             Select a model

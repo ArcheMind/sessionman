@@ -1,6 +1,0 @@
-{"type": "system", "subtype": "task_updated", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "task_id": "bvcrdsv8y", "patch": {"status": "completed", "end_time": 1795513146124}}
-{"type": "system", "subtype": "task_notification", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "task_id": "bvcrdsv8y", "status": "completed", "tool_use_id": "toolu_01E7gLnMCZo4FR7uUzQDz5w8"}
-{"type": "system", "subtype": "background_tasks_changed", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "tasks": []}
-{"type": "system", "subtype": "init", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a"}
-{"type": "assistant", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "message": {"role": "assistant", "content": [{"type": "text", "text": "DONE1\n\nSTEERWORD"}]}}
-{"type": "result", "subtype": "success", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "is_error": false, "result": "DONE1\n\nSTEERWORD", "usage": {"output_tokens": 1}}

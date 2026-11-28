@@ -32,6 +32,7 @@ func nativeAgent(id, name, binary, npmPackage string, models runtime.ModelDriver
 		runtime.CapabilityLaunch,
 		runtime.CapabilityAuthLogin,
 		runtime.CapabilityModelSelect,
+		runtime.CapabilityExec,
 	}
 	if listsModels {
 		capabilities = append(capabilities, runtime.CapabilityModelList)

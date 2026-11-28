@@ -22,7 +22,7 @@ func agyAgent() runtime.Agent {
 			LogoutInstruction: "Run /logout in Antigravity CLI. This affects its shared native authentication.",
 		}},
 		Install:      AGYInstaller{},
-		Capabilities: []runtime.Capability{runtime.CapabilityLaunch, runtime.CapabilityAuthLogin, runtime.CapabilityAuthLogout, runtime.CapabilityAuthStatus, runtime.CapabilityModelList, runtime.CapabilityModelSelect, runtime.CapabilityUsage},
+		Capabilities: []runtime.Capability{runtime.CapabilityLaunch, runtime.CapabilityAuthLogin, runtime.CapabilityAuthLogout, runtime.CapabilityAuthStatus, runtime.CapabilityModelList, runtime.CapabilityModelSelect, runtime.CapabilityUsage, runtime.CapabilityExec},
 	}
 }
 

@@ -6,13 +6,13 @@ import (
 )
 
 func buildCodex(t Transport, r Request) (Plan, error) {
-	if t != Interactive && t != AppServer {
+	if t != Interactive && t != AppServer && t != Exec {
 		return unsupported("codex", t, "transport")
 	}
 	if err := requireUUID("Codex resume", r.Session); err != nil {
 		return Plan{}, err
 	}
-	if r.UserConfig != nil && !*r.UserConfig {
+	if t != Exec && r.UserConfig != nil && !*r.UserConfig {
 		return unsupported("codex", t, "user_config=false")
 	}
 	if t == AppServer {
@@ -43,7 +43,16 @@ func buildCodex(t Transport, r Request) (Plan, error) {
 		return Plan{Executable: "codex", Args: append([]string{"app-server"}, r.Flags...), Params: params, Session: r.Session}, nil
 	}
 	args := []string{}
-	if r.Session != "" {
+	if t == Exec {
+		args = append(args, "exec")
+		if r.Session != "" {
+			args = append(args, "resume", r.Session)
+		}
+		args = append(args, "--json")
+		if r.UserConfig != nil && !*r.UserConfig {
+			args = append(args, "--ignore-user-config")
+		}
+	} else if r.Session != "" {
 		args = append(args, "resume", r.Session)
 	}
 	if r.Mode == ModeYolo {

@@ -18,6 +18,7 @@ const (
 	CapabilityModelList   Capability = "model_list"
 	CapabilityModelSelect Capability = "model_select"
 	CapabilityUsage       Capability = "usage"
+	CapabilityExec        Capability = "exec"
 )
 
 type CommandPlan struct {

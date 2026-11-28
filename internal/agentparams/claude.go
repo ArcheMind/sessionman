@@ -1,7 +1,7 @@
 package agentparams
 
 func buildClaude(t Transport, r Request) (Plan, error) {
-	if t != Interactive && t != Stream {
+	if t != Interactive && t != Stream && t != Exec {
 		return unsupported("claude", t, "transport")
 	}
 	if err := requireUUID("Claude resume", r.Session); err != nil {
@@ -10,6 +10,8 @@ func buildClaude(t Transport, r Request) (Plan, error) {
 	args := []string{}
 	if t == Stream {
 		args = append(args, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose")
+	} else if t == Exec {
+		args = append(args, "-p", "--output-format", "stream-json", "--verbose")
 	}
 	if r.Session != "" {
 		args = append(args, "--resume", r.Session)

@@ -17,10 +17,14 @@ import (
 
 func (a App) execAgent(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: sm agent exec <agy|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
+		return fmt.Errorf("usage: sm agent exec <agy|claude|codex|pi> [--model <model>] [--resume <session-id>] [--cwd <path>] [--dry-run] < prompt.txt")
 	}
-	if _, err := a.Registry.Get(args[0]); err != nil {
+	agent, err := a.Registry.Get(args[0])
+	if err != nil {
 		return err
+	}
+	if !hasCapability(agent.Capabilities, runtime.CapabilityExec) {
+		return fmt.Errorf("%s does not support agent exec", agent.ID)
 	}
 	resume, cwd := "", ""
 	request := runtime.RunRequest{}
@@ -58,7 +62,7 @@ func (a App) execAgent(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	cwd, err := filepath.Abs(cwd)
+	cwd, err = filepath.Abs(cwd)
 	if err != nil {
 		return err
 	}

@@ -1,9 +1,0 @@
-{"type": "system", "subtype": "init", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a"}
-{"type": "assistant", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "message": {"role": "assistant", "content": []}}
-{"type": "assistant", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "message": {"role": "assistant", "content": []}}
-{"type": "assistant", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "message": {"role": "assistant", "content": []}}
-{"type": "assistant", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "message": {"role": "assistant", "content": []}}
-{"type": "system", "subtype": "background_tasks_changed", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "tasks": [{"task_id": "bvcrdsv8y"}]}
-{"type": "system", "subtype": "task_started", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "task_id": "bvcrdsv8y", "tool_use_id": "toolu_01E7gLnMCZo4FR7uUzQDz5w8"}
-{"type": "assistant", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "message": {"role": "assistant", "content": [{"type": "text", "text": "The foreground `sleep 40` was blocked by the harness, so I started it as a background command instead. It will finish in about 40 seconds and I'll be notified when it does. Once it completes I'll reply DONE1."}]}}
-{"type": "result", "subtype": "success", "session_id": "8fc7b8ea-b828-449f-a383-7645d21c515a", "is_error": false, "result": "The foreground `sleep 40` was blocked by the harness, so I started it as a background command instead. It will finish in about 40 seconds and I'll be notified when it does. Once it completes I'll reply DONE1.", "usage": {"output_tokens": 1}}

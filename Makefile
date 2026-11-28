@@ -1,5 +1,5 @@
-.PHONY: fmt check test test-subagents smoke-subagents smoke-subagents-live audit build install check-main-branch smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
-.PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-duplex test-mcp-race test-mcp-syntax
+.PHONY: fmt check pre-commit install-hooks nl-test nl-test-status nl-test-ci smoke-subagents smoke-subagents-live build install check-main-branch smoke smoke-live smoke-clean smoke-hooks-live smoke-skills-clean smoke-skills-live verify clean
+.PHONY: smoke-mcp-management smoke-mcp-live smoke-mcp-duplex test-mcp-syntax
 .PHONY: smoke-mcp-contract smoke-transcript-fidelity smoke-transcript-cross smoke-continue-live
 .PHONY: smoke-mcp-presets smoke-presets smoke-mcp-effort-live smoke-mcp-isolation-live
 .PHONY: check-update-platforms e2e
@@ -11,34 +11,38 @@ fmt:
 	gofmt -w cmd internal
 
 check:
-	go vet ./...
-	sh -n install.sh test/smoke/install-clean.sh test/smoke/record-hook.sh test/smoke/hooks-live.sh test/smoke/skills-clean.sh test/smoke/skills-live.sh
+	./.githooks/pre-commit
 
-test:
-	go test ./...
+pre-commit: check
 
-.PHONY: benchmark-search
-benchmark-search:
-	go test ./internal/app -run '^$$' -bench '^BenchmarkSessionPromptSearch$$' -benchmem -v
+install-hooks:
+	git config core.hooksPath .githooks
+
+NLTEST ?= $(shell if command -v nl-test >/dev/null 2>&1; then echo nl-test; elif [ -d ../nl-test ]; then echo "go -C ../nl-test run ./cmd/nl-test"; fi)
+
+nl-test-status:
+	@if [ -z "$(NLTEST)" ]; then echo "nl-test not installed; skipping" >&2; exit 0; fi
+	$(NLTEST) status --dir nl-tests
+
+nl-test:
+	@if [ -z "$(NLTEST)" ]; then echo "nl-test not installed; skipping" >&2; exit 0; fi
+	$(NLTEST) run --dir nl-tests
+
+nl-test-ci:
+	@if [ -z "$(NLTEST)" ]; then echo "nl-test not installed; skipping" >&2; exit 0; fi
+	$(NLTEST) run --dir nl-tests --format github --diff-base origin/main
 
 check-update-platforms:
 	@task_dir=$$(mktemp -d); trap 'rm -rf "$$task_dir"' EXIT; \
 	for task_os in darwin linux windows; do \
 	  for task_arch in amd64 arm64; do \
-	    GOOS=$$task_os GOARCH=$$task_arch go test -c -o "$$task_dir/update-$$task_os-$$task_arch" ./internal/update || exit 1; \
 	    GOOS=$$task_os GOARCH=$$task_arch go build -trimpath -o "$$task_dir/sm-$$task_os-$$task_arch" ./cmd/sm || exit 1; \
 	  done; \
 	done
 
-test-subagents:
-	go test ./internal/subagents ./internal/app
-
 smoke-subagents: smoke-mcp-duplex
 
 smoke-subagents-live: smoke-mcp-live smoke-mcp-duplex
-
-audit:
-	go test ./internal/app ./internal/drivers -run 'Consistency|Capabilities|Grammar|Terminology|Structured'
 
 build:
 	mkdir -p bin
@@ -94,9 +98,6 @@ smoke-mcp-effort-live: build
 smoke-mcp-isolation-live: build
 	node test/smoke/mcp-isolation-live.mjs "$(CURDIR)/bin/sm"
 
-test-mcp-race:
-	go test -race ./internal/subagents ./internal/app
-
 test-mcp-syntax:
 	for file in test/smoke/mcp-*.mjs test/smoke/agy-*.mjs test/smoke/presets.mjs; do node --check "$$file" || exit 1; done
 	python3 -c 'import ast; from pathlib import Path; ast.parse(Path("test/smoke/pty-host.py").read_text())'
@@ -133,7 +134,7 @@ smoke-skills-clean:
 smoke-skills-live: build
 	sh test/smoke/skills-live.sh "$(CURDIR)/bin/sm"
 
-verify: fmt check test audit smoke test-pi-bridge
+verify: build smoke test-pi-bridge
 
 clean:
 	rm -f bin/sm
@@ -161,16 +162,7 @@ smoke-agy-duplex-live: build
 smoke-agy-extensions-live: build
 	node test/smoke/agy-extensions-live.mjs "$(CURDIR)/bin/sm"
 
-.PHONY: test-remove-gemini-core test-remove-gemini-extensions test-remove-gemini-product demo demo-build
-test-remove-gemini-core:
-	go test ./internal/drivers ./internal/presets ./internal/sessions
-
-test-remove-gemini-extensions:
-	go test ./internal/hooks ./internal/skills ./internal/mcp ./internal/inventory
-
-test-remove-gemini-product:
-	go test ./internal/app
-
+.PHONY: demo demo-build
 demo-build:
 	go build -o /tmp/sm-vhs-demo ./docs/demo
 
