@@ -1,0 +1,216 @@
+# yaml-language-server: $schema=../../../../nl-test/schema/nl-test.v1.schema.json
+version: "1"
+
+defaults:
+  agent: pi
+  model: deepseek/deepseek-flash
+  isolation: readonly
+  timeout: 5m
+
+tests:
+  - id: unified-managed-dir-injects-common-tools-and-mcp
+    title: 使用统一托管目录启动 Agent 时，标准里的公共工具与 MCP 应被正确注入
+    box: blackbox
+    origin:
+      date: "2026-11-28"
+      quote: "当使用统一托管目录启动Agent的时候，标准里的公共工具和MCP应该被注入。"
+    context:
+      - README.md
+    watch:
+      - cmd/**
+      - internal/app/**
+      - internal/drivers/**
+      - internal/nativedirs/**
+      - internal/hookmount/**
+      - internal/subagents/**
+      - internal/mcp/**
+      - internal/skills/**
+      - README.md
+    preflight:
+      run: |
+        set -eu
+        TMP_ROOT=$(mktemp -d /tmp/sm-unified-inject.XXXXXX)
+        trap 'rm -rf "$TMP_ROOT"' EXIT
+
+        SM_BIN="$TMP_ROOT/sm"
+        go build -o "$SM_BIN" ./cmd/sm
+
+        FAKE_HOME="$TMP_ROOT/home"
+        UNIFIED_C="$TMP_ROOT/C"
+        TMP_S="$TMP_ROOT/S"
+        TMP_BIN="$TMP_ROOT/bin"
+
+        mkdir -p \
+          "$FAKE_HOME/.agents/skills/user-skill" \
+          "$FAKE_HOME/.claude" \
+          "$FAKE_HOME/.codex" \
+          "$FAKE_HOME/.pi/agent" \
+          "$FAKE_HOME/.gemini" \
+          "$UNIFIED_C/skills/common-skill" \
+          "$TMP_S" \
+          "$TMP_BIN"
+
+        echo '{}' > "$FAKE_HOME/.codex/auth.json"
+        printf -- '---\nname: common-skill\ndescription: unified skill\n---\ncommon\n' > "$UNIFIED_C/skills/common-skill/SKILL.md"
+        printf -- '---\nname: user-skill\ndescription: user shared skill\n---\nuser\n' > "$FAKE_HOME/.agents/skills/user-skill/SKILL.md"
+        printf '{"mcpServers":{"demo-mcp":{"command":"echo","args":["hi"]}}}\n' > "$UNIFIED_C/mcp_config.json"
+        printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo hook"}]}]}}\n' > "$UNIFIED_C/hooks.json"
+
+        for a in agy claude codex pi; do
+          cat > "$TMP_BIN/$a" <<'EOF'
+        #!/bin/sh
+        echo "ARGV: $*"
+        echo "CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-}"
+        echo "CODEX_HOME=${CODEX_HOME:-}"
+        echo "PI_CODING_AGENT_DIR=${PI_CODING_AGENT_DIR:-}"
+        echo "SM_MCP_CWD=${SM_MCP_CWD:-}"
+
+        inspect_root() {
+          root="$1"
+          [ -n "$root" ] && [ -d "$root" ] || return 0
+          echo "--- skills in $root ---"
+          ls -1 "$root/skills" 2>/dev/null || true
+          for f in "$root/sessionman-mcp.json" "$root/settings.json" "$root/config.toml" "$root/hooks.json" "$root/mcp_config.json"; do
+            if [ -f "$f" ]; then
+              echo "--- file: $f ---"
+              cat "$f"
+              echo ""
+            fi
+          done
+          if [ -f "$root/extensions/sessionman-hooks.ts" ]; then
+            echo "--- file: $root/extensions/sessionman-hooks.ts (present) ---"
+          fi
+        }
+
+        inspect_root "${CLAUDE_CONFIG_DIR:-}"
+        inspect_root "${CODEX_HOME:-}"
+        inspect_root "${PI_CODING_AGENT_DIR:-}"
+
+        for arg in "$@"; do
+          case "$arg" in
+            --gemini_dir=*)
+              gd="${arg#--gemini_dir=}"
+              inspect_root "$gd/config"
+              if [ -f "$gd/config/plugins/sessionman/mcp_config.json" ]; then
+                echo "--- file: $gd/config/plugins/sessionman/mcp_config.json ---"
+                cat "$gd/config/plugins/sessionman/mcp_config.json"
+                echo ""
+              fi
+              if [ -f "$gd/config/plugins/sessionman/hooks.json" ]; then
+                echo "--- file: $gd/config/plugins/sessionman/hooks.json ---"
+                cat "$gd/config/plugins/sessionman/hooks.json"
+                echo ""
+              fi
+              ;;
+          esac
+        done
+        EOF
+          chmod +x "$TMP_BIN/$a"
+        done
+
+        for a in agy claude codex pi; do
+          echo "=== agent: $a ==="
+          env -i \
+            HOME="$FAKE_HOME" \
+            PATH="$TMP_BIN:/usr/bin:/bin" \
+            SM_CONFIG_DIR="$UNIFIED_C" \
+            SM_SESSION_DIR="$TMP_S" \
+            SM_NO_UPDATE_CHECK=1 \
+            "$SM_BIN" agent run "$a" 2>&1
+        done
+      if_exit_0: continue
+      if_nonzero: fail
+    spec: |
+      使用**纯黑盒方式**验证：当设置统一托管目录 `SM_CONFIG_DIR`（`<C>`）启动核心 Agent（`agy`、`claude`、`codex`、`pi`）时，标准里的公共工具与 MCP 是否已正确注入。直接依据上方 `preflight` 采集的真实运行输出与 `README.md` 进行核查，**禁止翻阅 `.go` 源码文件**。
+
+      检查要点：
+      1. **公共 Skills 注入**：`C/skills/common-skill` 与 `$HOME/.agents/skills/user-skill` 均必须出现在 4 个核心 Agent（`agy`、`claude`、`codex`、`pi`）的托管 `skills/` 目录中。
+      2. **公共 Hooks 注入**：`C/hooks.json` 中的 `SessionStart` 钩子必须被编译并注入到 4 个核心 Agent 的托管目录中（`agy` 的 `plugins/sessionman/hooks.json`、`claude` 的 `settings.json`、`codex` 的 `hooks.json`、`pi` 的 `extensions/sessionman-hooks.ts`）。
+      3. **统一 MCP（`C/mcp_config.json`）注入**：`demo-mcp` 必须被注入到支持 `mcp_config.json` 的 Agent 中：
+         - `claude`：生成 `sessionman-mcp.json`（含 `demo-mcp`）并通过 `--mcp-config` 传入
+         - `codex`：合并进 `config.toml`（含 `demo-mcp`）
+         - `agy`：合并进 `config/mcp_config.json`（含 `demo-mcp`）
+         - （注：按 `README.md` 文档，`pi` 不支持 `mcp_config.json`，不要求注入 `demo-mcp`）
+      4. **ExternalSubagent 工具注入（即使使用统一托管目录也必须同时注入）**：4 个核心 Agent 启动时均必须同时注入 SessionMan 的 ExternalSubagent 工具：
+         - `claude`：通过 `--mcp-config` 注入 `sessionman` MCP（`mcp serve`），并通过 `--allowedTools` 放行 `mcp__sessionman__StartExternalSubagent`、`mcp__sessionman__SendExternalSubagentMessage`、`mcp__sessionman__StopExternalSubagent`、`mcp__sessionman__ListExternalSubagentSessions`
+         - `codex`：通过 `-c mcp_servers.sessionman.command=...` 与 `-c mcp_servers.sessionman.args=["mcp","serve"]` 注入 `sessionman` MCP
+         - `agy`：通过 `plugins/sessionman/mcp_config.json` 注入 `sessionman` MCP（`mcp __agy_serve`）及 `SM_MCP_CWD`
+         - `pi`：通过 `--extension .../sessionman-bridge.ts` 注入 SessionMan ExternalSubagent 桥接扩展
+
+      若以上 4 项全部满足，判 PASS；否则判 FAIL 并列出缺失或不一致的具体 Agent 与证据。
+
+  - id: native-launch-injects-external-subagent-tools
+    title: 不指定统一托管目录使用 sm 启动 Agent 时，ExternalSubagent 工具应被自动注入
+    box: blackbox
+    origin:
+      date: "2026-11-28"
+      quote: "当不指定统一托管目录，使用sm启动Agent的时候，External subagent的工具应该被输入。"
+    context:
+      - README.md
+      - docs/subagents.md
+    watch:
+      - cmd/**
+      - internal/app/**
+      - internal/drivers/**
+      - internal/subagents/**
+      - internal/hookmount/**
+      - README.md
+      - docs/subagents.md
+    preflight:
+      run: |
+        set -eu
+        TMP_ROOT=$(mktemp -d /tmp/sm-native-subagent.XXXXXX)
+        trap 'rm -rf "$TMP_ROOT"' EXIT
+
+        SM_BIN="$TMP_ROOT/sm"
+        go build -o "$SM_BIN" ./cmd/sm
+
+        FAKE_HOME="$TMP_ROOT/home"
+        TMP_BIN="$TMP_ROOT/bin"
+        mkdir -p \
+          "$FAKE_HOME/.claude" \
+          "$FAKE_HOME/.codex" \
+          "$FAKE_HOME/.pi/agent" \
+          "$FAKE_HOME/.gemini" \
+          "$TMP_BIN"
+
+        echo '{}' > "$FAKE_HOME/.codex/auth.json"
+
+        for a in agy claude codex pi; do
+          cat > "$TMP_BIN/$a" <<'EOF'
+        #!/bin/sh
+        echo "ARGV: $*"
+        echo "SM_MCP_CWD=${SM_MCP_CWD:-}"
+        if [ -d "$HOME/.gemini/config/plugins/sessionman" ]; then
+          echo "--- agy native plugin files ---"
+          ls -1 "$HOME/.gemini/config/plugins/sessionman"
+          if [ -f "$HOME/.gemini/config/plugins/sessionman/mcp_config.json" ]; then
+            echo "--- file: agy plugin mcp_config.json ---"
+            cat "$HOME/.gemini/config/plugins/sessionman/mcp_config.json"
+            echo ""
+          fi
+        fi
+        EOF
+          chmod +x "$TMP_BIN/$a"
+        done
+
+        for a in agy claude codex pi; do
+          echo "=== agent: $a (no SM_CONFIG_DIR) ==="
+          env -i \
+            HOME="$FAKE_HOME" \
+            PATH="$TMP_BIN:/usr/bin:/bin" \
+            SM_NO_UPDATE_CHECK=1 \
+            "$SM_BIN" agent run "$a" 2>&1
+        done
+      if_exit_0: continue
+      if_nonzero: fail
+    spec: |
+      使用**纯黑盒方式**验证：在不指定统一托管目录（未设置 `SM_CONFIG_DIR`）的情况下，直接通过 `sm agent run <agent>` 启动 4 个核心 Agent（`agy`、`claude`、`codex`、`pi`）时，ExternalSubagent 工具是否被自动注入。直接依据上方 `preflight` 采集的真实运行输出与 `README.md`、`docs/subagents.md` 进行核查，**禁止翻阅 `.go` 源码文件**。
+
+      检查要点：
+      1. `agy`：必须在 `$HOME/.gemini/config/plugins/sessionman/` 挂载 SessionMan 插件（`mcp_config.json` 中注册 `sessionman` MCP，命令指向 `sm mcp __agy_serve`），且注入 `SM_MCP_CWD` 环境变量。
+      2. `claude`：必须在启动参数中通过 `--mcp-config` 注入 `sessionman` MCP（`mcp serve`），并通过 `--allowedTools` 放行 `mcp__sessionman__StartExternalSubagent`、`mcp__sessionman__SendExternalSubagentMessage`、`mcp__sessionman__StopExternalSubagent`、`mcp__sessionman__ListExternalSubagentSessions`。
+      3. `codex`：必须在启动参数中通过 `-c mcp_servers.sessionman.command=...` 与 `-c mcp_servers.sessionman.args=["mcp","serve"]` 注入 `sessionman` MCP。
+      4. `pi`：必须在启动参数中通过 `--extension .../sessionman-bridge.ts` 注入 SessionMan ExternalSubagent 桥接扩展。
+
+      若 4 个核心 Agent 均满足上述注入要求，判 PASS；否则判 FAIL 并列出缺失或不一致的具体 Agent 与证据。

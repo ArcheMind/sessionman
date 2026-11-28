@@ -10,6 +10,7 @@ defaults:
 tests:
   - id: agent-capability-symmetry
     title: 对外暴露的功能与命令必须在核心 Agent 之间保持对称（除非通过 Capability 显式声明）
+    box: blackbox
     origin:
       date: "2026-11-28"
       quote: "暴露功能全部要Agent对称（除非通过Capability声明）"
