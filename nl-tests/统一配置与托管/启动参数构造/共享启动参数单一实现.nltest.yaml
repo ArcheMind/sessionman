@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../../../nl-test/schema/nl-test.v1.schema.json
+version: "1"
+
+defaults:
+  agent: pi
+  model: deepseek/deepseek-flash
+  isolation: readonly
+  timeout: 5m
+
+tests:
+  - id: single-launch-params-builder
+    title: Subagent、交互式 Preset 与加载 Session 的共享启动参数构造在代码中只有一个实现
+    box: whitebox
+    origin:
+      date: "2026-11-28"
+      quote: "不论是启动一个subagent，还是交互式启动一个preset。还是使用一个preset加载一个session，共享启动参数都是在代码里面只有一个位置，而不是各有一个实现。"
+    watch:
+      - internal/agentparams/**
+      - internal/drivers/launch.go
+      - internal/drivers/plan.go
+      - internal/subagents/adapter_headless.go
+      - internal/app/presets_home.go
+      - internal/app/app.go
+      - internal/app/session_continue.go
+      - internal/app/subagent.go
+    preflight:
+      run: |
+        set -eu
+        echo "=== 1. Callers of agentparams.Build / drivers.Plan / Launch.PlanRun ==="
+        grep -rnE "agentparams\.Build\(|drivers\.Plan\(|\.Launch\.PlanRun\(" internal/
+
+        echo ""
+        echo "=== 2. Direct runtime.CommandPlan{Args: ...} constructions ==="
+        grep -rn "CommandPlan{" internal/ | grep "Args:" || true
+
+        echo ""
+        echo "=== 3. Drivers plan entrypoint (internal/drivers/launch.go & plan.go) ==="
+        sed -n '1,27p' internal/drivers/launch.go
+        echo "---"
+        sed -n '1,27p' internal/drivers/plan.go
+
+        echo ""
+        echo "=== 4. Subagent launch (internal/subagents/adapter_headless.go) ==="
+        grep -n -C 5 "agentparams\.Build(" internal/subagents/adapter_headless.go
+
+        echo ""
+        echo "=== 5. Interactive preset launch (internal/app/presets_home.go) ==="
+        grep -n -C 5 "\.Launch\.PlanRun(" internal/app/presets_home.go
+
+        echo ""
+        echo "=== 6. Session resume / continue (internal/app/app.go & session_continue.go) ==="
+        grep -n -C 5 "\.Launch\.PlanRun(" internal/app/app.go
+        echo "---"
+        grep -n -C 5 "agentparams\.Build(" internal/app/session_continue.go
+      if_exit_0: continue
+      if_nonzero: fail
+    spec: |
+      使用**白盒静态核查**验证：启动 Subagent、交互式启动 Preset、使用 Preset 加载/恢复 Session 这三条路径的共享启动参数构造，在代码中是否只通过唯一的共享入口（`internal/agentparams` 的 `agentparams.Build`）完成，而没有各自重复实现一套参数构造逻辑。
+
+      **效率要求**：直接基于上方 `preflight` 已采集的调用点与代码片段进行核查；仅在 `preflight` 输出存在疑点时才按需读取对应文件的局部行号，**禁止全仓扫描或通读无关文件**。
+
+      检查要点：
+      1. **唯一参数构造实现**：`internal/agentparams`（`agentparams.Build`）是共享启动参数（model、effort、mode、session、system prompt、user config、flags、MCP 等）的唯一构造入口；`drivers.NativeLaunch.PlanRun` 与 `drivers.Plan` 仅作为薄包装转发到 `agentparams.Build`。
+      2. **三条调用路径均汇聚到同一实现**：
+         - **启动 Subagent**：`internal/subagents/adapter_headless.go`（`startHeadlessLocked`）直接调用 `agentparams.Build`（`internal/app/subagent.go` 调用 `drivers.Plan` 亦经由 `agentparams.Build`）。
+         - **交互式启动 Preset**：`internal/app/presets_home.go`（`startPreset`）通过 `agent.Launch.PlanRun(request)` -> `drivers.Plan` -> `agentparams.Build`。
+         - **使用 Preset 加载 Session**：`internal/app/app.go`（`sessionResume`）通过 `agent.Launch.PlanRun(request)` -> `drivers.Plan` -> `agentparams.Build`（以及 `internal/app/session_continue.go` 的 `runContinue` 直接调用 `agentparams.Build`）。
+      3. **无重复构造**：`preflight` 第 2 节中的 `CommandPlan{Args: ...}` 仅出现在 `drivers.Plan`、`runContinue`（直接透传 `mapped.Args`）或非 Agent 启动的 auth/update 命令中，不存在上述三条路径各自手拼 Agent CLI 参数的重复实现。
+
+      若以上 3 项全部满足，判 PASS；否则判 FAIL 并指出重复实现的文件与行号。
